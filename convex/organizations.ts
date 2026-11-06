@@ -103,6 +103,9 @@ export const updateProfile = mutation({
     gstin: v.optional(v.string()),
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
+    state: v.optional(v.string()),
+    tagline: v.optional(v.string()),
+    motto: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
@@ -116,6 +119,9 @@ export const updateProfile = mutation({
       gstin: args.gstin?.trim() || undefined,
       address: args.address?.trim() || undefined,
       phone: args.phone?.trim() || undefined,
+      state: args.state?.trim() || undefined,
+      tagline: args.tagline?.trim() || undefined,
+      motto: args.motto?.trim() || undefined,
     });
   },
 });
@@ -183,5 +189,36 @@ export const getPublicAppIconUrl = query({
     const org = await ctx.db.query("organizations").first();
     if (!org?.appIconStorageId) return null;
     return await ctx.storage.getUrl(org.appIconStorageId);
+  },
+});
+
+export const generateInvoiceLogoUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const setInvoiceLogo = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    const org = await ctx.db.get(auth.organizationId);
+    const previous = org?.invoiceLogoStorageId;
+    await ctx.db.patch(auth.organizationId, { invoiceLogoStorageId: args.storageId });
+    if (previous) await ctx.storage.delete(previous);
+  },
+});
+
+export const getInvoiceLogoUrl = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const org = await ctx.db.get(auth.organizationId);
+    if (!org?.invoiceLogoStorageId) return null;
+    return await ctx.storage.getUrl(org.invoiceLogoStorageId);
   },
 });

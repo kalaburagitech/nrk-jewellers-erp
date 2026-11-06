@@ -120,6 +120,9 @@ function ProfileForm({ profile }: { profile: Doc<"organizations"> }) {
   const [gstin, setGstin] = useState(profile.gstin ?? "");
   const [phone, setPhone] = useState(profile.phone ?? "");
   const [address, setAddress] = useState(profile.address ?? "");
+  const [state, setState] = useState(profile.state ?? "");
+  const [tagline, setTagline] = useState(profile.tagline ?? "");
+  const [motto, setMotto] = useState(profile.motto ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -139,6 +142,9 @@ function ProfileForm({ profile }: { profile: Doc<"organizations"> }) {
         gstin: gstin || undefined,
         phone: phone || undefined,
         address: address || undefined,
+        state: state || undefined,
+        tagline: tagline || undefined,
+        motto: motto || undefined,
       });
       setSaved(true);
     } catch {
@@ -160,6 +166,16 @@ function ProfileForm({ profile }: { profile: Doc<"organizations"> }) {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="grid gap-2">
+          <Label>Business type (shown under the name on bills)</Label>
+          <Input value={tagline} onChange={(e) => setTagline(e.target.value)} placeholder="e.g. Gold and Silver Merchants" />
+        </div>
+        <div className="grid gap-2">
+          <Label>Motto (shown in italics on bills)</Label>
+          <Input value={motto} onChange={(e) => setMotto(e.target.value)} placeholder="e.g. The Name of Purity" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-2">
           <Label>GSTIN</Label>
           <Input value={gstin} onChange={(e) => setGstin(e.target.value)} placeholder="optional" />
         </div>
@@ -172,12 +188,33 @@ function ProfileForm({ profile }: { profile: Doc<"organizations"> }) {
         <Label>Address</Label>
         <Textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} placeholder="optional" />
       </div>
+      <div className="grid gap-2">
+        <Label>State</Label>
+        <Input value={state} onChange={(e) => setState(e.target.value)} placeholder="e.g. Karnataka" />
+      </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {saved && !error && <p className="text-sm text-success">Saved.</p>}
       <Button onClick={handleSave} disabled={submitting} className="self-end">
         {submitting ? "Saving…" : "Save"}
       </Button>
     </>
+  );
+}
+
+function InvoiceLogoCard() {
+  const currentLogoUrl = useQuery(api.organizations.getInvoiceLogoUrl);
+  const generateUploadUrl = useMutation(api.organizations.generateInvoiceLogoUploadUrl);
+  const setInvoiceLogo = useMutation(api.organizations.setInvoiceLogo);
+
+  return (
+    <ImageUploadCard
+      title="Invoice logo"
+      description="Shown at the top-left of every printed and shared invoice. A square or wide image works best."
+      imageUrl={currentLogoUrl}
+      previewClassName="h-20 w-20 rounded-md border border-border object-contain bg-white p-1"
+      generateUploadUrl={generateUploadUrl}
+      setImage={setInvoiceLogo}
+    />
   );
 }
 
@@ -208,6 +245,7 @@ export default function BusinessProfilePage() {
         </CardContent>
       </Card>
 
+      <InvoiceLogoCard />
       <LoginImageCard />
       <AppIconCard />
     </div>

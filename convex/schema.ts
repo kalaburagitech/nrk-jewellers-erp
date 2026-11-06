@@ -28,8 +28,13 @@ export default defineSchema({
     gstin: v.optional(v.string()),
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
+    state: v.optional(v.string()),
+    // Short business-type line and italic motto shown under the name on the printed invoice header (e.g. "Gold and Silver Merchants" / "The Name of Purity").
+    tagline: v.optional(v.string()),
+    motto: v.optional(v.string()),
     loginImageStorageId: v.optional(v.id("_storage")),
     appIconStorageId: v.optional(v.id("_storage")),
+    invoiceLogoStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
   }),
 

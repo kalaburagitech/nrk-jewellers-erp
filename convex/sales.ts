@@ -74,15 +74,23 @@ export const getInvoiceData = query({
 
     const items = await Promise.all(
       saleItems.map(async (item) => {
-        const [product, boxItem] = await Promise.all([
+        const [product, boxItem, purity] = await Promise.all([
           ctx.db.get(item.productId),
           item.boxItemId ? ctx.db.get(item.boxItemId) : null,
+          item.metalPurityId ? ctx.db.get(item.metalPurityId) : null,
         ]);
-        return { ...item, productName: product?.name ?? "Item", label: boxItem?.label ?? product?.name ?? "Item" };
+        return {
+          ...item,
+          productName: product?.name ?? "Item",
+          label: boxItem?.label ?? product?.name ?? "Item",
+          purityLabel: purity?.label,
+        };
       }),
     );
 
-    return { sale, items, customer, organization, oldGoldExchange, payments };
+    const logoUrl = organization?.invoiceLogoStorageId ? await ctx.storage.getUrl(organization.invoiceLogoStorageId) : null;
+
+    return { sale, items, customer, organization, logoUrl, oldGoldExchange, payments };
   },
 });
 
