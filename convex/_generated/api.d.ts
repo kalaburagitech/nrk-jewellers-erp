@@ -9,9 +9,17 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as boxes from "../boxes.js";
+import type * as customers from "../customers.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as metalPurities from "../metalPurities.js";
+import type * as metalRates from "../metalRates.js";
 import type * as organizations from "../organizations.js";
+import type * as products from "../products.js";
+import type * as stockCategories from "../stockCategories.js";
+import type * as stockGroups from "../stockGroups.js";
+import type * as suppliers from "../suppliers.js";
 
 import type {
   ApiFromModules,
@@ -21,9 +29,17 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  boxes: typeof boxes;
+  customers: typeof customers;
   http: typeof http;
   "lib/auth": typeof lib_auth;
+  metalPurities: typeof metalPurities;
+  metalRates: typeof metalRates;
   organizations: typeof organizations;
+  products: typeof products;
+  stockCategories: typeof stockCategories;
+  stockGroups: typeof stockGroups;
+  suppliers: typeof suppliers;
 }>;
 
 /**
