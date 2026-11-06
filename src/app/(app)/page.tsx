@@ -1,7 +1,9 @@
 "use client";
 
 import type { ComponentType } from "react";
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -9,8 +11,10 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
+  Boxes,
   Coins,
   Gem,
+  MessageCircle,
   Minus,
   Package,
   Receipt,
@@ -23,8 +27,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+
+const PAYMENT_MODE_LABEL: Record<string, string> = {
+  cash: "Cash",
+  upi: "UPI",
+  card: "Card",
+  cheque: "Cheque",
+  bank_transfer: "Bank Transfer",
+};
 
 function greeting() {
   const hour = new Date().getHours();
@@ -132,9 +145,11 @@ const QUICK_ACTIONS = [
 ];
 
 export default function DashboardPage() {
+  const router = useRouter();
   const summary = useQuery(api.dashboard.getSummary);
   const currentRates = useQuery(api.metalRates.getCurrent);
   const access = useQuery(api.organizations.getMyAccess);
+  const boxes = useQuery(api.boxes.list);
 
   const firstName = (access?.user?.name ?? access?.user?.email ?? "").split(" ")[0] || "there";
 
@@ -147,8 +162,26 @@ export default function DashboardPage() {
     sales: t.salesPaise / 100,
   }));
 
+  const latestInvoiceId = summary?.recentInvoices[0]?._id;
+
+  // F2/F3/F4 mirror the counter shortcuts on the billing screen, one level up: jump straight into a new bill,
+  // a new purchase, or sharing the most recent invoice — without reaching for the mouse.
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "F2" && e.key !== "F3" && e.key !== "F4") return;
+      e.preventDefault();
+      if (e.key === "F2") router.push("/sales/new");
+      else if (e.key === "F3") router.push("/purchases/new");
+      else if (latestInvoiceId) router.push(`/sales/invoices/${latestInvoiceId}/print?autoShare=1`);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [router, latestInvoiceId]);
+
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
+      <MetalRateTicker currentRates={currentRates} />
+
       <div className="relative overflow-hidden rounded-xl border border-gold/20 bg-gradient-to-br from-gold/15 via-card to-card p-6">
         <div className="relative flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -161,9 +194,29 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        {QUICK_ACTIONS.map((action) => (
-          <Button key={action.href} variant="outline" asChild>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button asChild>
+          <Link href="/sales/new">
+            <Receipt className="h-4 w-4" />
+            New Retail Invoice <span className="opacity-70">[F2]</span>
+          </Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <Link href="/purchases/new">
+            <ShoppingCart className="h-4 w-4" />
+            Supplier Purchase <span className="text-muted-foreground">[F3]</span>
+          </Link>
+        </Button>
+        {latestInvoiceId && (
+          <Button variant="outline" asChild>
+            <Link href={`/sales/invoices/${latestInvoiceId}/print?autoShare=1`}>
+              <MessageCircle className="h-4 w-4" />
+              Share via WhatsApp <span className="text-muted-foreground">[F4]</span>
+            </Link>
+          </Button>
+        )}
+        {QUICK_ACTIONS.filter((a) => a.href !== "/sales/new" && a.href !== "/purchases/new").map((action) => (
+          <Button key={action.href} variant="ghost" asChild>
             <Link href={action.href}>
               <action.icon className="h-4 w-4" />
               {action.label}
@@ -272,27 +325,95 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Daily Sales Overview</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Sales today</span>
+              <span className="font-semibold">{summary ? formatPaise(summary.todaysSalesPaise) : "—"}</span>
+            </div>
+            {Object.entries(PAYMENT_MODE_LABEL).map(([mode, label]) => {
+              const amount = summary?.todaysPaymentsByMode[mode];
+              if (!amount) return null;
+              return (
+                <div key={mode} className="flex items-center justify-between">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span>{formatPaise(amount)}</span>
+                </div>
+              );
+            })}
+            {summary && summary.todaysOldGoldExchangePaise > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Old gold/silver exchange</span>
+                <span>-{formatPaise(summary.todaysOldGoldExchangePaise)}</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Weight-Based Live Stock Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            {summary === undefined ? (
+              <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+            ) : summary.stockByPurity.length === 0 ? (
+              <p className="p-6 text-sm text-muted-foreground">No purities configured yet.</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Purity</TableHead>
+                    <TableHead>Metal</TableHead>
+                    <TableHead className="text-right">Fine Wt (g)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {summary.stockByPurity.map((row) => (
+                    <TableRow key={row.purityId}>
+                      <TableCell className="font-medium">{row.label}</TableCell>
+                      <TableCell className="capitalize text-muted-foreground">{row.metal}</TableCell>
+                      <TableCell className="text-right">{mgToGramsDisplay(row.netWeightMg)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Live Metal Rates</CardTitle>
+            <CardTitle className="text-base">Box Management</CardTitle>
             <Button variant="ghost" size="sm" asChild>
-              <Link href="/metal-rates">Manage</Link>
+              <Link href="/boxes">View all</Link>
             </Button>
           </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {currentRates === undefined ? (
+          <CardContent>
+            {boxes === undefined ? (
               <p className="text-sm text-muted-foreground">Loading…</p>
-            ) : currentRates.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No purities configured yet.</p>
+            ) : boxes.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No boxes yet.</p>
             ) : (
-              currentRates.map(({ purity, latest }) => (
-                <div
-                  key={purity._id}
-                  className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
-                >
-                  <span className="text-muted-foreground">{purity.label}</span>
-                  <span className="font-medium">{latest ? formatPaise(latest.ratePerGramPaise) : "—"}</span>
-                </div>
-              ))
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {boxes.slice(0, 9).map((box) => (
+                  <Link
+                    key={box._id}
+                    href="/boxes"
+                    className="flex flex-col gap-1 rounded-md border border-border/60 p-2 text-sm hover:bg-muted/40"
+                  >
+                    <span className="flex items-center gap-1 font-medium">
+                      <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
+                      Box {box.boxNumber}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{box.itemCount ?? 0} pcs</span>
+                  </Link>
+                ))}
+              </div>
             )}
           </CardContent>
         </Card>

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { MessageCircle, Minus, Plus, Printer, Radio, Search, Trash2 } from "lucide-react";
+import { MessageCircle, Minus, Plus, Printer, Search, Trash2 } from "lucide-react";
+import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,31 +59,6 @@ type BillLine = {
   stoneChargeRupees: string;
   taxConfigurationId: string;
 };
-
-function MetalRateTicker({ currentRates }: { currentRates: { purity: Doc<"metalPurities">; latest: Doc<"metalRates"> | null }[] | undefined }) {
-  if (!currentRates || currentRates.length === 0) return null;
-  const withRates = currentRates.filter((r) => r.latest);
-  if (withRates.length === 0) return null;
-  const latestEffectiveAt = Math.max(...withRates.map((r) => r.latest!.effectiveAt));
-
-  return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border border-border bg-muted/40 px-4 py-2 text-sm">
-      <span className="flex items-center gap-1 font-medium text-success">
-        <Radio className="h-3.5 w-3.5" />
-        LIVE
-      </span>
-      {withRates.map(({ purity, latest }) => (
-        <span key={purity._id}>
-          <span className="text-muted-foreground">{purity.label} {purity.metal === "gold" ? "Gold" : "Silver"}:</span>{" "}
-          <span className="font-semibold">{formatPaise(latest!.ratePerGramPaise)}/g</span>
-        </span>
-      ))}
-      <span className="ml-auto text-xs text-muted-foreground">
-        as of {new Date(latestEffectiveAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
-      </span>
-    </div>
-  );
-}
 
 function BoxItemPicker({
   boxes,

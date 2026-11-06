@@ -123,12 +123,31 @@ export const getSummary = query({
     let goldStockMg = 0;
     let silverStockMg = 0;
     const stockMgByProduct = new Map<string, number>();
+    const stockMgByPurity = new Map<string, number>();
     for (const item of boxItems) {
       stockMgByProduct.set(item.productId, (stockMgByProduct.get(item.productId) ?? 0) + item.netWeightMg);
       const product = productById.get(item.productId);
       const purity = product?.metalPurityId ? purityById.get(product.metalPurityId) : undefined;
       if (purity?.metal === "gold") goldStockMg += item.netWeightMg;
       else if (purity?.metal === "silver") silverStockMg += item.netWeightMg;
+      if (product?.metalPurityId) {
+        stockMgByPurity.set(product.metalPurityId, (stockMgByPurity.get(product.metalPurityId) ?? 0) + item.netWeightMg);
+      }
+    }
+    const stockByPurity = purities
+      .filter((p) => p.isActive)
+      .map((p) => ({ purityId: p._id, label: p.label, metal: p.metal, netWeightMg: stockMgByPurity.get(p._id) ?? 0 }));
+
+    // Today's receipts by payment mode — old gold/silver exchange is a trade-in, kept separate from cash/digital modes.
+    const todaysPaymentsByMode: Record<string, number> = {};
+    let todaysOldGoldExchangePaise = 0;
+    for (const p of payments) {
+      if (p.createdAt < todayStart || p.direction !== "receipt") continue;
+      if (p.mode === "old_gold_exchange") {
+        todaysOldGoldExchangePaise += p.amountPaise;
+        continue;
+      }
+      todaysPaymentsByMode[p.mode] = (todaysPaymentsByMode[p.mode] ?? 0) + p.amountPaise;
     }
 
     const lowStockCount = products.filter((p) => {
@@ -156,9 +175,12 @@ export const getSummary = query({
       totalPayablesPaise,
       goldStockMg,
       silverStockMg,
+      stockByPurity,
       totalOrnamentCount: boxItems.length,
       lowStockCount,
       recentInvoices,
+      todaysPaymentsByMode,
+      todaysOldGoldExchangePaise,
       trend,
       salesDeltaPercent,
       purchasesDeltaPercent,
