@@ -1,0 +1,114 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuthActions } from "@convex-dev/auth/react";
+import { Gem } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+
+export default function SignInPage() {
+  const { signIn } = useAuthActions();
+  const router = useRouter();
+  const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    const formData = new FormData(e.currentTarget);
+    formData.set("flow", flow);
+    try {
+      await signIn("password", formData);
+      router.push("/");
+    } catch {
+      setError(
+        flow === "signIn"
+          ? "Invalid email or password."
+          : "Could not create account — the email may already be in use.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="grid min-h-svh grid-cols-1 lg:grid-cols-2">
+      <div className="relative hidden flex-col justify-between overflow-hidden bg-primary p-10 text-primary-foreground lg:flex">
+        <div className="flex items-center gap-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-gold text-gold-foreground">
+            <Gem className="h-5 w-5" />
+          </div>
+          <span className="text-sm font-semibold tracking-widest uppercase">NRK Jewellers</span>
+        </div>
+        <div className="space-y-3">
+          <h2 className="text-3xl font-semibold leading-tight">
+            Enterprise jewellery operations,
+            <br />
+            run from one system.
+          </h2>
+          <p className="max-w-md text-sm text-primary-foreground/70">
+            Billing, purchases, inventory, box management, customer ledgers and GST — built for
+            the realities of daily shop floor operations.
+          </p>
+        </div>
+        <p className="text-xs text-primary-foreground/50">
+          &copy; {new Date().getFullYear()} NRK Jewellers
+        </p>
+      </div>
+
+      <div className="flex items-center justify-center p-6">
+        <Card className="w-full max-w-sm border-none shadow-none sm:border sm:shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-xl">
+              {flow === "signIn" ? "Sign in" : "Create the owner account"}
+            </CardTitle>
+            <CardDescription>
+              {flow === "signIn"
+                ? "Enter your credentials to access the ERP."
+                : "The first account created becomes the organization owner."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+              {flow === "signUp" && (
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Full name</Label>
+                  <Input id="name" name="name" placeholder="Your name" required />
+                </div>
+              )}
+              <div className="grid gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input id="email" name="email" type="email" placeholder="you@nrkjewellers.com" required />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Input id="password" name="password" type="password" required minLength={8} />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button type="submit" disabled={submitting} className="mt-1">
+                {submitting ? "Please wait…" : flow === "signIn" ? "Sign in" : "Create account"}
+              </Button>
+            </form>
+            <button
+              type="button"
+              className="mt-4 w-full text-center text-sm text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                setError(null);
+                setFlow(flow === "signIn" ? "signUp" : "signIn");
+              }}
+            >
+              {flow === "signIn"
+                ? "First time setting up NRK Jewellers? Create the owner account"
+                : "Already have an account? Sign in"}
+            </button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
