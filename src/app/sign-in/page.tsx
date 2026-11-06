@@ -46,26 +46,24 @@ export default function SignInPage() {
         style={{ backgroundImage: `url('${customLoginImage ?? "/login-hero.webp"}')` }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-black/30 to-black/55" />
-        <div className="relative flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-md bg-gold text-gold-foreground">
+        <div className="relative flex w-fit items-center gap-2 rounded-lg bg-black/55 p-2 backdrop-blur-sm">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-gold text-gold-foreground">
             <Gem className="h-5 w-5" />
           </div>
-          <span className="text-sm font-semibold tracking-widest uppercase [text-shadow:0_1px_8px_rgb(0_0_0_/_0.8)]">
-            NRK Jewellers
-          </span>
+          <span className="text-sm font-semibold tracking-widest text-white uppercase">NRK Jewellers</span>
         </div>
-        <div className="relative space-y-3 [text-shadow:0_2px_12px_rgb(0_0_0_/_0.8)]">
-          <h2 className="text-3xl font-semibold leading-tight">
+        <div className="relative max-w-lg space-y-3 rounded-xl bg-black/55 p-6 backdrop-blur-sm">
+          <h2 className="text-3xl font-semibold leading-tight text-white">
             Enterprise jewellery operations,
             <br />
             run from one system.
           </h2>
-          <p className="max-w-md text-sm text-primary-foreground/90">
+          <p className="max-w-md text-sm text-white/85">
             Billing, purchases, inventory, box management, customer ledgers and GST — built for
             the realities of daily shop floor operations.
           </p>
         </div>
-        <p className="relative text-xs text-primary-foreground/70 [text-shadow:0_1px_8px_rgb(0_0_0_/_0.8)]">
+        <p className="relative w-fit rounded-md bg-black/55 px-2 py-1 text-xs text-white/80 backdrop-blur-sm">
           &copy; {new Date().getFullYear()} NRK Jewellers
         </p>
       </div>
