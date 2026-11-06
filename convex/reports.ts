@@ -214,3 +214,164 @@ export const getStockByPurity = query({
     return { rows, unassigned };
   },
 });
+
+/** Purchase report: supplier-wise totals and purity-wise weight breakdown for a date range. */
+export const getPurchaseReport = query({
+  args: { startDate: v.number(), endDate: v.number() },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const purchases = (
+      await ctx.db
+        .query("purchases")
+        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .order("desc")
+        .take(2000)
+    ).filter((p) => p.status === "finalized" && p.createdAt >= args.startDate && p.createdAt <= args.endDate);
+
+    const suppliers = await ctx.db
+      .query("suppliers")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .collect();
+    const supplierNameById = new Map(suppliers.map((s) => [s._id, s.name]));
+
+    const bySupplier = new Map<string, { name: string; totalPaise: number; count: number }>();
+    for (const p of purchases) {
+      const key = p.supplierId;
+      const existing = bySupplier.get(key) ?? { name: supplierNameById.get(key) ?? "—", totalPaise: 0, count: 0 };
+      existing.totalPaise += p.totalPaise;
+      existing.count += 1;
+      bySupplier.set(key, existing);
+    }
+
+    const purities = await ctx.db
+      .query("metalPurities")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .collect();
+    const purityById = new Map(purities.map((p) => [p._id, p]));
+
+    const byPurity = new Map<string, { label: string; netWeightMg: number }>();
+    for (const p of purchases) {
+      const items = await ctx.db
+        .query("purchaseItems")
+        .withIndex("by_purchase", (q) => q.eq("purchaseId", p._id))
+        .collect();
+      for (const item of items) {
+        const key = item.metalPurityId ?? "unassigned";
+        const label = item.metalPurityId ? (purityById.get(item.metalPurityId)?.label ?? "Unknown") : "No purity set";
+        const existing = byPurity.get(key) ?? { label, netWeightMg: 0 };
+        existing.netWeightMg += item.netWeightMg;
+        byPurity.set(key, existing);
+      }
+    }
+
+    return {
+      totalPurchasesPaise: purchases.reduce((sum, p) => sum + p.totalPaise, 0),
+      totalInvoiceCount: purchases.length,
+      bySupplier: Array.from(bySupplier.values()).sort((a, b) => b.totalPaise - a.totalPaise),
+      byPurity: Array.from(byPurity.values()),
+    };
+  },
+});
+
+/** Box report: per-box item count and net weight — where everything physically is right now. */
+export const getBoxReport = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const boxes = await ctx.db
+      .query("boxes")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .order("asc")
+      .collect();
+
+    const rows = await Promise.all(
+      boxes
+        .filter((b) => (b.itemCount ?? 0) > 0)
+        .map(async (box) => {
+          const items = await ctx.db
+            .query("boxItems")
+            .withIndex("by_box", (q) => q.eq("boxId", box._id))
+            .filter((q) => q.eq(q.field("status"), "in_stock"))
+            .collect();
+          return {
+            boxId: box._id,
+            boxNumber: box.boxNumber,
+            label: box.label,
+            itemCount: items.length,
+            netWeightMg: items.reduce((sum, i) => sum + i.netWeightMg, 0),
+          };
+        }),
+    );
+
+    return rows;
+  },
+});
+
+/** Customer aging: outstanding balance bucketed by days since the customer's oldest unpaid bill. */
+export const getCustomerAging = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const customers = (
+      await ctx.db
+        .query("customers")
+        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .collect()
+    ).filter((c) => (c.currentBalancePaise ?? c.openingBalancePaise) > 0);
+
+    const now = Date.now();
+    const DAY = 24 * 60 * 60 * 1000;
+
+    const rows = await Promise.all(
+      customers.map(async (customer) => {
+        const unpaidSale = await ctx.db
+          .query("sales")
+          .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+          .filter((q) => q.and(q.eq(q.field("status"), "finalized"), q.lt(q.field("amountPaidPaise"), q.field("totalPaise"))))
+          .order("asc")
+          .first();
+
+        const ageDays = unpaidSale ? Math.floor((now - unpaidSale.createdAt) / DAY) : 0;
+        const bucket = ageDays <= 30 ? "0-30" : ageDays <= 60 ? "31-60" : ageDays <= 90 ? "61-90" : "90+";
+
+        return {
+          customerId: customer._id,
+          name: customer.name,
+          outstandingPaise: customer.currentBalancePaise ?? customer.openingBalancePaise,
+          ageDays,
+          bucket,
+        };
+      }),
+    );
+
+    return rows.sort((a, b) => b.outstandingPaise - a.outstandingPaise);
+  },
+});
+
+/** Every stock movement, newest first — the append-only audit trail of everything that ever changed inventory. */
+export const getStockJournal = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const movements = await ctx.db
+      .query("stockMovements")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .order("desc")
+      .take(200);
+
+    const products = await ctx.db
+      .query("products")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .collect();
+    const productNameById = new Map(products.map((p) => [p._id, p.name]));
+
+    return movements.map((m) => ({
+      _id: m._id,
+      productName: productNameById.get(m.productId) ?? "Product",
+      direction: m.direction,
+      netWeightMg: m.netWeightMg,
+      sourceTable: m.sourceTable,
+      createdAt: m.createdAt,
+    }));
+  },
+});

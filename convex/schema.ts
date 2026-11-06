@@ -170,7 +170,7 @@ export default defineSchema({
     stoneWeightMg: v.number(),
     netWeightMg: v.number(),
     barcode: v.optional(v.string()),
-    status: v.union(v.literal("in_stock"), v.literal("sold"), v.literal("transferred_out")),
+    status: v.union(v.literal("in_stock"), v.literal("sold"), v.literal("transferred_out"), v.literal("written_off")),
     createdAt: v.number(),
   })
     .index("by_org", ["organizationId"])

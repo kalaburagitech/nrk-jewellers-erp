@@ -35,7 +35,7 @@ export function AppTopbar({
   const { signOut } = useAuthActions();
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/70 bg-card/60 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/40">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/70 bg-card/60 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/40 print:hidden">
       <div className="flex items-center gap-2">
         <SidebarTrigger />
         <Separator orientation="vertical" className="h-5" />

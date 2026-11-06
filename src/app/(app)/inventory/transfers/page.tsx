@@ -1,6 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
-import { Boxes } from "lucide-react";
+import { redirect } from "next/navigation";
 
 export default function StockTransfersPage() {
-  return <ComingSoon icon={Boxes} title="Stock Transfers" milestone="Arriving in Milestone 3 — Purchase Management" />;
+  redirect("/boxes/transfers");
 }
