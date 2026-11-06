@@ -29,6 +29,7 @@ export default defineSchema({
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
     loginImageStorageId: v.optional(v.id("_storage")),
+    appIconStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
   }),
 

@@ -154,3 +154,34 @@ export const getPublicLoginImageUrl = query({
     return await ctx.storage.getUrl(org.loginImageStorageId);
   },
 });
+
+export const generateAppIconUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const setAppIcon = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    const org = await ctx.db.get(auth.organizationId);
+    const previous = org?.appIconStorageId;
+    await ctx.db.patch(auth.organizationId, { appIconStorageId: args.storageId });
+    if (previous) await ctx.storage.delete(previous);
+  },
+});
+
+/** Public (no auth) — the installed-app manifest is fetched before anyone is logged in. */
+export const getPublicAppIconUrl = query({
+  args: {},
+  handler: async (ctx) => {
+    const org = await ctx.db.query("organizations").first();
+    if (!org?.appIconStorageId) return null;
+    return await ctx.storage.getUrl(org.appIconStorageId);
+  },
+});

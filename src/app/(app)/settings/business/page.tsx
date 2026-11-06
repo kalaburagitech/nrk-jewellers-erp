@@ -8,12 +8,23 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { Doc } from "../../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-function LoginImageCard() {
-  const currentImageUrl = useQuery(api.organizations.getPublicLoginImageUrl);
-  const generateUploadUrl = useMutation(api.organizations.generateLoginImageUploadUrl);
-  const setLoginImage = useMutation(api.organizations.setLoginImage);
+function ImageUploadCard({
+  title,
+  description,
+  imageUrl,
+  previewClassName,
+  generateUploadUrl,
+  setImage,
+}: {
+  title: string;
+  description: string;
+  imageUrl: string | null | undefined;
+  previewClassName: string;
+  generateUploadUrl: () => Promise<string>;
+  setImage: (args: { storageId: Id<"_storage"> }) => Promise<unknown>;
+}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +42,7 @@ function LoginImageCard() {
         body: file,
       });
       const { storageId } = await result.json();
-      await setLoginImage({ storageId });
+      await setImage({ storageId });
     } catch {
       setError("Could not upload image.");
     } finally {
@@ -43,28 +54,15 @@ function LoginImageCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Login screen background</CardTitle>
+        <CardTitle className="text-base">{title}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">
-          Shown behind the sign-in form. Falls back to the default image until one is uploaded.
-        </p>
-        {currentImageUrl && (
+        <p className="text-sm text-muted-foreground">{description}</p>
+        {imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={currentImageUrl}
-            alt="Current login background"
-            className="h-40 w-full rounded-md border border-border object-cover"
-          />
+          <img src={imageUrl} alt={title} className={previewClassName} />
         )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileChange}
-          className="hidden"
-          id="login-image-upload"
-        />
+        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
         {error && <p className="text-sm text-destructive">{error}</p>}
         <Button
           type="button"
@@ -77,6 +75,40 @@ function LoginImageCard() {
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+function LoginImageCard() {
+  const currentImageUrl = useQuery(api.organizations.getPublicLoginImageUrl);
+  const generateUploadUrl = useMutation(api.organizations.generateLoginImageUploadUrl);
+  const setLoginImage = useMutation(api.organizations.setLoginImage);
+
+  return (
+    <ImageUploadCard
+      title="Login screen background"
+      description="Shown behind the sign-in form. Falls back to the default image until one is uploaded."
+      imageUrl={currentImageUrl}
+      previewClassName="h-40 w-full rounded-md border border-border object-cover"
+      generateUploadUrl={generateUploadUrl}
+      setImage={setLoginImage}
+    />
+  );
+}
+
+function AppIconCard() {
+  const currentIconUrl = useQuery(api.organizations.getPublicAppIconUrl);
+  const generateUploadUrl = useMutation(api.organizations.generateAppIconUploadUrl);
+  const setAppIcon = useMutation(api.organizations.setAppIcon);
+
+  return (
+    <ImageUploadCard
+      title="App icon"
+      description="Used as the icon when staff install this app to their desktop or phone home screen. Falls back to the NRK mark until one is uploaded — a square image works best."
+      imageUrl={currentIconUrl}
+      previewClassName="h-24 w-24 rounded-xl border border-border object-cover"
+      generateUploadUrl={generateUploadUrl}
+      setImage={setAppIcon}
+    />
   );
 }
 
@@ -177,6 +209,7 @@ export default function BusinessProfilePage() {
       </Card>
 
       <LoginImageCard />
+      <AppIconCard />
     </div>
   );
 }

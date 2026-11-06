@@ -18,6 +18,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "NRK Jewellers | ERP",
   description: "Jewellery ERP & business management system for NRK Jewellers",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "NRK Jewellers" },
+};
+
+export const viewport = {
+  themeColor: "#1c140d",
 };
 
 // Runs before paint so the dashboard's dark-first theme never flashes light on load.
