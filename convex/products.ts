@@ -53,7 +53,7 @@ export const setActive = mutation({
   args: { id: v.id("products"), isActive: v.boolean() },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
-    requireRole(auth, ["inventory_manager"]);
+    requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
     if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });

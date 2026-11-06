@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
-import { requireAuthContext } from "./lib/auth";
+import { requireAuthContext, requireRole } from "./lib/auth";
 
 export const list = query({
   args: {},
@@ -97,6 +97,7 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
     if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     const name = args.name.trim();
@@ -119,6 +120,7 @@ export const setActive = mutation({
   args: { id: v.id("customers"), isActive: v.boolean() },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
     if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });
