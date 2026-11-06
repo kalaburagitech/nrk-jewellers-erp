@@ -25,7 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const UNITS = [
   { value: "gram", label: "Gram" },
@@ -33,6 +34,41 @@ const UNITS = [
   { value: "piece", label: "Piece" },
   { value: "carat", label: "Carat" },
 ] as const;
+
+const PRODUCT_IMPORT_HEADERS = ["Name", "SKU", "Unit (gram/kilogram/piece/carat)", "Purity Label", "HSN Code", "Reorder Level (g)"];
+
+function ImportProductsDialog({ purities }: { purities: Doc<"metalPurities">[] | undefined }) {
+  const createProduct = useMutation(api.products.create);
+  return (
+    <ImportCsvDialog
+      title="Import products"
+      templateFilename="products-template"
+      templateHeaders={PRODUCT_IMPORT_HEADERS}
+      templateExampleRow={["Gold Chain 20g", "", "gram", "22K", "", ""]}
+      rowLabel={(r) => r["Name"] ?? ""}
+      onImportRow={async (r) => {
+        const name = r["Name"]?.trim();
+        if (!name) throw new Error("Name is required");
+        const rawUnit = r["Unit (gram/kilogram/piece/carat)"]?.trim().toLowerCase();
+        const unit = UNITS.find((u) => u.value === rawUnit)?.value ?? "gram";
+        const purityLabelInput = r["Purity Label"]?.trim().toLowerCase();
+        const metalPurityId = purityLabelInput
+          ? purities?.find((p) => p.label.toLowerCase() === purityLabelInput)?._id
+          : undefined;
+        if (purityLabelInput && !metalPurityId) throw new Error(`No purity named "${r["Purity Label"]}" — check Settings > Metal Purity Configuration`);
+        const reorderLevelGrams = r["Reorder Level (g)"]?.trim();
+        await createProduct({
+          name,
+          sku: r["SKU"] || undefined,
+          unit,
+          metalPurityId,
+          hsnCode: r["HSN Code"] || undefined,
+          reorderLevelMg: reorderLevelGrams ? Math.round(Number(reorderLevelGrams) * 1000) : undefined,
+        });
+      }}
+    />
+  );
+}
 
 const NONE = "__none__";
 
@@ -229,7 +265,10 @@ export default function ProductsPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Products / Ornaments</h1>
           <p className="text-sm text-muted-foreground">{products?.length ?? 0} products</p>
         </div>
-        <CreateProductDialog />
+        <div className="flex gap-2">
+          <ImportProductsDialog purities={purities} />
+          <CreateProductDialog />
+        </div>
       </div>
 
       <div className="relative max-w-sm">

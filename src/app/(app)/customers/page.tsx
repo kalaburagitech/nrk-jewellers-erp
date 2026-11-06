@@ -36,8 +36,40 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { customerFormSchema, type CustomerFormValues } from "@/lib/schemas/party";
 import { rupeesToPaise } from "@/lib/money";
+
+const CUSTOMER_IMPORT_HEADERS = ["Name", "Phone", "Email", "Address", "GSTIN", "Type (cash/regular/credit)", "Credit Limit", "Notes"];
+
+function ImportCustomersDialog() {
+  const createCustomer = useMutation(api.customers.create);
+  return (
+    <ImportCsvDialog
+      title="Import customers"
+      templateFilename="customers-template"
+      templateHeaders={CUSTOMER_IMPORT_HEADERS}
+      templateExampleRow={["Ramesh Kumar", "9876543210", "", "MG Road, Kalaburagi", "", "regular", "", ""]}
+      rowLabel={(r) => r["Name"] ?? ""}
+      onImportRow={async (r) => {
+        const name = r["Name"]?.trim();
+        if (!name) throw new Error("Name is required");
+        const rawType = r["Type (cash/regular/credit)"]?.trim().toLowerCase();
+        const customerType = rawType === "cash" || rawType === "credit" ? rawType : "regular";
+        await createCustomer({
+          name,
+          phone: r["Phone"] || undefined,
+          email: r["Email"] || undefined,
+          address: r["Address"] || undefined,
+          gstin: r["GSTIN"] || undefined,
+          customerType,
+          creditLimitPaise: r["Credit Limit"] ? (rupeesToPaise(r["Credit Limit"]) ?? undefined) : undefined,
+          notes: r["Notes"] || undefined,
+        });
+      }}
+    />
+  );
+}
 
 const CUSTOMER_TYPE_LABEL: Record<string, string> = {
   cash: "Cash",
@@ -275,7 +307,10 @@ export default function CustomersPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Customer Directory</h1>
           <p className="text-sm text-muted-foreground">{customers?.length ?? 0} customers</p>
         </div>
-        <CreateCustomerDialog />
+        <div className="flex gap-2">
+          <ImportCustomersDialog />
+          <CreateCustomerDialog />
+        </div>
       </div>
 
       <div className="relative max-w-sm">

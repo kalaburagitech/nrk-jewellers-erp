@@ -28,8 +28,35 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { supplierFormSchema, type SupplierFormValues } from "@/lib/schemas/party";
 import { formatPaise } from "@/lib/money";
+
+const SUPPLIER_IMPORT_HEADERS = ["Name", "Phone", "Email", "Address", "GSTIN"];
+
+function ImportSuppliersDialog() {
+  const createSupplier = useMutation(api.suppliers.create);
+  return (
+    <ImportCsvDialog
+      title="Import suppliers"
+      templateFilename="suppliers-template"
+      templateHeaders={SUPPLIER_IMPORT_HEADERS}
+      templateExampleRow={["Bharat Bullion Suppliers", "9123456780", "", "Station Road, Kalaburagi", ""]}
+      rowLabel={(r) => r["Name"] ?? ""}
+      onImportRow={async (r) => {
+        const name = r["Name"]?.trim();
+        if (!name) throw new Error("Name is required");
+        await createSupplier({
+          name,
+          phone: r["Phone"] || undefined,
+          email: r["Email"] || undefined,
+          address: r["Address"] || undefined,
+          gstin: r["GSTIN"] || undefined,
+        });
+      }}
+    />
+  );
+}
 
 function CreateSupplierDialog() {
   const createSupplier = useMutation(api.suppliers.create);
@@ -179,7 +206,10 @@ export default function SuppliersPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Supplier Directory</h1>
           <p className="text-sm text-muted-foreground">{suppliers?.length ?? 0} suppliers</p>
         </div>
-        <CreateSupplierDialog />
+        <div className="flex gap-2">
+          <ImportSuppliersDialog />
+          <CreateSupplierDialog />
+        </div>
       </div>
 
       <div className="relative max-w-sm">
