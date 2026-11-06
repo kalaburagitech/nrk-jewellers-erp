@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Minus, Plus, Search, Trash2 } from "lucide-react";
+import { MessageCircle, Minus, Plus, Printer, Radio, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,6 +58,31 @@ type BillLine = {
   stoneChargeRupees: string;
   taxConfigurationId: string;
 };
+
+function MetalRateTicker({ currentRates }: { currentRates: { purity: Doc<"metalPurities">; latest: Doc<"metalRates"> | null }[] | undefined }) {
+  if (!currentRates || currentRates.length === 0) return null;
+  const withRates = currentRates.filter((r) => r.latest);
+  if (withRates.length === 0) return null;
+  const latestEffectiveAt = Math.max(...withRates.map((r) => r.latest!.effectiveAt));
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border border-border bg-muted/40 px-4 py-2 text-sm">
+      <span className="flex items-center gap-1 font-medium text-success">
+        <Radio className="h-3.5 w-3.5" />
+        LIVE
+      </span>
+      {withRates.map(({ purity, latest }) => (
+        <span key={purity._id}>
+          <span className="text-muted-foreground">{purity.label} {purity.metal === "gold" ? "Gold" : "Silver"}:</span>{" "}
+          <span className="font-semibold">{formatPaise(latest!.ratePerGramPaise)}/g</span>
+        </span>
+      ))}
+      <span className="ml-auto text-xs text-muted-foreground">
+        as of {new Date(latestEffectiveAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+      </span>
+    </div>
+  );
+}
 
 function BoxItemPicker({
   boxes,
@@ -154,7 +179,7 @@ export default function NewBillPage() {
   const createSale = useMutation(api.sales.create);
   const updateSale = useMutation(api.sales.update);
 
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
   const [isGst, setIsGst] = useState(true);
@@ -324,7 +349,23 @@ export default function NewBillPage() {
     };
   }, [computedLines, discountMode, discountValue, payments, oldGoldComputed]);
 
-  async function handleSave() {
+  /** Clears the form back to a blank bill so the operator can keep billing the next customer without leaving the page. */
+  function resetForm() {
+    setIdempotencyKey(crypto.randomUUID());
+    setBillDate(todayDateInput());
+    setCustomerId("");
+    setLines([]);
+    setDiscountMode("none");
+    setDiscountValue("");
+    setPayments([{ mode: "cash", amountRupees: "" }]);
+    setOldGoldEnabled(false);
+    setOldGoldPurityId("");
+    setOldGoldGrossGrams("");
+    setOldGoldMeltingPercent("");
+    setOldGoldRateRupees("");
+  }
+
+  async function finalizeSale(after: "view" | "print" | "printShare" | "new") {
     setServerError(null);
     if (!customerId) {
       setServerError("Select a customer.");
@@ -383,18 +424,27 @@ export default function NewBillPage() {
           billDate: dateInputToTimestamp(billDate),
         });
         router.push(`/sales/invoices?updated=${editSaleId}`);
+        return;
+      }
+
+      const result = await createSale({
+        customerId: customerId as Id<"customers">,
+        isGst,
+        items,
+        discountMode,
+        discountValue: discountValuePaiseOrBp,
+        payments: paymentSplits,
+        oldGoldExchange: oldGoldExchangeArg,
+        billDate: dateInputToTimestamp(billDate),
+        idempotencyKey,
+      });
+      if (after === "print") {
+        router.push(`/sales/invoices/${result.saleId}/print`);
+      } else if (after === "printShare") {
+        router.push(`/sales/invoices/${result.saleId}/print?autoShare=1`);
+      } else if (after === "new") {
+        resetForm();
       } else {
-        const result = await createSale({
-          customerId: customerId as Id<"customers">,
-          isGst,
-          items,
-          discountMode,
-          discountValue: discountValuePaiseOrBp,
-          payments: paymentSplits,
-          oldGoldExchange: oldGoldExchangeArg,
-          billDate: dateInputToTimestamp(billDate),
-          idempotencyKey,
-        });
         router.push(`/sales/invoices?created=${result.saleId}`);
       }
     } catch (e) {
@@ -407,6 +457,21 @@ export default function NewBillPage() {
       setSubmitting(false);
     }
   }
+
+  // F2/F3/F4 mirror the counter-staff shortcuts shops expect from billing software: print, save-and-move-to-next-customer, share.
+  useEffect(() => {
+    if (editSaleId) return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== "F2" && e.key !== "F3" && e.key !== "F4") return;
+      e.preventDefault();
+      if (submitting) return;
+      if (e.key === "F2") void finalizeSale("print");
+      else if (e.key === "F3") void finalizeSale("new");
+      else void finalizeSale("printShare");
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   if (!customers || !products || !boxes || !purities || !taxConfigs || (editSaleId && !prefilled)) {
     return (
@@ -432,6 +497,8 @@ export default function NewBillPage() {
             : "Pick items straight out of a box, see every charge live, and finalize the sale."}
         </p>
       </div>
+
+      <MetalRateTicker currentRates={currentRates} />
 
       <>
           <Card>
@@ -777,9 +844,25 @@ export default function NewBillPage() {
 
               {serverError && <p className="text-sm text-destructive">{serverError}</p>}
 
-              <Button onClick={handleSave} disabled={submitting} className="self-end">
-                {submitting ? "Saving…" : editSaleId ? "Save Changes" : "Save & Finalize Bill"}
-              </Button>
+              {editSaleId ? (
+                <Button onClick={() => finalizeSale("view")} disabled={submitting} className="self-end">
+                  {submitting ? "Saving…" : "Save Changes"}
+                </Button>
+              ) : (
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="outline" onClick={() => finalizeSale("print")} disabled={submitting}>
+                    <Printer className="h-4 w-4" />
+                    Print A5 Invoice <span className="text-muted-foreground">[F2]</span>
+                  </Button>
+                  <Button variant="outline" onClick={() => finalizeSale("printShare")} disabled={submitting}>
+                    <MessageCircle className="h-4 w-4" />
+                    WhatsApp Share <span className="text-muted-foreground">[F4]</span>
+                  </Button>
+                  <Button onClick={() => finalizeSale("new")} disabled={submitting}>
+                    {submitting ? "Saving…" : "Save and New"} <span className="opacity-70">[F3]</span>
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
       </>

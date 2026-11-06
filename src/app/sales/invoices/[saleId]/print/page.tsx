@@ -1,6 +1,7 @@
 "use client";
 
-import { use, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
 import { MapPin, MessageCircle, Phone, Printer } from "lucide-react";
@@ -63,10 +64,20 @@ async function renderInvoicePdf(node: HTMLElement, invoiceNumber: string) {
 
 export default function PrintInvoicePage({ params }: { params: Promise<{ saleId: string }> }) {
   const { saleId } = use(params);
+  const searchParams = useSearchParams();
+  const autoShare = searchParams.get("autoShare") === "1";
   const data = useQuery(api.sales.getInvoiceData, { saleId: saleId as Id<"sales"> });
   const [template, setTemplate] = useState<Template>("full-a4");
   const [sharing, setSharing] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
+  const shareButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Browsers only allow opening a share sheet / popup from a real user gesture, so coming here
+  // from the "WhatsApp Share [F4]" shortcut can't fire the share itself — it focuses the button
+  // instead, so one more Enter/click finishes what the shortcut started.
+  useEffect(() => {
+    if (autoShare && data) shareButtonRef.current?.focus();
+  }, [autoShare, data]);
 
   if (data === undefined) {
     return <p className="p-8 text-sm text-gray-500">Loading…</p>;
@@ -145,7 +156,13 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
           </SelectContent>
         </Select>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleShare} disabled={sharing} title="Shares the actual invoice PDF — opens your device's share sheet (WhatsApp, etc.)">
+          <Button
+            ref={shareButtonRef}
+            variant="outline"
+            onClick={handleShare}
+            disabled={sharing}
+            title="Shares the actual invoice PDF — opens your device's share sheet (WhatsApp, etc.)"
+          >
             <MessageCircle className="h-4 w-4" />
             {sharing ? "Preparing PDF…" : "Share via WhatsApp"}
           </Button>
