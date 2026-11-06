@@ -30,6 +30,7 @@ export type PurchaseLineFormValues = z.infer<typeof purchaseLineFormSchema>;
 
 export const purchaseFormSchema = z.object({
   supplierId: z.string().min(1, "Select a supplier"),
+  billDate: z.string().min(1, "Select a bill date"),
   gstPercent: nonNegativeNumberString("Invalid GST percentage"),
   amountPaidRupees: nonNegativeNumberString("Invalid amount"),
   paymentMode: z.enum(["cash", "upi", "card", "cheque", "bank_transfer"]).optional(),

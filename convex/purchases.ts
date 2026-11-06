@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireAuthContext, requireRole } from "./lib/auth";
+import type { MutationCtx } from "./_generated/server";
+import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computePurchaseLine } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -29,6 +30,26 @@ export const getItems = query({
       .query("purchaseItems")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
       .collect();
+  },
+});
+
+/** The purchase, its items and its payment (if any) in one query — what the edit form needs to prefill. */
+export const getForEdit = query({
+  args: { purchaseId: v.id("purchases") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const purchase = await ctx.db.get(args.purchaseId);
+    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    const items = await ctx.db
+      .query("purchaseItems")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
+      .collect();
+    const payment = await ctx.db
+      .query("payments")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.and(q.eq(q.field("sourceTable"), "purchases"), q.eq(q.field("sourceId"), args.purchaseId)))
+      .first();
+    return { purchase, items, payment };
   },
 });
 
@@ -113,6 +134,219 @@ const purchaseLineValidator = v.object({
   stoneChargePaise: v.number(),
 });
 
+type PurchaseTransactionArgs = {
+  supplierId: Id<"suppliers">;
+  items: Array<{
+    productId: Id<"products">;
+    boxId: Id<"boxes">;
+    label: string;
+    metalPurityId?: Id<"metalPurities">;
+    grossWeightMg: number;
+    stoneWeightMg: number;
+    ratePerGramPaise: number;
+    makingChargePaise: number;
+    stoneChargePaise: number;
+  }>;
+  taxPaise: number;
+  amountPaidPaise: number;
+  paymentMode?: "cash" | "upi" | "card" | "cheque" | "bank_transfer";
+};
+
+/**
+ * Validates, computes and writes every effect of a purchase invoice (new
+ * box items, stock, supplier ledger, payment) onto an already-existing
+ * `purchases` row. Shared by `create` (row just inserted, blank) and
+ * `update` (row's prior effects already reversed).
+ */
+async function applyPurchaseTransaction(
+  ctx: MutationCtx,
+  auth: AuthContext,
+  purchaseId: Id<"purchases">,
+  args: PurchaseTransactionArgs,
+  billDate: number,
+) {
+  if (args.items.length === 0) throw new Error("At least one item is required");
+
+  const supplier = await ctx.db.get(args.supplierId);
+  if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
+
+  const boxes = new Map<Id<"boxes">, { itemCount?: number }>();
+  for (const item of args.items) {
+    if (item.grossWeightMg <= 0) throw new Error("Gross weight must be greater than zero");
+    if (item.stoneWeightMg < 0 || item.stoneWeightMg > item.grossWeightMg) {
+      throw new Error("Stone weight must be between 0 and gross weight");
+    }
+    if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
+    const box = await ctx.db.get(item.boxId);
+    if (!box || box.organizationId !== auth.organizationId) throw new Error("Box not found");
+    boxes.set(item.boxId, box);
+    const product = await ctx.db.get(item.productId);
+    if (!product || product.organizationId !== auth.organizationId) throw new Error("Product not found");
+  }
+
+  const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
+  const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
+  const totalPaise = subtotalPaise + args.taxPaise;
+
+  if (args.amountPaidPaise < 0 || args.amountPaidPaise > totalPaise) {
+    throw new Error("Amount paid must be between 0 and the invoice total");
+  }
+  if (args.amountPaidPaise > 0 && !args.paymentMode) {
+    throw new Error("Payment mode is required when recording a payment");
+  }
+
+  await ctx.db.patch(purchaseId, {
+    supplierId: args.supplierId,
+    subtotalPaise,
+    taxPaise: args.taxPaise,
+    totalPaise,
+    amountPaidPaise: args.amountPaidPaise,
+    createdAt: billDate,
+  });
+
+  const boxItemDeltas = new Map<Id<"boxes">, number>();
+  for (const { item, computed } of computedLines) {
+    boxItemDeltas.set(item.boxId, (boxItemDeltas.get(item.boxId) ?? 0) + 1);
+    const boxItemId = await ctx.db.insert("boxItems", {
+      organizationId: auth.organizationId,
+      boxId: item.boxId,
+      productId: item.productId,
+      label: item.label,
+      grossWeightMg: item.grossWeightMg,
+      stoneWeightMg: item.stoneWeightMg,
+      netWeightMg: computed.netWeightMg,
+      status: "in_stock",
+      createdAt: billDate,
+    });
+
+    await ctx.db.insert("purchaseItems", {
+      organizationId: auth.organizationId,
+      purchaseId,
+      productId: item.productId,
+      boxId: item.boxId,
+      boxItemId,
+      metalPurityId: item.metalPurityId,
+      label: item.label,
+      grossWeightMg: item.grossWeightMg,
+      stoneWeightMg: item.stoneWeightMg,
+      netWeightMg: computed.netWeightMg,
+      ratePerGramPaise: item.ratePerGramPaise,
+      makingChargePaise: item.makingChargePaise,
+      stoneChargePaise: item.stoneChargePaise,
+      lineTotalPaise: computed.lineTotalPaise,
+    });
+
+    await ctx.db.insert("stockMovements", {
+      organizationId: auth.organizationId,
+      productId: item.productId,
+      boxItemId,
+      direction: "in",
+      netWeightMg: computed.netWeightMg,
+      quantity: 1,
+      sourceTable: "purchases",
+      sourceId: purchaseId,
+      createdAt: billDate,
+    });
+  }
+
+  for (const [boxId, delta] of boxItemDeltas) {
+    const box = boxes.get(boxId);
+    await ctx.db.patch(boxId, { itemCount: (box?.itemCount ?? 0) + delta });
+  }
+
+  const priorBalance = supplier.currentBalancePaise ?? supplier.openingBalancePaise;
+  const newBalance = priorBalance + totalPaise - args.amountPaidPaise;
+
+  await ctx.db.insert("supplierLedgerEntries", {
+    organizationId: auth.organizationId,
+    supplierId: args.supplierId,
+    sourceTable: "purchases",
+    sourceId: purchaseId,
+    debitPaise: args.amountPaidPaise,
+    creditPaise: totalPaise,
+    balancePaise: newBalance,
+    createdAt: billDate,
+  });
+  await ctx.db.patch(args.supplierId, { currentBalancePaise: newBalance });
+
+  if (args.amountPaidPaise > 0 && args.paymentMode) {
+    await ctx.db.insert("payments", {
+      organizationId: auth.organizationId,
+      direction: "payment",
+      partyType: "supplier",
+      partyId: args.supplierId,
+      sourceTable: "purchases",
+      sourceId: purchaseId,
+      mode: args.paymentMode,
+      amountPaise: args.amountPaidPaise,
+      createdByUserId: auth.userId,
+      createdAt: billDate,
+    });
+  }
+
+  return { totalPaise, itemCount: args.items.length };
+}
+
+/**
+ * Reverses every effect a prior applyPurchaseTransaction wrote: deletes the
+ * box items it created (only safe because `update` refuses to run this
+ * unless every one of them is still physically in stock — see `update`),
+ * offsets the supplier ledger, and removes the old payment row.
+ */
+async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, purchase: Doc<"purchases">) {
+  const purchaseItems = await ctx.db
+    .query("purchaseItems")
+    .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+    .collect();
+
+  const boxDeltas = new Map<Id<"boxes">, number>();
+  for (const item of purchaseItems) {
+    if (item.boxItemId && item.boxId) {
+      await ctx.db.delete(item.boxItemId);
+      boxDeltas.set(item.boxId, (boxDeltas.get(item.boxId) ?? 0) + 1);
+      await ctx.db.insert("stockMovements", {
+        organizationId: auth.organizationId,
+        productId: item.productId,
+        direction: "out",
+        netWeightMg: item.netWeightMg,
+        quantity: 1,
+        sourceTable: "purchases",
+        sourceId: purchase._id,
+        createdAt: Date.now(),
+      });
+    }
+    await ctx.db.delete(item._id);
+  }
+  for (const [boxId, delta] of boxDeltas) {
+    const box = await ctx.db.get(boxId);
+    if (box) await ctx.db.patch(boxId, { itemCount: Math.max(0, (box.itemCount ?? 0) - delta) });
+  }
+
+  const supplier = await ctx.db.get(purchase.supplierId);
+  if (supplier) {
+    const priorBalance = supplier.currentBalancePaise ?? supplier.openingBalancePaise;
+    const revertedBalance = priorBalance - purchase.totalPaise + purchase.amountPaidPaise;
+    await ctx.db.insert("supplierLedgerEntries", {
+      organizationId: auth.organizationId,
+      supplierId: purchase.supplierId,
+      sourceTable: "purchases",
+      sourceId: purchase._id,
+      debitPaise: purchase.totalPaise,
+      creditPaise: purchase.amountPaidPaise,
+      balancePaise: revertedBalance,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(purchase.supplierId, { currentBalancePaise: revertedBalance });
+  }
+
+  const oldPayments = await ctx.db
+    .query("payments")
+    .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+    .filter((q) => q.and(q.eq(q.field("sourceTable"), "purchases"), q.eq(q.field("sourceId"), purchase._id)))
+    .collect();
+  for (const payment of oldPayments) await ctx.db.delete(payment._id);
+}
+
 export const create = mutation({
   args: {
     supplierId: v.id("suppliers"),
@@ -122,13 +356,12 @@ export const create = mutation({
     paymentMode: v.optional(
       v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
     ),
+    billDate: v.optional(v.number()),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["purchase_manager"]);
-
-    if (args.items.length === 0) throw new Error("At least one item is required");
 
     const existing = await ctx.db
       .query("purchases")
@@ -138,37 +371,9 @@ export const create = mutation({
       .first();
     if (existing) return { purchaseId: existing._id, duplicate: true };
 
-    const supplier = await ctx.db.get(args.supplierId);
-    if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
-
-    const boxes = new Map<Id<"boxes">, { itemCount?: number }>();
-    for (const item of args.items) {
-      if (item.grossWeightMg <= 0) throw new Error("Gross weight must be greater than zero");
-      if (item.stoneWeightMg < 0 || item.stoneWeightMg > item.grossWeightMg) {
-        throw new Error("Stone weight must be between 0 and gross weight");
-      }
-      if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
-      const box = await ctx.db.get(item.boxId);
-      if (!box || box.organizationId !== auth.organizationId) throw new Error("Box not found");
-      boxes.set(item.boxId, box);
-      const product = await ctx.db.get(item.productId);
-      if (!product || product.organizationId !== auth.organizationId) throw new Error("Product not found");
-    }
-
-    const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
-    const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
-    const totalPaise = subtotalPaise + args.taxPaise;
-
-    if (args.amountPaidPaise < 0 || args.amountPaidPaise > totalPaise) {
-      throw new Error("Amount paid must be between 0 and the invoice total");
-    }
-    if (args.amountPaidPaise > 0 && !args.paymentMode) {
-      throw new Error("Payment mode is required when recording a payment");
-    }
-
     const branchId = await resolveBranchId(ctx, auth.organizationId, auth.branchId);
     const invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "purchase_invoice", "PINV-");
-    const now = Date.now();
+    const billDate = args.billDate ?? Date.now();
 
     const purchaseId = await ctx.db.insert("purchases", {
       organizationId: auth.organizationId,
@@ -177,94 +382,16 @@ export const create = mutation({
       invoiceNumber,
       documentType: "purchase_invoice",
       status: "finalized",
-      subtotalPaise,
-      taxPaise: args.taxPaise,
-      totalPaise,
-      amountPaidPaise: args.amountPaidPaise,
+      subtotalPaise: 0,
+      taxPaise: 0,
+      totalPaise: 0,
+      amountPaidPaise: 0,
       idempotencyKey: args.idempotencyKey,
       createdByUserId: auth.userId,
-      createdAt: now,
+      createdAt: billDate,
     });
 
-    const boxItemDeltas = new Map<Id<"boxes">, number>();
-    for (const { item, computed } of computedLines) {
-      boxItemDeltas.set(item.boxId, (boxItemDeltas.get(item.boxId) ?? 0) + 1);
-      const boxItemId = await ctx.db.insert("boxItems", {
-        organizationId: auth.organizationId,
-        boxId: item.boxId,
-        productId: item.productId,
-        label: item.label,
-        grossWeightMg: item.grossWeightMg,
-        stoneWeightMg: item.stoneWeightMg,
-        netWeightMg: computed.netWeightMg,
-        status: "in_stock",
-        createdAt: now,
-      });
-
-      await ctx.db.insert("purchaseItems", {
-        organizationId: auth.organizationId,
-        purchaseId,
-        productId: item.productId,
-        boxId: item.boxId,
-        boxItemId,
-        metalPurityId: item.metalPurityId,
-        label: item.label,
-        grossWeightMg: item.grossWeightMg,
-        stoneWeightMg: item.stoneWeightMg,
-        netWeightMg: computed.netWeightMg,
-        ratePerGramPaise: item.ratePerGramPaise,
-        makingChargePaise: item.makingChargePaise,
-        stoneChargePaise: item.stoneChargePaise,
-        lineTotalPaise: computed.lineTotalPaise,
-      });
-
-      await ctx.db.insert("stockMovements", {
-        organizationId: auth.organizationId,
-        productId: item.productId,
-        boxItemId,
-        direction: "in",
-        netWeightMg: computed.netWeightMg,
-        quantity: 1,
-        sourceTable: "purchases",
-        sourceId: purchaseId,
-        createdAt: now,
-      });
-    }
-
-    for (const [boxId, delta] of boxItemDeltas) {
-      const box = boxes.get(boxId);
-      await ctx.db.patch(boxId, { itemCount: (box?.itemCount ?? 0) + delta });
-    }
-
-    const priorBalance = supplier.currentBalancePaise ?? supplier.openingBalancePaise;
-    const newBalance = priorBalance + totalPaise - args.amountPaidPaise;
-
-    await ctx.db.insert("supplierLedgerEntries", {
-      organizationId: auth.organizationId,
-      supplierId: args.supplierId,
-      sourceTable: "purchases",
-      sourceId: purchaseId,
-      debitPaise: args.amountPaidPaise,
-      creditPaise: totalPaise,
-      balancePaise: newBalance,
-      createdAt: now,
-    });
-    await ctx.db.patch(args.supplierId, { currentBalancePaise: newBalance });
-
-    if (args.amountPaidPaise > 0 && args.paymentMode) {
-      await ctx.db.insert("payments", {
-        organizationId: auth.organizationId,
-        direction: "payment",
-        partyType: "supplier",
-        partyId: args.supplierId,
-        sourceTable: "purchases",
-        sourceId: purchaseId,
-        mode: args.paymentMode,
-        amountPaise: args.amountPaidPaise,
-        createdByUserId: auth.userId,
-        createdAt: now,
-      });
-    }
+    const result = await applyPurchaseTransaction(ctx, auth, purchaseId, args, billDate);
 
     await ctx.db.insert("auditLogs", {
       organizationId: auth.organizationId,
@@ -272,11 +399,69 @@ export const create = mutation({
       action: "purchase.create",
       entityTable: "purchases",
       entityId: purchaseId,
-      metadata: { invoiceNumber, totalPaise, itemCount: args.items.length },
-      createdAt: now,
+      metadata: { invoiceNumber, totalPaise: result.totalPaise, itemCount: result.itemCount },
+      createdAt: Date.now(),
     });
 
     return { purchaseId, duplicate: false };
+  },
+});
+
+/**
+ * Owner/Admin only: edits an already-finalized purchase invoice. Refuses to
+ * run if any item it received has already left stock (sold/transferred/
+ * written off) — deleting and recreating that box item would silently
+ * orphan whatever later transaction referenced it.
+ */
+export const update = mutation({
+  args: {
+    purchaseId: v.id("purchases"),
+    supplierId: v.id("suppliers"),
+    items: v.array(purchaseLineValidator),
+    taxPaise: v.number(),
+    amountPaidPaise: v.number(),
+    paymentMode: v.optional(
+      v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
+    ),
+    billDate: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+
+    const purchase = await ctx.db.get(args.purchaseId);
+    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if ((purchase.documentType ?? "purchase_invoice") !== "purchase_invoice") {
+      throw new Error("Only a finalized purchase invoice can be edited");
+    }
+    if (purchase.status !== "finalized") throw new Error("Cannot edit a cancelled invoice");
+
+    const existingItems = await ctx.db
+      .query("purchaseItems")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+      .collect();
+    for (const item of existingItems) {
+      if (!item.boxItemId) continue;
+      const boxItem = await ctx.db.get(item.boxItemId);
+      if (boxItem && boxItem.status !== "in_stock") {
+        throw new Error(`"${boxItem.label}" has already left stock — this invoice can no longer be edited`);
+      }
+    }
+
+    await reversePurchaseTransaction(ctx, auth, purchase);
+    const result = await applyPurchaseTransaction(ctx, auth, args.purchaseId, args, args.billDate);
+
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "purchase.update",
+      entityTable: "purchases",
+      entityId: args.purchaseId,
+      metadata: { invoiceNumber: purchase.invoiceNumber, totalPaise: result.totalPaise, itemCount: result.itemCount },
+      createdAt: Date.now(),
+    });
+
+    return { purchaseId: args.purchaseId };
   },
 });
 

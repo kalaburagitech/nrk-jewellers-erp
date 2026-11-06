@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Plus, Printer, Receipt } from "lucide-react";
+import { Pencil, Plus, Printer, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,18 +18,30 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: () => void }) {
   const items = useQuery(api.sales.getItems, { saleId });
   const oldGoldExchange = useQuery(api.sales.getOldGoldExchange, { saleId });
+  const access = useQuery(api.organizations.getMyAccess);
+  const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Sale items</DialogTitle>
-          <Button variant="outline" size="sm" asChild>
-            <Link href={`/sales/invoices/${saleId}/print`} target="_blank">
-              <Printer className="h-4 w-4" />
-              Print / Share
-            </Link>
-          </Button>
+          <div className="flex gap-2">
+            {canEdit && (
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/sales/new?edit=${saleId}`}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Link>
+              </Button>
+            )}
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/sales/invoices/${saleId}/print`} target="_blank">
+                <Printer className="h-4 w-4" />
+                Print / Share
+              </Link>
+            </Button>
+          </div>
         </DialogHeader>
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>

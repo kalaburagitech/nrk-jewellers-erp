@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Minus, Plus, Search, Trash2 } from "lucide-react";
@@ -32,6 +32,17 @@ const PAYMENT_MODES = [
 ] as const;
 
 type PaymentMode = (typeof PAYMENT_MODES)[number]["value"];
+
+/** Bill dates are a plain calendar day, stored/compared as UTC midnight — matches the dashboard's "UTC calendar day" convention for daily totals. */
+function todayDateInput(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+function timestampToDateInput(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+function dateInputToTimestamp(value: string): number {
+  return new Date(`${value}T00:00:00.000Z`).getTime();
+}
 
 type BillLine = {
   boxItemId: Id<"boxItems">;
@@ -130,6 +141,10 @@ function BoxItemPicker({
 
 export default function NewBillPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editSaleId = searchParams.get("edit") as Id<"sales"> | null;
+  const existingSale = useQuery(api.sales.getInvoiceData, editSaleId ? { saleId: editSaleId } : "skip");
+
   const customers = useQuery(api.customers.list);
   const products = useQuery(api.products.list);
   const boxes = useQuery(api.boxes.list);
@@ -137,8 +152,10 @@ export default function NewBillPage() {
   const taxConfigs = useQuery(api.taxConfigurations.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
   const createSale = useMutation(api.sales.create);
+  const updateSale = useMutation(api.sales.update);
 
   const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
   const [isGst, setIsGst] = useState(true);
   const [lines, setLines] = useState<BillLine[]>([]);
@@ -154,6 +171,56 @@ export default function NewBillPage() {
   const [oldGoldRateRupees, setOldGoldRateRupees] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
+
+  // One-time prefill once the existing invoice loads, in edit mode — guarded
+  // by `prefilled` so it never re-runs after the user starts editing.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!editSaleId || !existingSale || prefilled) return;
+    const { sale, items, oldGoldExchange, payments: existingPayments } = existingSale;
+    setBillDate(timestampToDateInput(sale.createdAt));
+    setCustomerId(sale.customerId);
+    setIsGst(sale.isGst);
+    setLines(
+      items.map((item) => ({
+        boxItemId: item.boxItemId as Id<"boxItems">,
+        label: item.label,
+        productName: item.productName,
+        grossWeightMg: item.grossWeightMg,
+        stoneWeightMg: item.stoneWeightMg,
+        metalPurityId: item.metalPurityId ?? "",
+        otherDeductionGrams: item.otherDeductionMg ? (item.otherDeductionMg / 1000).toFixed(3) : "",
+        ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
+        wastagePercent: item.wastageBasisPoints ? (item.wastageBasisPoints / 100).toFixed(2) : "",
+        makingChargeRupees: item.makingChargePaise ? (item.makingChargePaise / 100).toFixed(2) : "",
+        stoneChargeRupees: item.stoneChargePaise ? (item.stoneChargePaise / 100).toFixed(2) : "",
+        taxConfigurationId: item.taxConfigurationId ?? "",
+      })),
+    );
+    if (sale.discountPaise > 0) {
+      setDiscountMode("fixed");
+      setDiscountValue((sale.discountPaise / 100).toFixed(2));
+    }
+    const nonExchangePayments = existingPayments.filter((p) => p.mode !== "old_gold_exchange");
+    if (nonExchangePayments.length > 0) {
+      setPayments(
+        nonExchangePayments.map((p) => ({
+          mode: p.mode as PaymentMode,
+          amountRupees: (p.amountPaise / 100).toFixed(2),
+        })),
+      );
+    }
+    if (oldGoldExchange) {
+      setOldGoldEnabled(true);
+      setOldGoldPurityId(oldGoldExchange.metalPurityId);
+      setOldGoldGrossGrams((oldGoldExchange.grossWeightMg / 1000).toFixed(3));
+      setOldGoldMeltingPercent((oldGoldExchange.meltingDeductionBasisPoints / 100).toFixed(2));
+      setOldGoldRateRupees((oldGoldExchange.ratePerGramPaise / 100).toFixed(2));
+    }
+    setPrefilled(true);
+  }, [editSaleId, existingSale, prefilled]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const productById = useMemo(() => {
     const map = new Map<string, Doc<"products">>();
@@ -273,54 +340,79 @@ export default function NewBillPage() {
     }
     setSubmitting(true);
     try {
-      const result = await createSale({
-        customerId: customerId as Id<"customers">,
-        isGst,
-        items: lines.map((line) => ({
-          boxItemId: line.boxItemId,
-          metalPurityId: line.metalPurityId ? (line.metalPurityId as Id<"metalPurities">) : undefined,
-          otherDeductionMg: Math.round(Number(line.otherDeductionGrams || "0") * 1000) || 0,
-          ratePerGramPaise: rupeesToPaise(line.ratePerGramRupees || "0") ?? 0,
-          wastageBasisPoints: percentToBasisPoints(line.wastagePercent || "0") ?? 0,
-          makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
-          stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
-          taxConfigurationId:
-            isGst && line.taxConfigurationId ? (line.taxConfigurationId as Id<"taxConfigurations">) : undefined,
-        })),
-        discountMode,
-        discountValue:
-          discountMode === "percent"
-            ? percentToBasisPoints(discountValue || "0") ?? 0
-            : discountMode === "fixed"
-              ? rupeesToPaise(discountValue || "0") ?? 0
-              : 0,
-        payments: payments
-          .filter((p) => Number(p.amountRupees) > 0)
-          .map((p) => ({ mode: p.mode, amountPaise: rupeesToPaise(p.amountRupees) ?? 0 })),
-        oldGoldExchange:
-          oldGoldEnabled && oldGoldPurityId
-            ? {
-                metalPurityId: oldGoldPurityId as Id<"metalPurities">,
-                grossWeightMg: gramsToMg(oldGoldGrossGrams || "0"),
-                meltingDeductionBasisPoints: percentToBasisPoints(oldGoldMeltingPercent || "0") ?? 0,
-                ratePerGramPaise: rupeesToPaise(oldGoldRateRupees || "0") ?? 0,
-              }
-            : undefined,
-        idempotencyKey,
-      });
-      router.push(`/sales/invoices?created=${result.saleId}`);
-    } catch {
-      setServerError("Could not save the bill. You may need Billing Operator access, or an item may already be sold.");
+      const items = lines.map((line) => ({
+        boxItemId: line.boxItemId,
+        metalPurityId: line.metalPurityId ? (line.metalPurityId as Id<"metalPurities">) : undefined,
+        otherDeductionMg: Math.round(Number(line.otherDeductionGrams || "0") * 1000) || 0,
+        ratePerGramPaise: rupeesToPaise(line.ratePerGramRupees || "0") ?? 0,
+        wastageBasisPoints: percentToBasisPoints(line.wastagePercent || "0") ?? 0,
+        makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
+        stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
+        taxConfigurationId:
+          isGst && line.taxConfigurationId ? (line.taxConfigurationId as Id<"taxConfigurations">) : undefined,
+      }));
+      const discountValuePaiseOrBp =
+        discountMode === "percent"
+          ? percentToBasisPoints(discountValue || "0") ?? 0
+          : discountMode === "fixed"
+            ? rupeesToPaise(discountValue || "0") ?? 0
+            : 0;
+      const paymentSplits = payments
+        .filter((p) => Number(p.amountRupees) > 0)
+        .map((p) => ({ mode: p.mode, amountPaise: rupeesToPaise(p.amountRupees) ?? 0 }));
+      const oldGoldExchangeArg =
+        oldGoldEnabled && oldGoldPurityId
+          ? {
+              metalPurityId: oldGoldPurityId as Id<"metalPurities">,
+              grossWeightMg: gramsToMg(oldGoldGrossGrams || "0"),
+              meltingDeductionBasisPoints: percentToBasisPoints(oldGoldMeltingPercent || "0") ?? 0,
+              ratePerGramPaise: rupeesToPaise(oldGoldRateRupees || "0") ?? 0,
+            }
+          : undefined;
+
+      if (editSaleId) {
+        await updateSale({
+          saleId: editSaleId,
+          customerId: customerId as Id<"customers">,
+          isGst,
+          items,
+          discountMode,
+          discountValue: discountValuePaiseOrBp,
+          payments: paymentSplits,
+          oldGoldExchange: oldGoldExchangeArg,
+          billDate: dateInputToTimestamp(billDate),
+        });
+        router.push(`/sales/invoices?updated=${editSaleId}`);
+      } else {
+        const result = await createSale({
+          customerId: customerId as Id<"customers">,
+          isGst,
+          items,
+          discountMode,
+          discountValue: discountValuePaiseOrBp,
+          payments: paymentSplits,
+          oldGoldExchange: oldGoldExchangeArg,
+          billDate: dateInputToTimestamp(billDate),
+          idempotencyKey,
+        });
+        router.push(`/sales/invoices?created=${result.saleId}`);
+      }
+    } catch (e) {
+      setServerError(
+        e instanceof Error
+          ? e.message
+          : "Could not save the bill. You may need Billing Operator access, or an item may already be sold.",
+      );
     } finally {
       setSubmitting(false);
     }
   }
 
-  if (!customers || !products || !boxes || !purities || !taxConfigs) {
+  if (!customers || !products || !boxes || !purities || !taxConfigs || (editSaleId && !prefilled)) {
     return (
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">New Bill</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
           <p className="text-sm text-muted-foreground">
             Pick items straight out of a box, see every charge live, and finalize the sale.
           </p>
@@ -333,9 +425,11 @@ export default function NewBillPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">New Bill</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
         <p className="text-sm text-muted-foreground">
-          Pick items straight out of a box, see every charge live, and finalize the sale.
+          {editSaleId
+            ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
+            : "Pick items straight out of a box, see every charge live, and finalize the sale."}
         </p>
       </div>
 
@@ -351,21 +445,33 @@ export default function NewBillPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="max-w-sm">
-                <Label className="mb-2 block">Customer</Label>
-                <Select value={customerId} onValueChange={setCustomerId}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customers?.map((c) => (
-                      <SelectItem key={c._id} value={c._id}>
-                        {c.name}
-                        {c.phone ? ` · ${c.phone}` : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="flex flex-wrap gap-4">
+                <div className="max-w-sm flex-1">
+                  <Label className="mb-2 block">Customer</Label>
+                  <Select value={customerId} onValueChange={setCustomerId}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select customer" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customers?.map((c) => (
+                        <SelectItem key={c._id} value={c._id}>
+                          {c.name}
+                          {c.phone ? ` · ${c.phone}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="mb-2 block">Bill date</Label>
+                  <Input
+                    type="date"
+                    className="w-44"
+                    value={billDate}
+                    max={todayDateInput()}
+                    onChange={(e) => setBillDate(e.target.value)}
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -672,7 +778,7 @@ export default function NewBillPage() {
               {serverError && <p className="text-sm text-destructive">{serverError}</p>}
 
               <Button onClick={handleSave} disabled={submitting} className="self-end">
-                {submitting ? "Saving…" : "Save & Finalize Bill"}
+                {submitting ? "Saving…" : editSaleId ? "Save Changes" : "Save & Finalize Bill"}
               </Button>
             </CardContent>
           </Card>

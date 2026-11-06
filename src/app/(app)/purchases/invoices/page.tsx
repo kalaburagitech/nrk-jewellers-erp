@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Plus, Receipt } from "lucide-react";
+import { Pencil, Plus, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,12 +17,22 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 
 function PurchaseDetailDialog({ purchaseId, onClose }: { purchaseId: Id<"purchases">; onClose: () => void }) {
   const items = useQuery(api.purchases.getItems, { purchaseId });
+  const access = useQuery(api.organizations.getMyAccess);
+  const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Purchase items</DialogTitle>
+          {canEdit && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/purchases/new?edit=${purchaseId}`}>
+                <Pencil className="h-4 w-4" />
+                Edit
+              </Link>
+            </Button>
+          )}
         </DialogHeader>
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>

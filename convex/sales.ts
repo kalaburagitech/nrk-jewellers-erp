@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireAuthContext, requireRole } from "./lib/auth";
+import type { MutationCtx } from "./_generated/server";
+import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf, roundOffToRupee } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -179,6 +180,319 @@ const oldGoldExchangeValidator = v.object({
   ratePerGramPaise: v.number(),
 });
 
+type SaleTransactionArgs = {
+  customerId: Id<"customers">;
+  isGst: boolean;
+  items: Array<{
+    boxItemId: Id<"boxItems">;
+    metalPurityId?: Id<"metalPurities">;
+    otherDeductionMg: number;
+    ratePerGramPaise: number;
+    wastageBasisPoints: number;
+    makingChargePaise: number;
+    stoneChargePaise: number;
+    taxConfigurationId?: Id<"taxConfigurations">;
+  }>;
+  discountMode: "percent" | "fixed" | "none";
+  discountValue: number;
+  payments: Array<{ mode: Doc<"payments">["mode"]; amountPaise: number }>;
+  oldGoldExchange?: {
+    metalPurityId: Id<"metalPurities">;
+    grossWeightMg: number;
+    meltingDeductionBasisPoints: number;
+    ratePerGramPaise: number;
+  };
+};
+
+/**
+ * Validates, computes and writes every effect of a sale (items, stock,
+ * customer ledger, payments, old gold exchange) onto an already-existing
+ * `sales` row. Shared by `create` (row just inserted, blank) and `update`
+ * (row's prior effects already reversed) so the two can never drift apart.
+ */
+async function applySaleTransaction(
+  ctx: MutationCtx,
+  auth: AuthContext,
+  saleId: Id<"sales">,
+  args: SaleTransactionArgs,
+  billDate: number,
+) {
+  if (args.items.length === 0) throw new Error("At least one item is required");
+
+  const customer = await ctx.db.get(args.customerId);
+  if (!customer || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
+
+  // Resolve + lock in every box item up front: must exist, belong to this
+  // org, and still be in stock — prevents selling the same physical item
+  // twice under concurrent billing.
+  const taxConfigs = new Map<Id<"taxConfigurations">, number>();
+  const computedLines: Array<{
+    item: SaleTransactionArgs["items"][number];
+    boxItem: Doc<"boxItems">;
+    computed: ReturnType<typeof computeSaleLine>;
+  }> = [];
+
+  for (const item of args.items) {
+    if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
+    const boxItem = await ctx.db.get(item.boxItemId);
+    if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);
+
+    let gstBasisPoints = 0;
+    if (args.isGst && item.taxConfigurationId) {
+      if (!taxConfigs.has(item.taxConfigurationId)) {
+        const config = await ctx.db.get(item.taxConfigurationId);
+        if (!config || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
+        taxConfigs.set(item.taxConfigurationId, config.cgstBasisPoints + config.sgstBasisPoints + config.igstBasisPoints);
+      }
+      gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
+    }
+
+    const computed = computeSaleLine({
+      grossWeightMg: boxItem.grossWeightMg,
+      stoneWeightMg: boxItem.stoneWeightMg,
+      otherDeductionMg: item.otherDeductionMg,
+      ratePerGramPaise: item.ratePerGramPaise,
+      wastageBasisPoints: item.wastageBasisPoints,
+      makingChargePaise: item.makingChargePaise,
+      stoneChargePaise: item.stoneChargePaise,
+      gstBasisPoints,
+    });
+    computedLines.push({ item, boxItem, computed });
+  }
+
+  let oldGoldComputed: ReturnType<typeof computeOldGoldExchange> | null = null;
+  if (args.oldGoldExchange) {
+    const { metalPurityId, grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise } = args.oldGoldExchange;
+    if (grossWeightMg <= 0) throw new Error("Old gold weight must be greater than zero");
+    if (meltingDeductionBasisPoints < 0 || meltingDeductionBasisPoints > 10000) {
+      throw new Error("Melting deduction must be between 0 and 100%");
+    }
+    if (ratePerGramPaise <= 0) throw new Error("Old gold rate must be greater than zero");
+    const purity = await ctx.db.get(metalPurityId);
+    if (!purity || purity.organizationId !== auth.organizationId) throw new Error("Metal purity not found");
+    oldGoldComputed = computeOldGoldExchange({ grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise });
+  }
+
+  const itemsSubtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.taxableValuePaise, 0);
+  const itemsTaxPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTaxPaise, 0);
+
+  let discountPaise = 0;
+  if (args.discountMode === "percent") {
+    discountPaise = basisPointsOf(itemsSubtotalPaise, args.discountValue);
+  } else if (args.discountMode === "fixed") {
+    discountPaise = Math.max(0, args.discountValue);
+  }
+  discountPaise = Math.min(discountPaise, itemsSubtotalPaise);
+
+  const preRoundTotal = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
+  const { roundedTotalPaise, roundOffPaise } = roundOffToRupee(preRoundTotal);
+
+  const paymentsTotalPaise = args.payments.reduce((sum, p) => sum + p.amountPaise, 0);
+  const amountPaidPaise = paymentsTotalPaise + (oldGoldComputed?.exchangeValuePaise ?? 0);
+  if (amountPaidPaise < 0 || amountPaidPaise > roundedTotalPaise) {
+    throw new Error("Total payments (including any old gold exchange) cannot exceed the invoice total");
+  }
+  for (const p of args.payments) {
+    if (p.amountPaise <= 0) throw new Error("Each payment split must be greater than zero");
+  }
+
+  await ctx.db.patch(saleId, {
+    customerId: args.customerId,
+    isGst: args.isGst,
+    subtotalPaise: itemsSubtotalPaise,
+    discountPaise,
+    taxPaise: itemsTaxPaise,
+    roundOffPaise,
+    totalPaise: roundedTotalPaise,
+    amountPaidPaise,
+    createdAt: billDate,
+  });
+
+  const boxDeltas = new Map<Id<"boxes">, number>();
+  for (const { item, boxItem, computed } of computedLines) {
+    await ctx.db.insert("saleItems", {
+      organizationId: auth.organizationId,
+      saleId,
+      productId: boxItem.productId,
+      boxItemId: item.boxItemId,
+      metalPurityId: item.metalPurityId,
+      grossWeightMg: boxItem.grossWeightMg,
+      stoneWeightMg: boxItem.stoneWeightMg,
+      otherDeductionMg: item.otherDeductionMg,
+      netWeightMg: computed.netWeightMg,
+      ratePerGramPaise: item.ratePerGramPaise,
+      wastageBasisPoints: item.wastageBasisPoints,
+      makingChargePaise: item.makingChargePaise,
+      stoneChargePaise: item.stoneChargePaise,
+      taxConfigurationId: item.taxConfigurationId,
+      lineTaxPaise: computed.lineTaxPaise,
+      lineTotalPaise: computed.lineTotalPaise,
+    });
+
+    await ctx.db.patch(item.boxItemId, { status: "sold" });
+    boxDeltas.set(boxItem.boxId, (boxDeltas.get(boxItem.boxId) ?? 0) + 1);
+
+    await ctx.db.insert("stockMovements", {
+      organizationId: auth.organizationId,
+      productId: boxItem.productId,
+      boxItemId: item.boxItemId,
+      direction: "out",
+      netWeightMg: computed.netWeightMg,
+      quantity: 1,
+      sourceTable: "sales",
+      sourceId: saleId,
+      createdAt: billDate,
+    });
+  }
+
+  for (const [boxId, delta] of boxDeltas) {
+    const box = await ctx.db.get(boxId);
+    if (box) await ctx.db.patch(boxId, { itemCount: Math.max(0, (box.itemCount ?? 0) - delta) });
+  }
+
+  const priorBalance = customer.currentBalancePaise ?? customer.openingBalancePaise;
+  const newBalance = priorBalance + roundedTotalPaise - amountPaidPaise;
+
+  await ctx.db.insert("customerLedgerEntries", {
+    organizationId: auth.organizationId,
+    customerId: args.customerId,
+    sourceTable: "sales",
+    sourceId: saleId,
+    debitPaise: roundedTotalPaise,
+    creditPaise: amountPaidPaise,
+    balancePaise: newBalance,
+    createdAt: billDate,
+  });
+  await ctx.db.patch(args.customerId, { currentBalancePaise: newBalance });
+
+  for (const payment of args.payments) {
+    await ctx.db.insert("payments", {
+      organizationId: auth.organizationId,
+      direction: "receipt",
+      partyType: "customer",
+      partyId: args.customerId,
+      sourceTable: "sales",
+      sourceId: saleId,
+      mode: payment.mode,
+      amountPaise: payment.amountPaise,
+      createdByUserId: auth.userId,
+      createdAt: billDate,
+    });
+  }
+
+  if (args.oldGoldExchange && oldGoldComputed) {
+    const exchangeId = await ctx.db.insert("oldGoldExchanges", {
+      organizationId: auth.organizationId,
+      saleId,
+      customerId: args.customerId,
+      metalPurityId: args.oldGoldExchange.metalPurityId,
+      grossWeightMg: args.oldGoldExchange.grossWeightMg,
+      meltingDeductionBasisPoints: args.oldGoldExchange.meltingDeductionBasisPoints,
+      netWeightMg: oldGoldComputed.netWeightMg,
+      ratePerGramPaise: args.oldGoldExchange.ratePerGramPaise,
+      exchangeValuePaise: oldGoldComputed.exchangeValuePaise,
+      createdByUserId: auth.userId,
+      createdAt: billDate,
+    });
+
+    await ctx.db.insert("payments", {
+      organizationId: auth.organizationId,
+      direction: "receipt",
+      partyType: "customer",
+      partyId: args.customerId,
+      sourceTable: "old_gold_exchanges",
+      sourceId: exchangeId,
+      mode: "old_gold_exchange",
+      amountPaise: oldGoldComputed.exchangeValuePaise,
+      createdByUserId: auth.userId,
+      createdAt: billDate,
+    });
+  }
+
+  return { totalPaise: roundedTotalPaise, itemCount: args.items.length };
+}
+
+/**
+ * Reverses every effect a prior applySaleTransaction call wrote for this
+ * sale: physical items go back in stock, the customer ledger gets an
+ * offsetting entry, and the old payment/old-gold rows are removed. Used
+ * only by `update`, right before re-running applySaleTransaction with the
+ * edited values — never exposed directly, since an un-reapplied reversal
+ * would leave the sale row's totals stale.
+ */
+async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale: Doc<"sales">) {
+  const saleItems = await ctx.db
+    .query("saleItems")
+    .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+    .collect();
+
+  const boxDeltas = new Map<Id<"boxes">, number>();
+  for (const item of saleItems) {
+    if (item.boxItemId) {
+      const boxItem = await ctx.db.get(item.boxItemId);
+      if (boxItem && boxItem.status === "sold") {
+        await ctx.db.patch(boxItem._id, { status: "in_stock" });
+        boxDeltas.set(boxItem.boxId, (boxDeltas.get(boxItem.boxId) ?? 0) + 1);
+        await ctx.db.insert("stockMovements", {
+          organizationId: auth.organizationId,
+          productId: boxItem.productId,
+          boxItemId: boxItem._id,
+          direction: "in",
+          netWeightMg: item.netWeightMg,
+          quantity: 1,
+          sourceTable: "sales",
+          sourceId: sale._id,
+          createdAt: Date.now(),
+        });
+      }
+    }
+    await ctx.db.delete(item._id);
+  }
+  for (const [boxId, delta] of boxDeltas) {
+    const box = await ctx.db.get(boxId);
+    if (box) await ctx.db.patch(boxId, { itemCount: (box.itemCount ?? 0) + delta });
+  }
+
+  const customer = await ctx.db.get(sale.customerId);
+  if (customer) {
+    const priorBalance = customer.currentBalancePaise ?? customer.openingBalancePaise;
+    const revertedBalance = priorBalance - sale.totalPaise + sale.amountPaidPaise;
+    await ctx.db.insert("customerLedgerEntries", {
+      organizationId: auth.organizationId,
+      customerId: sale.customerId,
+      sourceTable: "sales",
+      sourceId: sale._id,
+      debitPaise: sale.amountPaidPaise,
+      creditPaise: sale.totalPaise,
+      balancePaise: revertedBalance,
+      createdAt: Date.now(),
+    });
+    await ctx.db.patch(sale.customerId, { currentBalancePaise: revertedBalance });
+  }
+
+  const oldPayments = await ctx.db
+    .query("payments")
+    .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+    .filter((q) => q.and(q.eq(q.field("sourceTable"), "sales"), q.eq(q.field("sourceId"), sale._id)))
+    .collect();
+  for (const payment of oldPayments) await ctx.db.delete(payment._id);
+
+  const oldExchange = await ctx.db
+    .query("oldGoldExchanges")
+    .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+    .first();
+  if (oldExchange) {
+    const exchangePayments = await ctx.db
+      .query("payments")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.and(q.eq(q.field("sourceTable"), "old_gold_exchanges"), q.eq(q.field("sourceId"), oldExchange._id)))
+      .collect();
+    for (const payment of exchangePayments) await ctx.db.delete(payment._id);
+    await ctx.db.delete(oldExchange._id);
+  }
+}
+
 export const create = mutation({
   args: {
     customerId: v.id("customers"),
@@ -188,13 +502,12 @@ export const create = mutation({
     discountValue: v.number(), // basis points if percent, paise if fixed
     payments: v.array(paymentSplitValidator),
     oldGoldExchange: v.optional(oldGoldExchangeValidator),
+    billDate: v.optional(v.number()),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["billing_operator"]);
-
-    if (args.items.length === 0) throw new Error("At least one item is required");
 
     const existing = await ctx.db
       .query("sales")
@@ -204,87 +517,9 @@ export const create = mutation({
       .first();
     if (existing) return { saleId: existing._id, duplicate: true };
 
-    const customer = await ctx.db.get(args.customerId);
-    if (!customer || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
-
-    // Resolve + lock in every box item up front: must exist, belong to this
-    // org, and still be in stock — prevents selling the same physical item
-    // twice under concurrent billing.
-    const taxConfigs = new Map<Id<"taxConfigurations">, number>();
-    const computedLines: Array<{
-      item: (typeof args.items)[number];
-      boxItem: Doc<"boxItems">;
-      computed: ReturnType<typeof computeSaleLine>;
-    }> = [];
-
-    for (const item of args.items) {
-      if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
-      const boxItem = await ctx.db.get(item.boxItemId);
-      if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
-      if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);
-
-      let gstBasisPoints = 0;
-      if (args.isGst && item.taxConfigurationId) {
-        if (!taxConfigs.has(item.taxConfigurationId)) {
-          const config = await ctx.db.get(item.taxConfigurationId);
-          if (!config || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
-          taxConfigs.set(item.taxConfigurationId, config.cgstBasisPoints + config.sgstBasisPoints + config.igstBasisPoints);
-        }
-        gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
-      }
-
-      const computed = computeSaleLine({
-        grossWeightMg: boxItem.grossWeightMg,
-        stoneWeightMg: boxItem.stoneWeightMg,
-        otherDeductionMg: item.otherDeductionMg,
-        ratePerGramPaise: item.ratePerGramPaise,
-        wastageBasisPoints: item.wastageBasisPoints,
-        makingChargePaise: item.makingChargePaise,
-        stoneChargePaise: item.stoneChargePaise,
-        gstBasisPoints,
-      });
-      computedLines.push({ item, boxItem, computed });
-    }
-
-    let oldGoldComputed: ReturnType<typeof computeOldGoldExchange> | null = null;
-    if (args.oldGoldExchange) {
-      const { metalPurityId, grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise } = args.oldGoldExchange;
-      if (grossWeightMg <= 0) throw new Error("Old gold weight must be greater than zero");
-      if (meltingDeductionBasisPoints < 0 || meltingDeductionBasisPoints > 10000) {
-        throw new Error("Melting deduction must be between 0 and 100%");
-      }
-      if (ratePerGramPaise <= 0) throw new Error("Old gold rate must be greater than zero");
-      const purity = await ctx.db.get(metalPurityId);
-      if (!purity || purity.organizationId !== auth.organizationId) throw new Error("Metal purity not found");
-      oldGoldComputed = computeOldGoldExchange({ grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise });
-    }
-
-    const itemsSubtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.taxableValuePaise, 0);
-    const itemsTaxPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTaxPaise, 0);
-
-    let discountPaise = 0;
-    if (args.discountMode === "percent") {
-      discountPaise = basisPointsOf(itemsSubtotalPaise, args.discountValue);
-    } else if (args.discountMode === "fixed") {
-      discountPaise = Math.max(0, args.discountValue);
-    }
-    discountPaise = Math.min(discountPaise, itemsSubtotalPaise);
-
-    const preRoundTotal = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
-    const { roundedTotalPaise, roundOffPaise } = roundOffToRupee(preRoundTotal);
-
-    const paymentsTotalPaise = args.payments.reduce((sum, p) => sum + p.amountPaise, 0);
-    const amountPaidPaise = paymentsTotalPaise + (oldGoldComputed?.exchangeValuePaise ?? 0);
-    if (amountPaidPaise < 0 || amountPaidPaise > roundedTotalPaise) {
-      throw new Error("Total payments (including any old gold exchange) cannot exceed the invoice total");
-    }
-    for (const p of args.payments) {
-      if (p.amountPaise <= 0) throw new Error("Each payment split must be greater than zero");
-    }
-
     const branchId = await resolveBranchId(ctx, auth.organizationId, auth.branchId);
     const invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "sales_invoice", "INV-");
-    const now = Date.now();
+    const billDate = args.billDate ?? Date.now();
 
     const saleId = await ctx.db.insert("sales", {
       organizationId: auth.organizationId,
@@ -294,117 +529,18 @@ export const create = mutation({
       invoiceNumber,
       status: "finalized",
       isGst: args.isGst,
-      subtotalPaise: itemsSubtotalPaise,
-      discountPaise,
-      taxPaise: itemsTaxPaise,
-      roundOffPaise,
-      totalPaise: roundedTotalPaise,
-      amountPaidPaise,
+      subtotalPaise: 0,
+      discountPaise: 0,
+      taxPaise: 0,
+      roundOffPaise: 0,
+      totalPaise: 0,
+      amountPaidPaise: 0,
       idempotencyKey: args.idempotencyKey,
       createdByUserId: auth.userId,
-      createdAt: now,
+      createdAt: billDate,
     });
 
-    const boxDeltas = new Map<Id<"boxes">, number>();
-    for (const { item, boxItem, computed } of computedLines) {
-      await ctx.db.insert("saleItems", {
-        organizationId: auth.organizationId,
-        saleId,
-        productId: boxItem.productId,
-        boxItemId: item.boxItemId,
-        metalPurityId: item.metalPurityId,
-        grossWeightMg: boxItem.grossWeightMg,
-        stoneWeightMg: boxItem.stoneWeightMg,
-        otherDeductionMg: item.otherDeductionMg,
-        netWeightMg: computed.netWeightMg,
-        ratePerGramPaise: item.ratePerGramPaise,
-        wastageBasisPoints: item.wastageBasisPoints,
-        makingChargePaise: item.makingChargePaise,
-        stoneChargePaise: item.stoneChargePaise,
-        taxConfigurationId: item.taxConfigurationId,
-        lineTaxPaise: computed.lineTaxPaise,
-        lineTotalPaise: computed.lineTotalPaise,
-      });
-
-      await ctx.db.patch(item.boxItemId, { status: "sold" });
-      boxDeltas.set(boxItem.boxId, (boxDeltas.get(boxItem.boxId) ?? 0) + 1);
-
-      await ctx.db.insert("stockMovements", {
-        organizationId: auth.organizationId,
-        productId: boxItem.productId,
-        boxItemId: item.boxItemId,
-        direction: "out",
-        netWeightMg: computed.netWeightMg,
-        quantity: 1,
-        sourceTable: "sales",
-        sourceId: saleId,
-        createdAt: now,
-      });
-    }
-
-    for (const [boxId, delta] of boxDeltas) {
-      const box = await ctx.db.get(boxId);
-      if (box) await ctx.db.patch(boxId, { itemCount: Math.max(0, (box.itemCount ?? 0) - delta) });
-    }
-
-    const priorBalance = customer.currentBalancePaise ?? customer.openingBalancePaise;
-    const newBalance = priorBalance + roundedTotalPaise - amountPaidPaise;
-
-    await ctx.db.insert("customerLedgerEntries", {
-      organizationId: auth.organizationId,
-      customerId: args.customerId,
-      sourceTable: "sales",
-      sourceId: saleId,
-      debitPaise: roundedTotalPaise,
-      creditPaise: amountPaidPaise,
-      balancePaise: newBalance,
-      createdAt: now,
-    });
-    await ctx.db.patch(args.customerId, { currentBalancePaise: newBalance });
-
-    for (const payment of args.payments) {
-      await ctx.db.insert("payments", {
-        organizationId: auth.organizationId,
-        direction: "receipt",
-        partyType: "customer",
-        partyId: args.customerId,
-        sourceTable: "sales",
-        sourceId: saleId,
-        mode: payment.mode,
-        amountPaise: payment.amountPaise,
-        createdByUserId: auth.userId,
-        createdAt: now,
-      });
-    }
-
-    if (args.oldGoldExchange && oldGoldComputed) {
-      const exchangeId = await ctx.db.insert("oldGoldExchanges", {
-        organizationId: auth.organizationId,
-        saleId,
-        customerId: args.customerId,
-        metalPurityId: args.oldGoldExchange.metalPurityId,
-        grossWeightMg: args.oldGoldExchange.grossWeightMg,
-        meltingDeductionBasisPoints: args.oldGoldExchange.meltingDeductionBasisPoints,
-        netWeightMg: oldGoldComputed.netWeightMg,
-        ratePerGramPaise: args.oldGoldExchange.ratePerGramPaise,
-        exchangeValuePaise: oldGoldComputed.exchangeValuePaise,
-        createdByUserId: auth.userId,
-        createdAt: now,
-      });
-
-      await ctx.db.insert("payments", {
-        organizationId: auth.organizationId,
-        direction: "receipt",
-        partyType: "customer",
-        partyId: args.customerId,
-        sourceTable: "old_gold_exchanges",
-        sourceId: exchangeId,
-        mode: "old_gold_exchange",
-        amountPaise: oldGoldComputed.exchangeValuePaise,
-        createdByUserId: auth.userId,
-        createdAt: now,
-      });
-    }
+    const result = await applySaleTransaction(ctx, auth, saleId, args, billDate);
 
     await ctx.db.insert("auditLogs", {
       organizationId: auth.organizationId,
@@ -412,11 +548,55 @@ export const create = mutation({
       action: "sale.create",
       entityTable: "sales",
       entityId: saleId,
-      metadata: { invoiceNumber, totalPaise: roundedTotalPaise, itemCount: args.items.length },
-      createdAt: now,
+      metadata: { invoiceNumber, totalPaise: result.totalPaise, itemCount: result.itemCount },
+      createdAt: Date.now(),
     });
 
     return { saleId, duplicate: false };
+  },
+});
+
+/**
+ * Owner/Admin only: edits an already-finalized sales invoice. Reverses the
+ * original stock and ledger effects, then reapplies the edited values —
+ * so stock counts and the customer's balance always reflect the latest
+ * edit, never a stale mix of old and new.
+ */
+export const update = mutation({
+  args: {
+    saleId: v.id("sales"),
+    customerId: v.id("customers"),
+    isGst: v.boolean(),
+    items: v.array(saleLineValidator),
+    discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
+    discountValue: v.number(),
+    payments: v.array(paymentSplitValidator),
+    oldGoldExchange: v.optional(oldGoldExchangeValidator),
+    billDate: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (sale.documentType !== "sales_invoice") throw new Error("Only a finalized sales invoice can be edited");
+    if (sale.status !== "finalized") throw new Error("Cannot edit a cancelled invoice");
+
+    await reverseSaleTransaction(ctx, auth, sale);
+    const result = await applySaleTransaction(ctx, auth, args.saleId, args, args.billDate);
+
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "sale.update",
+      entityTable: "sales",
+      entityId: args.saleId,
+      metadata: { invoiceNumber: sale.invoiceNumber, totalPaise: result.totalPaise, itemCount: result.itemCount },
+      createdAt: Date.now(),
+    });
+
+    return { saleId: args.saleId };
   },
 });
 
