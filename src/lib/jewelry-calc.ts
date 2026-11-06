@@ -53,3 +53,55 @@ export function computePurchaseLine(input: PurchaseLineInput): PurchaseLineResul
     lineTotalPaise: metalValue + input.makingChargePaise + input.stoneChargePaise,
   };
 }
+
+/**
+ * Sale line rule (documented assumption — confirm with the client's CA before
+ * GST filing): wastage% is charged as an extra percentage of the metal
+ * value (the traditional "extra weight for melting loss" charge, expressed
+ * in money rather than grams so it works for both making-charge styles).
+ * GST, when the bill is GST, is charged on (metal value + wastage + making +
+ * stone charge) — i.e. on the full taxable value of the line, matching how
+ * jewellery HSN codes are typically taxed as a single line value.
+ */
+export type SaleLineInput = {
+  grossWeightMg: number;
+  stoneWeightMg: number;
+  otherDeductionMg: number;
+  ratePerGramPaise: number;
+  wastageBasisPoints: number;
+  makingChargePaise: number;
+  stoneChargePaise: number;
+  gstBasisPoints: number; // 0 for a non-GST bill
+};
+
+export type SaleLineResult = SaleLineInput & {
+  netWeightMg: number;
+  metalValuePaise: number;
+  wastageValuePaise: number;
+  taxableValuePaise: number;
+  lineTaxPaise: number;
+  lineTotalPaise: number;
+};
+
+export function computeSaleLine(input: SaleLineInput): SaleLineResult {
+  const net = netWeightMg(input.grossWeightMg, input.stoneWeightMg, input.otherDeductionMg);
+  const metalValue = metalValuePaise(net, input.ratePerGramPaise);
+  const wastageValue = basisPointsOf(metalValue, input.wastageBasisPoints);
+  const taxableValue = metalValue + wastageValue + input.makingChargePaise + input.stoneChargePaise;
+  const tax = basisPointsOf(taxableValue, input.gstBasisPoints);
+  return {
+    ...input,
+    netWeightMg: net,
+    metalValuePaise: metalValue,
+    wastageValuePaise: wastageValue,
+    taxableValuePaise: taxableValue,
+    lineTaxPaise: tax,
+    lineTotalPaise: taxableValue + tax,
+  };
+}
+
+/** Rounds a total to the nearest rupee, returning the signed adjustment applied (e.g. -40 paise, +60 paise). */
+export function roundOffToRupee(totalPaise: number): { roundedTotalPaise: number; roundOffPaise: number } {
+  const roundedTotalPaise = Math.round(totalPaise / 100) * 100;
+  return { roundedTotalPaise, roundOffPaise: roundedTotalPaise - totalPaise };
+}

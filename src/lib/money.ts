@@ -10,6 +10,12 @@ export function paiseToRupeesInput(paise: number): string {
   return (paise / 100).toFixed(2);
 }
 
+export function percentToBasisPoints(percent: string | number): number | null {
+  const value = typeof percent === "number" ? percent : Number(percent);
+  if (!Number.isFinite(value) || value < 0 || value > 100) return null;
+  return Math.round(value * 100);
+}
+
 export function formatPaise(paise: number): string {
   return `₹${(paise / 100).toLocaleString("en-IN", {
     minimumFractionDigits: 2,

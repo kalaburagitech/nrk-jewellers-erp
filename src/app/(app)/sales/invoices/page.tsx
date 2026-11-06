@@ -1,0 +1,136 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
+import { Plus, Receipt } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { formatPaise } from "@/lib/money";
+import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import type { Id } from "../../../../../convex/_generated/dataModel";
+
+function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: () => void }) {
+  const items = useQuery(api.sales.getItems, { saleId });
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Sale items</DialogTitle>
+        </DialogHeader>
+        {items === undefined ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Net wt (g)</TableHead>
+                  <TableHead>Rate / g</TableHead>
+                  <TableHead>Wastage</TableHead>
+                  <TableHead>Tax</TableHead>
+                  <TableHead className="text-right">Line total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item) => (
+                  <TableRow key={item._id}>
+                    <TableCell>{mgToGramsDisplay(item.netWeightMg)}</TableCell>
+                    <TableCell>{formatPaise(item.ratePerGramPaise)}</TableCell>
+                    <TableCell>{(item.wastageBasisPoints / 100).toFixed(2)}%</TableCell>
+                    <TableCell>{formatPaise(item.lineTaxPaise)}</TableCell>
+                    <TableCell className="text-right">{formatPaise(item.lineTotalPaise)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export default function SalesInvoicesPage() {
+  const sales = useQuery(api.sales.list);
+  const customers = useQuery(api.customers.list);
+  const [selected, setSelected] = useState<Id<"sales"> | null>(null);
+
+  const customerName = useMemo(() => {
+    const map = new Map<string, string>();
+    customers?.forEach((c) => map.set(c._id, c.name));
+    return map;
+  }, [customers]);
+
+  return (
+    <div className="mx-auto flex max-w-6xl flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Sales Invoices</h1>
+          <p className="text-sm text-muted-foreground">{sales?.length ?? 0} invoices recorded</p>
+        </div>
+        <Button asChild>
+          <Link href="/sales/new">
+            <Plus className="h-4 w-4" />
+            New Bill
+          </Link>
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {sales === undefined ? (
+            <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+          ) : sales.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-12 text-center">
+              <Receipt className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">No bills recorded yet.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice #</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>GST</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Paid</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sales.map((s) => (
+                    <TableRow key={s._id} className="cursor-pointer" onClick={() => setSelected(s._id)}>
+                      <TableCell className="font-medium">{s.invoiceNumber}</TableCell>
+                      <TableCell>{new Date(s.createdAt).toLocaleDateString("en-IN")}</TableCell>
+                      <TableCell>{customerName.get(s.customerId) ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{s.isGst ? "GST" : "Non-GST"}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">{formatPaise(s.totalPaise)}</TableCell>
+                      <TableCell className="text-right">{formatPaise(s.amountPaidPaise)}</TableCell>
+                      <TableCell>
+                        <Badge variant={s.status === "finalized" ? "secondary" : "destructive"} className="capitalize">
+                          {s.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {selected && <SaleDetailDialog saleId={selected} onClose={() => setSelected(null)} />}
+    </div>
+  );
+}

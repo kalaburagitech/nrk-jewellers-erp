@@ -14,6 +14,48 @@ export const list = query({
   },
 });
 
+/** Adds each customer's current outstanding balance. One extra indexed read per customer — fine at shop scale; revisit with a maintained summary if that changes. */
+export const listWithOutstanding = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .order("desc")
+      .take(500);
+
+    return await Promise.all(
+      customers.map(async (customer) => {
+        const latest = await ctx.db
+          .query("customerLedgerEntries")
+          .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+          .order("desc")
+          .first();
+        return { ...customer, outstandingPaise: latest?.balancePaise ?? customer.openingBalancePaise };
+      }),
+    );
+  },
+});
+
+export const getLedger = query({
+  args: { customerId: v.id("customers") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const customer = await ctx.db.get(args.customerId);
+    if (!customer || customer.organizationId !== auth.organizationId) throw new Error("Not found");
+    const entries = await ctx.db
+      .query("customerLedgerEntries")
+      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .order("desc")
+      .take(200);
+    return {
+      outstandingPaise: entries[0]?.balancePaise ?? customer.openingBalancePaise,
+      entries,
+    };
+  },
+});
+
 export const create = mutation({
   args: {
     name: v.string(),

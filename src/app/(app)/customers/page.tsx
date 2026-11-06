@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useForm, useWatch } from "react-hook-form";
@@ -237,6 +238,7 @@ function CreateCustomerDialog() {
 }
 
 export default function CustomersPage() {
+  const router = useRouter();
   const customers = useQuery(api.customers.list);
   const [search, setSearch] = useState("");
 
@@ -293,7 +295,11 @@ export default function CustomersPage() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((c) => (
-                    <TableRow key={c._id}>
+                    <TableRow
+                      key={c._id}
+                      className="cursor-pointer"
+                      onClick={() => router.push(`/customers/ledgers?customerId=${c._id}`)}
+                    >
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell>{c.phone ?? "—"}</TableCell>
                       <TableCell>

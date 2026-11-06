@@ -13,14 +13,17 @@ import type * as boxes from "../boxes.js";
 import type * as customers from "../customers.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_sequences from "../lib/sequences.js";
 import type * as metalPurities from "../metalPurities.js";
 import type * as metalRates from "../metalRates.js";
 import type * as organizations from "../organizations.js";
 import type * as products from "../products.js";
 import type * as purchases from "../purchases.js";
+import type * as sales from "../sales.js";
 import type * as stockCategories from "../stockCategories.js";
 import type * as stockGroups from "../stockGroups.js";
 import type * as suppliers from "../suppliers.js";
+import type * as taxConfigurations from "../taxConfigurations.js";
 
 import type {
   ApiFromModules,
@@ -34,14 +37,17 @@ declare const fullApi: ApiFromModules<{
   customers: typeof customers;
   http: typeof http;
   "lib/auth": typeof lib_auth;
+  "lib/sequences": typeof lib_sequences;
   metalPurities: typeof metalPurities;
   metalRates: typeof metalRates;
   organizations: typeof organizations;
   products: typeof products;
   purchases: typeof purchases;
+  sales: typeof sales;
   stockCategories: typeof stockCategories;
   stockGroups: typeof stockGroups;
   suppliers: typeof suppliers;
+  taxConfigurations: typeof taxConfigurations;
 }>;
 
 /**

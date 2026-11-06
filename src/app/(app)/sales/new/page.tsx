@@ -1,0 +1,584 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
+import { Minus, Plus, Search, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { computeSaleLine, mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+
+const PAYMENT_MODES = [
+  { value: "cash", label: "Cash" },
+  { value: "upi", label: "UPI" },
+  { value: "card", label: "Card" },
+  { value: "cheque", label: "Cheque" },
+  { value: "bank_transfer", label: "Bank Transfer" },
+] as const;
+
+type PaymentMode = (typeof PAYMENT_MODES)[number]["value"];
+
+type BillLine = {
+  boxItemId: Id<"boxItems">;
+  label: string;
+  productName: string;
+  grossWeightMg: number;
+  stoneWeightMg: number;
+  metalPurityId: string;
+  otherDeductionGrams: string;
+  ratePerGramRupees: string;
+  wastagePercent: string;
+  makingChargeRupees: string;
+  stoneChargeRupees: string;
+  taxConfigurationId: string;
+};
+
+function BoxItemPicker({
+  boxes,
+  products,
+  onAdd,
+  alreadyAddedIds,
+}: {
+  boxes: Doc<"boxes">[];
+  products: Doc<"products">[];
+  onAdd: (boxItem: Doc<"boxItems">) => void;
+  alreadyAddedIds: Set<string>;
+}) {
+  const [boxNumberInput, setBoxNumberInput] = useState("");
+  const matchedBox = useMemo(
+    () => boxes.find((b) => String(b.boxNumber) === boxNumberInput.trim()),
+    [boxes, boxNumberInput],
+  );
+  const items = useQuery(api.boxes.getItems, matchedBox ? { boxId: matchedBox._id } : "skip");
+
+  const productName = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach((p) => map.set(p._id, p.name));
+    return map;
+  }, [products]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Add item from box</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="relative max-w-xs">
+          <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Enter box number"
+            value={boxNumberInput}
+            onChange={(e) => setBoxNumberInput(e.target.value)}
+          />
+        </div>
+        {boxNumberInput && !matchedBox && (
+          <p className="text-sm text-muted-foreground">No box with that number.</p>
+        )}
+        {matchedBox && items === undefined && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {matchedBox && items && items.length === 0 && (
+          <p className="text-sm text-muted-foreground">Box {matchedBox.boxNumber} is empty.</p>
+        )}
+        {matchedBox && items && items.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {items.map((item) => {
+              const alreadyAdded = alreadyAddedIds.has(item._id);
+              return (
+                <div
+                  key={item._id}
+                  className="flex items-center justify-between rounded-md border border-border px-3 py-2"
+                >
+                  <div>
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {productName.get(item.productId) ?? "Product"} · {mgToGramsDisplay(item.netWeightMg)}g net
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={alreadyAdded ? "secondary" : "outline"}
+                    disabled={alreadyAdded}
+                    onClick={() => onAdd(item)}
+                  >
+                    {alreadyAdded ? "Added" : "Add"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function NewBillPage() {
+  const router = useRouter();
+  const customers = useQuery(api.customers.list);
+  const products = useQuery(api.products.list);
+  const boxes = useQuery(api.boxes.list);
+  const purities = useQuery(api.metalPurities.list);
+  const taxConfigs = useQuery(api.taxConfigurations.list);
+  const currentRates = useQuery(api.metalRates.getCurrent);
+  const createSale = useMutation(api.sales.create);
+
+  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [customerId, setCustomerId] = useState("");
+  const [isGst, setIsGst] = useState(true);
+  const [lines, setLines] = useState<BillLine[]>([]);
+  const [discountMode, setDiscountMode] = useState<"none" | "percent" | "fixed">("none");
+  const [discountValue, setDiscountValue] = useState("");
+  const [payments, setPayments] = useState<{ mode: PaymentMode; amountRupees: string }[]>([
+    { mode: "cash", amountRupees: "" },
+  ]);
+  const [submitting, setSubmitting] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const productById = useMemo(() => {
+    const map = new Map<string, Doc<"products">>();
+    products?.forEach((p) => map.set(p._id, p));
+    return map;
+  }, [products]);
+
+  const rateByPurity = useMemo(() => {
+    const map = new Map<string, number>();
+    currentRates?.forEach(({ purity, latest }) => {
+      if (latest) map.set(purity._id, latest.ratePerGramPaise);
+    });
+    return map;
+  }, [currentRates]);
+
+  function addLine(boxItem: Doc<"boxItems">) {
+    const product = productById.get(boxItem.productId);
+    const purityId = product?.metalPurityId ?? "";
+    const defaultRatePaise = purityId ? rateByPurity.get(purityId) : undefined;
+    setLines((prev) => [
+      ...prev,
+      {
+        boxItemId: boxItem._id,
+        label: boxItem.label,
+        productName: product?.name ?? "Product",
+        grossWeightMg: boxItem.grossWeightMg,
+        stoneWeightMg: boxItem.stoneWeightMg,
+        metalPurityId: purityId,
+        otherDeductionGrams: "",
+        ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
+        wastagePercent: "",
+        makingChargeRupees: "",
+        stoneChargeRupees: "",
+        taxConfigurationId: taxConfigs?.[0]?._id ?? "",
+      },
+    ]);
+  }
+
+  function updateLine(index: number, patch: Partial<BillLine>) {
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  function removeLine(index: number) {
+    setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  const computedLines = useMemo(
+    () =>
+      lines.map((line) => {
+        const taxConfig = taxConfigs?.find((t) => t._id === line.taxConfigurationId);
+        const gstBasisPoints =
+          isGst && taxConfig ? taxConfig.cgstBasisPoints + taxConfig.sgstBasisPoints + taxConfig.igstBasisPoints : 0;
+        return computeSaleLine({
+          grossWeightMg: line.grossWeightMg,
+          stoneWeightMg: line.stoneWeightMg,
+          otherDeductionMg: Math.round(Number(line.otherDeductionGrams || "0") * 1000) || 0,
+          ratePerGramPaise: rupeesToPaise(line.ratePerGramRupees || "0") ?? 0,
+          wastageBasisPoints: percentToBasisPoints(line.wastagePercent || "0") ?? 0,
+          makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
+          stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
+          gstBasisPoints,
+        });
+      }),
+    [lines, taxConfigs, isGst],
+  );
+
+  const totals = useMemo(() => {
+    const subtotalPaise = computedLines.reduce((sum, l) => sum + l.taxableValuePaise, 0);
+    const taxPaise = computedLines.reduce((sum, l) => sum + l.lineTaxPaise, 0);
+    let discountPaise = 0;
+    if (discountMode === "percent") {
+      discountPaise = Math.round((subtotalPaise * (percentToBasisPoints(discountValue || "0") ?? 0)) / 10000);
+    } else if (discountMode === "fixed") {
+      discountPaise = rupeesToPaise(discountValue || "0") ?? 0;
+    }
+    discountPaise = Math.min(discountPaise, subtotalPaise);
+    const preRound = subtotalPaise - discountPaise + taxPaise;
+    const roundedTotal = Math.round(preRound / 100) * 100;
+    const roundOffPaise = roundedTotal - preRound;
+    const amountPaidPaise = payments.reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
+    return {
+      subtotalPaise,
+      taxPaise,
+      discountPaise,
+      roundOffPaise,
+      totalPaise: roundedTotal,
+      amountPaidPaise,
+      balancePaise: roundedTotal - amountPaidPaise,
+    };
+  }, [computedLines, discountMode, discountValue, payments]);
+
+  async function handleSave() {
+    setServerError(null);
+    if (!customerId) {
+      setServerError("Select a customer.");
+      return;
+    }
+    if (lines.length === 0) {
+      setServerError("Add at least one item.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await createSale({
+        customerId: customerId as Id<"customers">,
+        isGst,
+        items: lines.map((line) => ({
+          boxItemId: line.boxItemId,
+          metalPurityId: line.metalPurityId ? (line.metalPurityId as Id<"metalPurities">) : undefined,
+          otherDeductionMg: Math.round(Number(line.otherDeductionGrams || "0") * 1000) || 0,
+          ratePerGramPaise: rupeesToPaise(line.ratePerGramRupees || "0") ?? 0,
+          wastageBasisPoints: percentToBasisPoints(line.wastagePercent || "0") ?? 0,
+          makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
+          stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
+          taxConfigurationId:
+            isGst && line.taxConfigurationId ? (line.taxConfigurationId as Id<"taxConfigurations">) : undefined,
+        })),
+        discountMode,
+        discountValue:
+          discountMode === "percent"
+            ? percentToBasisPoints(discountValue || "0") ?? 0
+            : discountMode === "fixed"
+              ? rupeesToPaise(discountValue || "0") ?? 0
+              : 0,
+        payments: payments
+          .filter((p) => Number(p.amountRupees) > 0)
+          .map((p) => ({ mode: p.mode, amountPaise: rupeesToPaise(p.amountRupees) ?? 0 })),
+        idempotencyKey,
+      });
+      router.push(`/sales/invoices?created=${result.saleId}`);
+    } catch {
+      setServerError("Could not save the bill. You may need Billing Operator access, or an item may already be sold.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (!customers || !products || !boxes || !purities || !taxConfigs) {
+    return (
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">New Bill</h1>
+          <p className="text-sm text-muted-foreground">
+            Pick items straight out of a box, see every charge live, and finalize the sale.
+          </p>
+        </div>
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">New Bill</h1>
+        <p className="text-sm text-muted-foreground">
+          Pick items straight out of a box, see every charge live, and finalize the sale.
+        </p>
+      </div>
+
+      <>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Customer & Invoice Type</CardTitle>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="gst-toggle" className="text-sm text-muted-foreground">
+                  GST Invoice
+                </Label>
+                <Switch id="gst-toggle" checked={isGst} onCheckedChange={setIsGst} />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-sm">
+                <Label className="mb-2 block">Customer</Label>
+                <Select value={customerId} onValueChange={setCustomerId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers?.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {c.name}
+                        {c.phone ? ` · ${c.phone}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardContent>
+          </Card>
+
+          <BoxItemPicker
+            boxes={boxes}
+            products={products}
+            onAdd={addLine}
+            alreadyAddedIds={new Set(lines.map((l) => l.boxItemId))}
+          />
+
+          <div className="flex flex-col gap-4">
+            {lines.map((line, index) => {
+              const computed = computedLines[index];
+              return (
+                <Card key={line.boxItemId}>
+                  <CardHeader className="flex flex-row items-center justify-between">
+                    <CardTitle className="text-base">
+                      {line.label} <span className="font-normal text-muted-foreground">· {line.productName}</span>
+                    </CardTitle>
+                    <Button type="button" variant="ghost" size="icon" onClick={() => removeLine(index)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Gross {mgToGramsDisplay(line.grossWeightMg)}g · Stone {mgToGramsDisplay(line.stoneWeightMg)}g
+                    </p>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                      <div className="grid gap-2">
+                        <Label>Other deduction (g)</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="0.000"
+                          value={line.otherDeductionGrams}
+                          onChange={(e) => updateLine(index, { otherDeductionGrams: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Rate / g (₹)</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={line.ratePerGramRupees}
+                          onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Wastage (%)</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={line.wastagePercent}
+                          onChange={(e) => updateLine(index, { wastagePercent: e.target.value })}
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Making (₹)</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={line.makingChargeRupees}
+                          onChange={(e) => updateLine(index, { makingChargeRupees: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                      <div className="grid gap-2">
+                        <Label>Stone charge (₹)</Label>
+                        <Input
+                          inputMode="decimal"
+                          placeholder="0.00"
+                          value={line.stoneChargeRupees}
+                          onChange={(e) => updateLine(index, { stoneChargeRupees: e.target.value })}
+                        />
+                      </div>
+                      {isGst && (
+                        <div className="grid gap-2">
+                          <Label>Tax rate</Label>
+                          <Select
+                            value={line.taxConfigurationId}
+                            onValueChange={(v) => updateLine(index, { taxConfigurationId: v })}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="None" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {taxConfigs?.map((t) => (
+                                <SelectItem key={t._id} value={t._id}>
+                                  {t.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                    {computed && (
+                      <p className="text-sm text-muted-foreground">
+                        Net {mgToGramsDisplay(computed.netWeightMg)}g · Metal {formatPaise(computed.metalValuePaise)}{" "}
+                        · Wastage {formatPaise(computed.wastageValuePaise)}
+                        {isGst && <> · Tax {formatPaise(computed.lineTaxPaise)}</>} · Line total{" "}
+                        <span className="font-medium text-foreground">{formatPaise(computed.lineTotalPaise)}</span>
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Discount & Payment</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-end gap-4">
+                <div className="grid gap-2">
+                  <Label>Discount</Label>
+                  <Select value={discountMode} onValueChange={(v) => setDiscountMode(v as typeof discountMode)}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      <SelectItem value="percent">Percentage</SelectItem>
+                      <SelectItem value="fixed">Fixed amount</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {discountMode !== "none" && (
+                  <div className="grid gap-2">
+                    <Label>{discountMode === "percent" ? "Discount %" : "Discount (₹)"}</Label>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="w-32"
+                      value={discountValue}
+                      onChange={(e) => setDiscountValue(e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              <div className="flex flex-col gap-3">
+                <Label>Payment</Label>
+                {payments.map((payment, index) => (
+                  <div key={index} className="flex items-center gap-2">
+                    <Select
+                      value={payment.mode}
+                      onValueChange={(v) =>
+                        setPayments((prev) => prev.map((p, i) => (i === index ? { ...p, mode: v as PaymentMode } : p)))
+                      }
+                    >
+                      <SelectTrigger className="w-40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_MODES.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={payment.amountRupees}
+                      onChange={(e) =>
+                        setPayments((prev) =>
+                          prev.map((p, i) => (i === index ? { ...p, amountRupees: e.target.value } : p)),
+                        )
+                      }
+                    />
+                    {payments.length > 1 && (
+                      <Button type="button" variant="ghost" size="icon" onClick={() => setPayments((prev) => prev.filter((_, i) => i !== index))}>
+                        <Minus className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  onClick={() => setPayments((prev) => [...prev, { mode: "cash", amountRupees: "" }])}
+                >
+                  <Plus className="h-4 w-4" />
+                  Add payment split
+                </Button>
+              </div>
+
+              <Separator />
+
+              <div className="flex flex-col gap-1 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Subtotal (taxable)</span>
+                  <span>{formatPaise(totals.subtotalPaise)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Discount</span>
+                  <span>-{formatPaise(totals.discountPaise)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Tax</span>
+                  <span>{formatPaise(totals.taxPaise)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Round off</span>
+                  <span>{formatPaise(totals.roundOffPaise)}</span>
+                </div>
+                <div className="flex justify-between text-base font-semibold">
+                  <span>Total</span>
+                  <span>{formatPaise(totals.totalPaise)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Paid</span>
+                  <span>{formatPaise(totals.amountPaidPaise)}</span>
+                </div>
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Balance</span>
+                  <span>{formatPaise(totals.balancePaise)}</span>
+                </div>
+              </div>
+
+              {totals.balancePaise > 0 && (
+                <Badge variant="secondary" className="self-start font-normal">
+                  Remaining balance goes to the customer&apos;s outstanding ledger
+                </Badge>
+              )}
+
+              {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+
+              <Button onClick={handleSave} disabled={submitting} className="self-end">
+                {submitting ? "Saving…" : "Save & Finalize Bill"}
+              </Button>
+            </CardContent>
+          </Card>
+      </>
+    </div>
+  );
+}

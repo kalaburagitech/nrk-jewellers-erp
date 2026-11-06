@@ -27,8 +27,8 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { purchaseFormSchema, type PurchaseFormValues } from "@/lib/schemas/purchase";
-import { computePurchaseLine, gramsToMg } from "@/lib/jewelry-calc";
-import { formatPaise, rupeesToPaise } from "@/lib/money";
+import { basisPointsOf, computePurchaseLine, gramsToMg } from "@/lib/jewelry-calc";
+import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 const PAYMENT_MODES = [
@@ -90,8 +90,8 @@ export default function NewPurchasePage() {
       }),
     );
     const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
-    const gstBasisPoints = Math.round(Number(watchedGst || "0") * 100);
-    const taxPaise = Math.round((subtotalPaise * (Number.isFinite(gstBasisPoints) ? gstBasisPoints : 0)) / 10000);
+    const gstBasisPoints = percentToBasisPoints(watchedGst || "0") ?? 0;
+    const taxPaise = basisPointsOf(subtotalPaise, gstBasisPoints);
     const totalPaise = subtotalPaise + taxPaise;
     const amountPaidPaise = Math.min(rupeesToPaise(watchedPaid || "0") ?? 0, totalPaise);
     return { lines, subtotalPaise, taxPaise, totalPaise, amountPaidPaise, balancePaise: totalPaise - amountPaidPaise };
