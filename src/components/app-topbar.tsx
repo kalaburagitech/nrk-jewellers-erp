@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -32,8 +32,15 @@ function initials(name: string | undefined) {
 function GlobalSearch() {
   const router = useRouter();
   const [term, setTerm] = useState("");
+  const [debouncedTerm, setDebouncedTerm] = useState("");
   const [focused, setFocused] = useState(false);
-  const results = useQuery(api.search.globalSearch, term.trim().length >= 2 ? { term } : "skip");
+
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedTerm(term), 300);
+    return () => clearTimeout(id);
+  }, [term]);
+
+  const results = useQuery(api.search.globalSearch, debouncedTerm.trim().length >= 2 ? { term: debouncedTerm } : "skip");
 
   const hasResults =
     results && (results.customers.length > 0 || results.products.length > 0 || results.sales.length > 0);

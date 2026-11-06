@@ -43,7 +43,7 @@ export default function SignInPage() {
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-2">
       <div
         className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-[oklch(0.18_0.015_50)] via-[oklch(0.14_0.012_45)] to-black bg-cover bg-center p-10 text-primary-foreground lg:flex"
-        style={{ backgroundImage: `url('${customLoginImage ?? "/login-hero.png"}')` }}
+        style={{ backgroundImage: `url('${customLoginImage ?? "/login-hero.webp"}')` }}
       >
         <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-black/30 to-black/55" />
         <div className="relative flex items-center gap-2">
