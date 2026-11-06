@@ -45,25 +45,27 @@ export default function SignInPage() {
         className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-[oklch(0.18_0.015_50)] via-[oklch(0.14_0.012_45)] to-black bg-cover bg-center p-10 text-primary-foreground lg:flex"
         style={{ backgroundImage: `url('${customLoginImage ?? "/login-hero.png"}')` }}
       >
-        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/40 to-black/80" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/20 via-black/30 to-black/55" />
         <div className="relative flex items-center gap-2">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-gold text-gold-foreground">
             <Gem className="h-5 w-5" />
           </div>
-          <span className="text-sm font-semibold tracking-widest uppercase">NRK Jewellers</span>
+          <span className="text-sm font-semibold tracking-widest uppercase [text-shadow:0_1px_8px_rgb(0_0_0_/_0.8)]">
+            NRK Jewellers
+          </span>
         </div>
-        <div className="relative space-y-3">
+        <div className="relative space-y-3 [text-shadow:0_2px_12px_rgb(0_0_0_/_0.8)]">
           <h2 className="text-3xl font-semibold leading-tight">
             Enterprise jewellery operations,
             <br />
             run from one system.
           </h2>
-          <p className="max-w-md text-sm text-primary-foreground/70">
+          <p className="max-w-md text-sm text-primary-foreground/90">
             Billing, purchases, inventory, box management, customer ledgers and GST — built for
             the realities of daily shop floor operations.
           </p>
         </div>
-        <p className="relative text-xs text-primary-foreground/50">
+        <p className="relative text-xs text-primary-foreground/70 [text-shadow:0_1px_8px_rgb(0_0_0_/_0.8)]">
           &copy; {new Date().getFullYear()} NRK Jewellers
         </p>
       </div>
