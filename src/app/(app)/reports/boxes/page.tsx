@@ -5,6 +5,7 @@ import { api } from "../../../../../convex/_generated/api";
 import { PackageSearch } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 
 export default function BoxReportsPage() {
@@ -12,9 +13,18 @@ export default function BoxReportsPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Box Reports</h1>
-        <p className="text-sm text-muted-foreground">Item count and net weight currently in each box.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Box Reports</h1>
+          <p className="text-sm text-muted-foreground">Item count and net weight currently in each box.</p>
+        </div>
+        {report && (
+          <ExportCsvButton
+            filename="box-report"
+            headers={["Box", "Label", "Items", "Net Weight (g)"]}
+            rows={report.map((r) => [`Box ${r.boxNumber}`, r.label ?? "", r.itemCount, Number(mgToGramsDisplay(r.netWeightMg))])}
+          />
+        )}
       </div>
 
       <Card>

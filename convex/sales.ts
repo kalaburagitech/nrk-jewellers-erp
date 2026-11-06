@@ -5,15 +5,17 @@ import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf, roundOffToRupee } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 
+/** Sales invoices only — quotations, proforma invoices, returns and credit notes each have their own dedicated list page/query. */
 export const list = query({
   args: {},
   handler: async (ctx) => {
     const auth = await requireAuthContext(ctx);
-    return await ctx.db
+    const rows = await ctx.db
       .query("sales")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
-      .take(200);
+      .take(500);
+    return rows.filter((r) => r.documentType === "sales_invoice").slice(0, 200);
   },
 });
 

@@ -6,6 +6,7 @@ import { Boxes } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 
@@ -27,9 +28,18 @@ export default function StockReportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock Report</h1>
-        <p className="text-sm text-muted-foreground">Current in-stock weight and piece count by purity.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Stock Report</h1>
+          <p className="text-sm text-muted-foreground">Current in-stock weight and piece count by purity.</p>
+        </div>
+        {stock && (
+          <ExportCsvButton
+            filename="stock-report"
+            headers={["Purity", "Metal", "Pieces", "Net Weight (g)"]}
+            rows={stock.rows.map((r) => [r.purity.label, r.purity.metal, r.pieceCount, Number(mgToGramsDisplay(r.netWeightMg))])}
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">

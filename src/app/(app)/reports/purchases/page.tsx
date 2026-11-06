@@ -7,6 +7,7 @@ import { ShoppingCart } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { DateRangePicker, defaultLast30Days } from "@/components/date-range-picker";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 
@@ -16,9 +17,18 @@ export default function PurchaseReportsPage() {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Purchase Reports</h1>
-        <p className="text-sm text-muted-foreground">Supplier-wise totals and purity breakdown for a date range.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Purchase Reports</h1>
+          <p className="text-sm text-muted-foreground">Supplier-wise totals and purity breakdown for a date range.</p>
+        </div>
+        {report && (
+          <ExportCsvButton
+            filename="purchase-report"
+            headers={["Supplier", "Invoices", "Total (₹)"]}
+            rows={report.bySupplier.map((s) => [s.name, s.count, s.totalPaise / 100])}
+          />
+        )}
       </div>
 
       <DateRangePicker value={range} onChange={setRange} />

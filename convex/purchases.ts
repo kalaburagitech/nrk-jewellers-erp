@@ -5,15 +5,17 @@ import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computePurchaseLine } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 
+/** Purchase invoices only — purchase orders and purchase returns each have their own dedicated list page/query. */
 export const list = query({
   args: {},
   handler: async (ctx) => {
     const auth = await requireAuthContext(ctx);
-    return await ctx.db
+    const rows = await ctx.db
       .query("purchases")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
-      .take(200);
+      .take(500);
+    return rows.filter((r) => (r.documentType ?? "purchase_invoice") === "purchase_invoice").slice(0, 200);
   },
 });
 

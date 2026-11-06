@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -92,12 +93,29 @@ export default function SalesInvoicesPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Sales Invoices</h1>
           <p className="text-sm text-muted-foreground">{sales?.length ?? 0} invoices recorded</p>
         </div>
-        <Button asChild>
-          <Link href="/sales/new">
-            <Plus className="h-4 w-4" />
-            New Bill
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          {sales && (
+            <ExportCsvButton
+              filename="sales-invoices"
+              headers={["Invoice #", "Date", "Customer", "GST", "Total (₹)", "Paid (₹)", "Status"]}
+              rows={sales.map((s) => [
+                s.invoiceNumber,
+                new Date(s.createdAt).toLocaleDateString("en-IN"),
+                customerName.get(s.customerId) ?? "—",
+                s.isGst ? "GST" : "Non-GST",
+                s.totalPaise / 100,
+                s.amountPaidPaise / 100,
+                s.status,
+              ])}
+            />
+          )}
+          <Button asChild>
+            <Link href="/sales/new">
+              <Plus className="h-4 w-4" />
+              New Bill
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Card>

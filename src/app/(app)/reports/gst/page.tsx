@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DateRangePicker, defaultLast30Days } from "@/components/date-range-picker";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 
 export default function GstReportsPage() {
@@ -64,10 +65,44 @@ export default function GstReportsPage() {
       </div>
 
       <Tabs defaultValue="sales">
-        <TabsList>
-          <TabsTrigger value="sales">Sales Register</TabsTrigger>
-          <TabsTrigger value="purchases">Purchase Register</TabsTrigger>
-        </TabsList>
+        <div className="flex items-center justify-between gap-4">
+          <TabsList>
+            <TabsTrigger value="sales">Sales Register</TabsTrigger>
+            <TabsTrigger value="purchases">Purchase Register</TabsTrigger>
+          </TabsList>
+          <div className="flex gap-2">
+            {salesRegister && (
+              <ExportCsvButton
+                filename="gst-sales-register"
+                headers={["Date", "Invoice", "Customer", "Taxable (₹)", "CGST (₹)", "SGST (₹)", "IGST (₹)", "Total (₹)"]}
+                rows={salesRegister.map((r) => [
+                  new Date(r.createdAt).toLocaleDateString("en-IN"),
+                  r.invoiceNumber,
+                  r.customerName,
+                  r.taxableValuePaise / 100,
+                  r.cgstPaise / 100,
+                  r.sgstPaise / 100,
+                  r.igstPaise / 100,
+                  r.totalPaise / 100,
+                ])}
+              />
+            )}
+            {purchaseRegister && (
+              <ExportCsvButton
+                filename="gst-purchase-register"
+                headers={["Date", "Invoice", "Supplier", "Subtotal (₹)", "Tax (₹)", "Total (₹)"]}
+                rows={purchaseRegister.map((r) => [
+                  new Date(r.createdAt).toLocaleDateString("en-IN"),
+                  r.invoiceNumber,
+                  r.supplierName,
+                  r.subtotalPaise / 100,
+                  r.taxPaise / 100,
+                  r.totalPaise / 100,
+                ])}
+              />
+            )}
+          </div>
+        </div>
         <TabsContent value="sales">
           <Card>
             <CardContent className="p-0">

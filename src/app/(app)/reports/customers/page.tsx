@@ -7,6 +7,7 @@ import { Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 
 const BUCKET_TONE: Record<string, "secondary" | "outline" | "destructive"> = {
@@ -27,11 +28,20 @@ export default function CustomerReportsPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Customer Reports</h1>
-        <p className="text-sm text-muted-foreground">
-          Outstanding balances aged by days since the customer&apos;s oldest unpaid bill.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Customer Reports</h1>
+          <p className="text-sm text-muted-foreground">
+            Outstanding balances aged by days since the customer&apos;s oldest unpaid bill.
+          </p>
+        </div>
+        {aging && (
+          <ExportCsvButton
+            filename="customer-aging-report"
+            headers={["Customer", "Age", "Outstanding (₹)"]}
+            rows={aging.map((r) => [r.name, `${r.bucket} days`, r.outstandingPaise / 100])}
+          />
+        )}
       </div>
 
       {totals && Object.keys(totals).length > 0 && (

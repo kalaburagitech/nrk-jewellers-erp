@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { DateRangePicker, defaultLast30Days } from "@/components/date-range-picker";
+import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 
 const PAYMENT_MODE_LABEL: Record<string, string> = {
@@ -25,9 +26,18 @@ export default function SalesReportPage() {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Sales Report</h1>
-        <p className="text-sm text-muted-foreground">Turnover and payment mode breakdown for a date range.</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Sales Report</h1>
+          <p className="text-sm text-muted-foreground">Turnover and payment mode breakdown for a date range.</p>
+        </div>
+        {report && (
+          <ExportCsvButton
+            filename="sales-report"
+            headers={["Date", "Invoices", "Total (₹)"]}
+            rows={report.byDay.map((d) => [new Date(d.date).toLocaleDateString("en-IN"), d.count, d.totalPaise / 100])}
+          />
+        )}
       </div>
 
       <DateRangePicker value={range} onChange={setRange} />
