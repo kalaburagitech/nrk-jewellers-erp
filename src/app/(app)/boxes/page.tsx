@@ -104,13 +104,10 @@ export default function BoxOverviewPage() {
               <CardContent className="flex flex-col items-center gap-1 px-2">
                 <Package className="h-5 w-5 text-gold" />
                 <p className="text-lg font-semibold">{box.boxNumber}</p>
-                {box.label ? (
-                  <p className="truncate text-xs text-muted-foreground">{box.label}</p>
-                ) : (
-                  <Badge variant="secondary" className="text-[10px] font-normal">
-                    Empty
-                  </Badge>
-                )}
+                {box.label && <p className="truncate text-xs text-muted-foreground">{box.label}</p>}
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  {box.itemCount ? `${box.itemCount} item${box.itemCount === 1 ? "" : "s"}` : "Empty"}
+                </Badge>
               </CardContent>
             </Card>
           ))}

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 
 export const list = query({
@@ -46,8 +46,27 @@ export const createNext = mutation({
       organizationId: auth.organizationId,
       boxNumber,
       label: args.label?.trim() || undefined,
+      itemCount: 0,
       isActive: true,
       createdAt: Date.now(),
     });
+  },
+});
+
+/** One-off data repair: recomputes itemCount for boxes created before the field existed. Not exposed in the UI. */
+export const recomputeItemCounts = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const boxes = await ctx.db.query("boxes").collect();
+    for (const box of boxes) {
+      const items = await ctx.db
+        .query("boxItems")
+        .withIndex("by_box", (q) => q.eq("boxId", box._id))
+        .filter((q) => q.eq(q.field("status"), "in_stock"))
+        .collect();
+      if (box.itemCount !== items.length) {
+        await ctx.db.patch(box._id, { itemCount: items.length });
+      }
+    }
   },
 });

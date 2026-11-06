@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useForm } from "react-hook-form";
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
 import { supplierFormSchema, type SupplierFormValues } from "@/lib/schemas/party";
+import { formatPaise } from "@/lib/money";
 
 function CreateSupplierDialog() {
   const createSupplier = useMutation(api.suppliers.create);
@@ -157,7 +159,8 @@ function CreateSupplierDialog() {
 }
 
 export default function SuppliersPage() {
-  const suppliers = useQuery(api.suppliers.list);
+  const router = useRouter();
+  const suppliers = useQuery(api.suppliers.listWithOutstanding);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -208,14 +211,20 @@ export default function SuppliersPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>GSTIN</TableHead>
+                    <TableHead className="text-right">Outstanding</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((s) => (
-                    <TableRow key={s._id}>
+                    <TableRow
+                      key={s._id}
+                      className="cursor-pointer"
+                      onClick={() => router.push(`/suppliers/history?supplierId=${s._id}`)}
+                    >
                       <TableCell className="font-medium">{s.name}</TableCell>
                       <TableCell>{s.phone ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{s.gstin ?? "—"}</TableCell>
+                      <TableCell className="text-right">{formatPaise(s.outstandingPaise)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

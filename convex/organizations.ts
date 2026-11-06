@@ -77,6 +77,7 @@ export const ensureBootstrapped = mutation({
       await ctx.db.insert("boxes", {
         organizationId,
         boxNumber,
+        itemCount: 0,
         isActive: true,
         createdAt: now,
       });

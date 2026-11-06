@@ -14,6 +14,48 @@ export const list = query({
   },
 });
 
+/** Adds each supplier's current outstanding balance. One extra indexed read per supplier — fine at shop scale (tens to low hundreds of suppliers); revisit with a maintained summary if that changes. */
+export const listWithOutstanding = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const suppliers = await ctx.db
+      .query("suppliers")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .order("desc")
+      .take(500);
+
+    return await Promise.all(
+      suppliers.map(async (supplier) => {
+        const latest = await ctx.db
+          .query("supplierLedgerEntries")
+          .withIndex("by_supplier", (q) => q.eq("supplierId", supplier._id))
+          .order("desc")
+          .first();
+        return { ...supplier, outstandingPaise: latest?.balancePaise ?? supplier.openingBalancePaise };
+      }),
+    );
+  },
+});
+
+export const getLedger = query({
+  args: { supplierId: v.id("suppliers") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const supplier = await ctx.db.get(args.supplierId);
+    if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Not found");
+    const entries = await ctx.db
+      .query("supplierLedgerEntries")
+      .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId))
+      .order("desc")
+      .take(200);
+    return {
+      outstandingPaise: entries[0]?.balancePaise ?? supplier.openingBalancePaise,
+      entries,
+    };
+  },
+});
+
 export const create = mutation({
   args: {
     name: v.string(),

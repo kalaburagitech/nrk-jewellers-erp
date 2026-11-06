@@ -142,6 +142,10 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     boxNumber: v.number(), // 101-200 seeded, unlimited thereafter
     label: v.optional(v.string()),
+    // Maintained counter of in_stock boxItems, updated by every mutation
+    // that adds/removes an item — avoids an N+1 count query per box on the
+    // overview grid.
+    itemCount: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
   })
@@ -233,19 +237,24 @@ export default defineSchema({
     taxPaise: v.number(),
     totalPaise: v.number(),
     amountPaidPaise: v.number(),
+    idempotencyKey: v.string(),
     createdByUserId: v.id("users"),
     createdAt: v.number(),
     cancelledAt: v.optional(v.number()),
     cancelReason: v.optional(v.string()),
   })
     .index("by_org", ["organizationId"])
-    .index("by_supplier", ["supplierId"]),
+    .index("by_supplier", ["supplierId"])
+    .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"]),
 
   purchaseItems: defineTable({
     organizationId: v.id("organizations"),
     purchaseId: v.id("purchases"),
     productId: v.id("products"),
+    boxId: v.id("boxes"),
+    boxItemId: v.id("boxItems"),
     metalPurityId: v.optional(v.id("metalPurities")),
+    label: v.string(),
     grossWeightMg: v.number(),
     stoneWeightMg: v.number(),
     netWeightMg: v.number(),
