@@ -425,7 +425,7 @@ export default defineSchema({
   cashBankLedgerEntries: defineTable({
     organizationId: v.id("organizations"),
     accountId: v.id("bankAccounts"),
-    sourceTable: v.string(), // "cash_bank_opening" | "cash_bank_transaction" | "cash_bank_transfer"
+    sourceTable: v.string(), // "cash_bank_opening" | "cash_bank_transaction" | "cash_bank_transfer" | "expenses"
     sourceId: v.string(),
     description: v.string(),
     debitPaise: v.number(),
@@ -434,4 +434,20 @@ export default defineSchema({
     createdByUserId: v.id("users"),
     createdAt: v.number(),
   }).index("by_account", ["accountId"]),
+
+  // ---------- Expenses ----------
+  // Shop running costs (rent, salary, electricity) — kept separate from
+  // supplier purchases, which are always inventory. Category is free text
+  // (not a managed list) so staff aren't blocked creating a new one.
+  expenses: defineTable({
+    organizationId: v.id("organizations"),
+    category: v.string(),
+    amountPaise: v.number(),
+    paymentAccountId: v.optional(v.id("bankAccounts")),
+    description: v.optional(v.string()),
+    expenseDate: v.number(),
+    status: v.union(v.literal("recorded"), v.literal("deleted")),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_org", ["organizationId"]),
 });

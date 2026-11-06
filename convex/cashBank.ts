@@ -34,8 +34,8 @@ export const getLedger = query({
   },
 });
 
-/** Appends one ledger row for an account and returns the new running balance — the only place balances are ever computed. */
-async function appendEntry(
+/** Appends one ledger row for an account and returns the new running balance — the only place balances are ever computed. Exported so other modules (expenses) that pay out of a cash/bank account post through the same ledger instead of maintaining their own copy of this logic. */
+export async function appendCashBankEntry(
   ctx: MutationCtx,
   auth: AuthContext,
   args: { accountId: Id<"bankAccounts">; sourceTable: string; sourceId: string; description: string; debitPaise: number; creditPaise: number },
@@ -132,7 +132,7 @@ export const recordTransaction = mutation({
     const description = args.description.trim();
     if (!description) throw new Error("A description is required");
 
-    const balancePaise = await appendEntry(ctx, auth, {
+    const balancePaise = await appendCashBankEntry(ctx, auth, {
       accountId: args.accountId,
       sourceTable: "cash_bank_transaction",
       sourceId: crypto.randomUUID(),
@@ -176,7 +176,7 @@ export const transfer = mutation({
 
     const transferId = crypto.randomUUID();
     const description = args.description?.trim() || `Transfer to ${toAccount.name}`;
-    await appendEntry(ctx, auth, {
+    await appendCashBankEntry(ctx, auth, {
       accountId: args.fromAccountId,
       sourceTable: "cash_bank_transfer",
       sourceId: transferId,
@@ -184,7 +184,7 @@ export const transfer = mutation({
       debitPaise: args.amountPaise,
       creditPaise: 0,
     });
-    await appendEntry(ctx, auth, {
+    await appendCashBankEntry(ctx, auth, {
       accountId: args.toAccountId,
       sourceTable: "cash_bank_transfer",
       sourceId: transferId,

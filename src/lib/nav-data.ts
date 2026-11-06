@@ -45,7 +45,7 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "Purchases",
+    title: "Purchases & Expenses",
     icon: ShoppingCart,
     href: "/purchases",
     items: [
@@ -53,6 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Purchase Invoices", href: "/purchases/invoices" },
       { title: "Purchase Orders", href: "/purchases/orders" },
       { title: "Purchase Returns", href: "/purchases/returns" },
+      { title: "Expenses", href: "/purchases/expenses" },
     ],
   },
   {
