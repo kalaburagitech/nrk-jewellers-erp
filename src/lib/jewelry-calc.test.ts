@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   basisPointsOf,
+  computeOldGoldExchange,
   computePurchaseLine,
   computeSaleLine,
   metalValuePaise,
@@ -102,5 +103,28 @@ describe("roundOffToRupee", () => {
 
   it("leaves an exact rupee amount unchanged", () => {
     expect(roundOffToRupee(500000)).toEqual({ roundedTotalPaise: 500000, roundOffPaise: 0 });
+  });
+});
+
+describe("computeOldGoldExchange", () => {
+  it("deducts melting loss from weight, then values the remainder at the agreed rate", () => {
+    // 10g gross, 2% melting deduction = 0.2g loss -> 9.8g net @ ₹6850/g
+    const result = computeOldGoldExchange({
+      grossWeightMg: 10000,
+      meltingDeductionBasisPoints: 200,
+      ratePerGramPaise: 685000,
+    });
+    expect(result.netWeightMg).toBe(9800);
+    expect(result.exchangeValuePaise).toBe(6713000);
+  });
+
+  it("handles zero melting deduction", () => {
+    const result = computeOldGoldExchange({
+      grossWeightMg: 5000,
+      meltingDeductionBasisPoints: 0,
+      ratePerGramPaise: 100000,
+    });
+    expect(result.netWeightMg).toBe(5000);
+    expect(result.exchangeValuePaise).toBe(500000);
   });
 });

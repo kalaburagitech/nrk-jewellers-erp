@@ -54,13 +54,26 @@ The final total is rounded to the nearest whole rupee; the signed
 adjustment (±49 paise max) is stored as `roundOffPaise` and shown as its own
 line on the bill — never silently absorbed into another figure.
 
+## Old gold exchange (implemented)
+
+```
+meltingLoss     = grossWeight × meltingDeduction%
+netWeight       = grossWeight - meltingLoss
+exchangeValue   = netWeight × agreedRate
+```
+
+Recorded as its own `oldGoldExchanges` row (gross weight, purity, melting
+deduction %, rate, computed value — never hidden inside a generic payment)
+linked to the sale, and also inserted into `payments` with mode
+`"old_gold_exchange"` so it nets correctly against the bill total alongside
+cash/UPI/card payments. The agreed rate is entered by the operator per
+exchange (shops commonly buy old gold below the day's selling rate) rather
+than defaulting to the current sell rate — confirm this is the desired UX
+with the client.
+
 ## Not yet implemented (flagged, not silently dropped)
 
-- **Old gold exchange** (SRS §8): old gold weight/purity/melting deduction
-  reducing the amount payable. Deferred to a follow-up milestone so it
-  doesn't get bolted onto this billing engine without its own schema and
-  tests.
-- **Advance booking adjustments** (SRS §8, §13 roadmap Stage 4): also
-  deferred.
+- **Advance booking adjustments** (SRS §8, §13 roadmap Stage 4): deferred to
+  a follow-up milestone.
 - **Item-level discount**: only bill-level discount exists; the schema has
   no per-item discount field yet.

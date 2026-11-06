@@ -324,13 +324,40 @@ export default defineSchema({
     partyId: v.string(),
     sourceTable: v.optional(v.string()), // "sales" | "purchases" when tied to a document
     sourceId: v.optional(v.string()),
-    mode: v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
+    mode: v.union(
+      v.literal("cash"),
+      v.literal("upi"),
+      v.literal("card"),
+      v.literal("cheque"),
+      v.literal("bank_transfer"),
+      v.literal("old_gold_exchange"),
+    ),
     amountPaise: v.number(),
     createdByUserId: v.id("users"),
     createdAt: v.number(),
   })
     .index("by_org", ["organizationId"])
     .index("by_party", ["partyType", "partyId"]),
+
+  // Old gold a customer trades in against a new jewellery bill (SRS §8).
+  // Recorded as its own audit-tracked row (not hidden inside a generic
+  // payment) and also inserted into `payments` with mode
+  // "old_gold_exchange" so it still nets correctly against the bill total.
+  oldGoldExchanges: defineTable({
+    organizationId: v.id("organizations"),
+    saleId: v.id("sales"),
+    customerId: v.id("customers"),
+    metalPurityId: v.id("metalPurities"),
+    grossWeightMg: v.number(),
+    meltingDeductionBasisPoints: v.number(),
+    netWeightMg: v.number(),
+    ratePerGramPaise: v.number(),
+    exchangeValuePaise: v.number(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_sale", ["saleId"]),
 
   customerLedgerEntries: defineTable({
     organizationId: v.id("organizations"),

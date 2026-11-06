@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
-import { computeSaleLine, basisPointsOf, roundOffToRupee } from "../src/lib/jewelry-calc";
+import { computeOldGoldExchange, computeSaleLine, basisPointsOf, roundOffToRupee } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 
 export const list = query({
@@ -27,6 +27,19 @@ export const getItems = query({
       .query("saleItems")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
       .collect();
+  },
+});
+
+export const getOldGoldExchange = query({
+  args: { saleId: v.id("sales") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    return await ctx.db
+      .query("oldGoldExchanges")
+      .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .first();
   },
 });
 
@@ -60,6 +73,13 @@ const paymentSplitValidator = v.object({
   amountPaise: v.number(),
 });
 
+const oldGoldExchangeValidator = v.object({
+  metalPurityId: v.id("metalPurities"),
+  grossWeightMg: v.number(),
+  meltingDeductionBasisPoints: v.number(),
+  ratePerGramPaise: v.number(),
+});
+
 export const create = mutation({
   args: {
     customerId: v.id("customers"),
@@ -68,6 +88,7 @@ export const create = mutation({
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(), // basis points if percent, paise if fixed
     payments: v.array(paymentSplitValidator),
+    oldGoldExchange: v.optional(oldGoldExchangeValidator),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
@@ -126,6 +147,19 @@ export const create = mutation({
       computedLines.push({ item, boxItem, computed });
     }
 
+    let oldGoldComputed: ReturnType<typeof computeOldGoldExchange> | null = null;
+    if (args.oldGoldExchange) {
+      const { metalPurityId, grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise } = args.oldGoldExchange;
+      if (grossWeightMg <= 0) throw new Error("Old gold weight must be greater than zero");
+      if (meltingDeductionBasisPoints < 0 || meltingDeductionBasisPoints > 10000) {
+        throw new Error("Melting deduction must be between 0 and 100%");
+      }
+      if (ratePerGramPaise <= 0) throw new Error("Old gold rate must be greater than zero");
+      const purity = await ctx.db.get(metalPurityId);
+      if (!purity || purity.organizationId !== auth.organizationId) throw new Error("Metal purity not found");
+      oldGoldComputed = computeOldGoldExchange({ grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise });
+    }
+
     const itemsSubtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.taxableValuePaise, 0);
     const itemsTaxPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTaxPaise, 0);
 
@@ -140,9 +174,10 @@ export const create = mutation({
     const preRoundTotal = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
     const { roundedTotalPaise, roundOffPaise } = roundOffToRupee(preRoundTotal);
 
-    const amountPaidPaise = args.payments.reduce((sum, p) => sum + p.amountPaise, 0);
+    const paymentsTotalPaise = args.payments.reduce((sum, p) => sum + p.amountPaise, 0);
+    const amountPaidPaise = paymentsTotalPaise + (oldGoldComputed?.exchangeValuePaise ?? 0);
     if (amountPaidPaise < 0 || amountPaidPaise > roundedTotalPaise) {
-      throw new Error("Total payments cannot exceed the invoice total");
+      throw new Error("Total payments (including any old gold exchange) cannot exceed the invoice total");
     }
     for (const p of args.payments) {
       if (p.amountPaise <= 0) throw new Error("Each payment split must be greater than zero");
@@ -242,6 +277,35 @@ export const create = mutation({
         sourceId: saleId,
         mode: payment.mode,
         amountPaise: payment.amountPaise,
+        createdByUserId: auth.userId,
+        createdAt: now,
+      });
+    }
+
+    if (args.oldGoldExchange && oldGoldComputed) {
+      const exchangeId = await ctx.db.insert("oldGoldExchanges", {
+        organizationId: auth.organizationId,
+        saleId,
+        customerId: args.customerId,
+        metalPurityId: args.oldGoldExchange.metalPurityId,
+        grossWeightMg: args.oldGoldExchange.grossWeightMg,
+        meltingDeductionBasisPoints: args.oldGoldExchange.meltingDeductionBasisPoints,
+        netWeightMg: oldGoldComputed.netWeightMg,
+        ratePerGramPaise: args.oldGoldExchange.ratePerGramPaise,
+        exchangeValuePaise: oldGoldComputed.exchangeValuePaise,
+        createdByUserId: auth.userId,
+        createdAt: now,
+      });
+
+      await ctx.db.insert("payments", {
+        organizationId: auth.organizationId,
+        direction: "receipt",
+        partyType: "customer",
+        partyId: args.customerId,
+        sourceTable: "old_gold_exchanges",
+        sourceId: exchangeId,
+        mode: "old_gold_exchange",
+        amountPaise: oldGoldComputed.exchangeValuePaise,
         createdByUserId: auth.userId,
         createdAt: now,
       });

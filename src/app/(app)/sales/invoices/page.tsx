@@ -16,6 +16,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 
 function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: () => void }) {
   const items = useQuery(api.sales.getItems, { saleId });
+  const oldGoldExchange = useQuery(api.sales.getOldGoldExchange, { saleId });
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -49,6 +50,17 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
                 ))}
               </TableBody>
             </Table>
+          </div>
+        )}
+        {oldGoldExchange && (
+          <div className="rounded-md border border-border p-3 text-sm">
+            <p className="font-medium">Old gold exchange</p>
+            <p className="text-muted-foreground">
+              {mgToGramsDisplay(oldGoldExchange.netWeightMg)}g net (after{" "}
+              {(oldGoldExchange.meltingDeductionBasisPoints / 100).toFixed(2)}% melting deduction) @{" "}
+              {formatPaise(oldGoldExchange.ratePerGramPaise)}/g ={" "}
+              <span className="font-medium text-foreground">{formatPaise(oldGoldExchange.exchangeValuePaise)}</span>
+            </p>
           </div>
         )}
       </DialogContent>

@@ -105,3 +105,30 @@ export function roundOffToRupee(totalPaise: number): { roundedTotalPaise: number
   const roundedTotalPaise = Math.round(totalPaise / 100) * 100;
   return { roundedTotalPaise, roundOffPaise: roundedTotalPaise - totalPaise };
 }
+
+/**
+ * Old gold a customer trades in against a new bill (SRS §8). The melting
+ * deduction is a weight loss percentage (impurity/melting loss assessed by
+ * the shop), not a money charge — it reduces the gross weight before
+ * valuing it at the agreed rate.
+ */
+export type OldGoldExchangeInput = {
+  grossWeightMg: number;
+  meltingDeductionBasisPoints: number;
+  ratePerGramPaise: number;
+};
+
+export type OldGoldExchangeResult = OldGoldExchangeInput & {
+  netWeightMg: number;
+  exchangeValuePaise: number;
+};
+
+export function computeOldGoldExchange(input: OldGoldExchangeInput): OldGoldExchangeResult {
+  const meltingLossMg = basisPointsOf(input.grossWeightMg, input.meltingDeductionBasisPoints);
+  const net = Math.max(0, input.grossWeightMg - meltingLossMg);
+  return {
+    ...input,
+    netWeightMg: net,
+    exchangeValuePaise: metalValuePaise(net, input.ratePerGramPaise),
+  };
+}

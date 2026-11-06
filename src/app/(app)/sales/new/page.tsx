@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { computeSaleLine, mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { computeOldGoldExchange, computeSaleLine, gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -147,6 +147,11 @@ export default function NewBillPage() {
   const [payments, setPayments] = useState<{ mode: PaymentMode; amountRupees: string }[]>([
     { mode: "cash", amountRupees: "" },
   ]);
+  const [oldGoldEnabled, setOldGoldEnabled] = useState(false);
+  const [oldGoldPurityId, setOldGoldPurityId] = useState("");
+  const [oldGoldGrossGrams, setOldGoldGrossGrams] = useState("");
+  const [oldGoldMeltingPercent, setOldGoldMeltingPercent] = useState("");
+  const [oldGoldRateRupees, setOldGoldRateRupees] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -215,6 +220,15 @@ export default function NewBillPage() {
     [lines, taxConfigs, isGst],
   );
 
+  const oldGoldComputed = useMemo(() => {
+    if (!oldGoldEnabled) return null;
+    return computeOldGoldExchange({
+      grossWeightMg: gramsToMg(oldGoldGrossGrams || "0"),
+      meltingDeductionBasisPoints: percentToBasisPoints(oldGoldMeltingPercent || "0") ?? 0,
+      ratePerGramPaise: rupeesToPaise(oldGoldRateRupees || "0") ?? 0,
+    });
+  }, [oldGoldEnabled, oldGoldGrossGrams, oldGoldMeltingPercent, oldGoldRateRupees]);
+
   const totals = useMemo(() => {
     const subtotalPaise = computedLines.reduce((sum, l) => sum + l.taxableValuePaise, 0);
     const taxPaise = computedLines.reduce((sum, l) => sum + l.lineTaxPaise, 0);
@@ -228,17 +242,20 @@ export default function NewBillPage() {
     const preRound = subtotalPaise - discountPaise + taxPaise;
     const roundedTotal = Math.round(preRound / 100) * 100;
     const roundOffPaise = roundedTotal - preRound;
-    const amountPaidPaise = payments.reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
+    const paymentsPaise = payments.reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
+    const oldGoldValuePaise = oldGoldComputed?.exchangeValuePaise ?? 0;
+    const amountPaidPaise = paymentsPaise + oldGoldValuePaise;
     return {
       subtotalPaise,
       taxPaise,
       discountPaise,
       roundOffPaise,
       totalPaise: roundedTotal,
+      oldGoldValuePaise,
       amountPaidPaise,
       balancePaise: roundedTotal - amountPaidPaise,
     };
-  }, [computedLines, discountMode, discountValue, payments]);
+  }, [computedLines, discountMode, discountValue, payments, oldGoldComputed]);
 
   async function handleSave() {
     setServerError(null);
@@ -248,6 +265,10 @@ export default function NewBillPage() {
     }
     if (lines.length === 0) {
       setServerError("Add at least one item.");
+      return;
+    }
+    if (oldGoldEnabled && (!oldGoldPurityId || !oldGoldComputed || oldGoldComputed.grossWeightMg <= 0 || oldGoldComputed.ratePerGramPaise <= 0)) {
+      setServerError("Fill in the old gold purity, weight and rate, or turn off old gold exchange.");
       return;
     }
     setSubmitting(true);
@@ -276,6 +297,15 @@ export default function NewBillPage() {
         payments: payments
           .filter((p) => Number(p.amountRupees) > 0)
           .map((p) => ({ mode: p.mode, amountPaise: rupeesToPaise(p.amountRupees) ?? 0 })),
+        oldGoldExchange:
+          oldGoldEnabled && oldGoldPurityId
+            ? {
+                metalPurityId: oldGoldPurityId as Id<"metalPurities">,
+                grossWeightMg: gramsToMg(oldGoldGrossGrams || "0"),
+                meltingDeductionBasisPoints: percentToBasisPoints(oldGoldMeltingPercent || "0") ?? 0,
+                ratePerGramPaise: rupeesToPaise(oldGoldRateRupees || "0") ?? 0,
+              }
+            : undefined,
         idempotencyKey,
       });
       router.push(`/sales/invoices?created=${result.saleId}`);
@@ -448,6 +478,68 @@ export default function NewBillPage() {
           </div>
 
           <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Old Gold Exchange</CardTitle>
+              <Switch checked={oldGoldEnabled} onCheckedChange={setOldGoldEnabled} />
+            </CardHeader>
+            {oldGoldEnabled && (
+              <CardContent className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+                  <div className="grid gap-2">
+                    <Label>Purity</Label>
+                    <Select value={oldGoldPurityId} onValueChange={setOldGoldPurityId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select purity" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {purities.map((p) => (
+                          <SelectItem key={p._id} value={p._id}>
+                            {p.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Gross weight (g)</Label>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0.000"
+                      value={oldGoldGrossGrams}
+                      onChange={(e) => setOldGoldGrossGrams(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Melting deduction (%)</Label>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={oldGoldMeltingPercent}
+                      onChange={(e) => setOldGoldMeltingPercent(e.target.value)}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Rate / g (₹)</Label>
+                    <Input
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={oldGoldRateRupees}
+                      onChange={(e) => setOldGoldRateRupees(e.target.value)}
+                    />
+                  </div>
+                </div>
+                {oldGoldComputed && (
+                  <p className="text-sm text-muted-foreground">
+                    Net weight {mgToGramsDisplay(oldGoldComputed.netWeightMg)}g · Exchange value{" "}
+                    <span className="font-medium text-foreground">{formatPaise(oldGoldComputed.exchangeValuePaise)}</span>{" "}
+                    credited against this bill
+                  </p>
+                )}
+              </CardContent>
+            )}
+          </Card>
+
+          <Card>
             <CardHeader>
               <CardTitle className="text-base">Discount & Payment</CardTitle>
             </CardHeader>
@@ -555,6 +647,12 @@ export default function NewBillPage() {
                   <span>Total</span>
                   <span>{formatPaise(totals.totalPaise)}</span>
                 </div>
+                {totals.oldGoldValuePaise > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Old gold exchange</span>
+                    <span>-{formatPaise(totals.oldGoldValuePaise)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Paid</span>
                   <span>{formatPaise(totals.amountPaidPaise)}</span>
