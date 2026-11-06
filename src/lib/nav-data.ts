@@ -7,6 +7,7 @@ import {
   PackageSearch,
   Users,
   Truck,
+  Landmark,
   Coins,
   BarChart3,
   Settings,
@@ -97,6 +98,11 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Supplier Directory", href: "/suppliers" },
       { title: "Purchase History", href: "/suppliers/history" },
     ],
+  },
+  {
+    title: "Cash & Bank",
+    icon: Landmark,
+    href: "/cash-bank",
   },
   {
     title: "Metal Rates",

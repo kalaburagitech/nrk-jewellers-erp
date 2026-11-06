@@ -404,4 +404,34 @@ export default defineSchema({
     balancePaise: v.number(),
     createdAt: v.number(),
   }).index("by_supplier", ["supplierId"]),
+
+  // ---------- Cash & Bank ----------
+  // "Cash in hand" is just an account with type "cash" — same shape as a bank
+  // account, so the ledger and balance logic below never has to special-case it.
+  bankAccounts: defineTable({
+    organizationId: v.id("organizations"),
+    name: v.string(),
+    type: v.union(v.literal("cash"), v.literal("bank")),
+    bankName: v.optional(v.string()),
+    accountNumber: v.optional(v.string()),
+    openingBalancePaise: v.number(),
+    // Maintained running balance (= latest cashBankLedgerEntries.balancePaise)
+    // — same pattern as customers/suppliers' currentBalancePaise.
+    currentBalancePaise: v.optional(v.number()),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_org", ["organizationId"]),
+
+  cashBankLedgerEntries: defineTable({
+    organizationId: v.id("organizations"),
+    accountId: v.id("bankAccounts"),
+    sourceTable: v.string(), // "cash_bank_opening" | "cash_bank_transaction" | "cash_bank_transfer"
+    sourceId: v.string(),
+    description: v.string(),
+    debitPaise: v.number(),
+    creditPaise: v.number(),
+    balancePaise: v.number(),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_account", ["accountId"]),
 });
