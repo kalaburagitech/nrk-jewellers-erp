@@ -119,3 +119,38 @@ export const updateProfile = mutation({
     });
   },
 });
+
+export const generateLoginImageUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const setLoginImage = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    const org = await ctx.db.get(auth.organizationId);
+    const previous = org?.loginImageStorageId;
+    await ctx.db.patch(auth.organizationId, { loginImageStorageId: args.storageId });
+    if (previous) await ctx.storage.delete(previous);
+  },
+});
+
+/**
+ * Public (no auth) — the sign-in page needs this before anyone is logged
+ * in. Phase 1 is single-tenant, so "the org's login image" is unambiguous;
+ * this would need rethinking if multi-tenant login ever ships.
+ */
+export const getPublicLoginImageUrl = query({
+  args: {},
+  handler: async (ctx) => {
+    const org = await ctx.db.query("organizations").first();
+    if (!org?.loginImageStorageId) return null;
+    return await ctx.storage.getUrl(org.loginImageStorageId);
+  },
+});

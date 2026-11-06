@@ -1,13 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { ShieldAlert, UserPlus, Users } from "lucide-react";
+import { KeyRound, Plus, ShieldAlert, Trash2, UserPlus, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -28,12 +39,162 @@ const ROLE_OPTIONS: { value: Doc<"memberships">["role"]; label: string }[] = [
 
 const ROLE_LABEL = Object.fromEntries(ROLE_OPTIONS.map((r) => [r.value, r.label]));
 
+function CreateStaffDialog() {
+  const createStaffAccount = useAction(api.memberships.createStaffAccount);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [role, setRole] = useState<Doc<"memberships">["role"]>("billing_operator");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function reset() {
+    setName("");
+    setEmail("");
+    setPassword("");
+    setRole("billing_operator");
+    setError(null);
+  }
+
+  async function handleCreate() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await createStaffAccount({ email, password, name, role });
+      reset();
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the login.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) reset();
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="h-4 w-4" />
+          Create Staff Login
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create a staff login</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4">
+          <div className="grid gap-2">
+            <Label>Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Staff name" />
+          </div>
+          <div className="grid gap-2">
+            <Label>Email</Label>
+            <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="staff@example.com" />
+          </div>
+          <div className="grid gap-2">
+            <Label>Password</Label>
+            <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" minLength={8} />
+          </div>
+          <div className="grid gap-2">
+            <Label>Role</Label>
+            <Select value={role} onValueChange={(v) => setRole(v as Doc<"memberships">["role"])}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROLE_OPTIONS.filter((r) => r.value !== "owner").map((r) => (
+                  <SelectItem key={r.value} value={r.value}>
+                    {r.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button onClick={handleCreate} disabled={submitting}>
+            {submitting ? "Creating…" : "Create login"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ResetPasswordDialog({ membershipId, name }: { membershipId: Id<"memberships">; name: string }) {
+  const resetMemberPassword = useAction(api.memberships.resetMemberPassword);
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  async function handleReset() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await resetMemberPassword({ membershipId, newPassword: password });
+      setDone(true);
+      setPassword("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reset password.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) {
+          setError(null);
+          setDone(false);
+          setPassword("");
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" title="Reset password">
+          <KeyRound className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Reset password for {name}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-2">
+          <Label>New password</Label>
+          <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" minLength={8} />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          {done && !error && <p className="text-sm text-success">Password updated.</p>}
+        </div>
+        <DialogFooter>
+          <Button onClick={handleReset} disabled={submitting}>
+            {submitting ? "Saving…" : "Reset password"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function UsersAndRolesPage() {
   const members = useQuery(api.memberships.listMembers);
   const pendingUsers = useQuery(api.memberships.listPendingUsers);
   const addMember = useMutation(api.memberships.addMember);
   const updateMemberRole = useMutation(api.memberships.updateMemberRole);
   const setMemberStatus = useMutation(api.memberships.setMemberStatus);
+  const removeMember = useMutation(api.memberships.removeMember);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -46,14 +207,26 @@ export default function UsersAndRolesPage() {
     }
   }
 
+  async function handleRemove(membershipId: Id<"memberships">) {
+    setError(null);
+    try {
+      await removeMember({ membershipId });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove member.");
+    }
+  }
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Users and Roles</h1>
-        <p className="text-sm text-muted-foreground">
-          Permissions are enforced on the server for every action — roles here aren&apos;t just a
-          display label.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Users and Roles</h1>
+          <p className="text-sm text-muted-foreground">
+            Permissions are enforced on the server for every action — roles here aren&apos;t just a
+            display label.
+          </p>
+        </div>
+        <CreateStaffDialog />
       </div>
 
       {pendingUsers && pendingUsers.length > 0 && (
@@ -66,7 +239,7 @@ export default function UsersAndRolesPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <p className="text-sm text-muted-foreground">
-              These accounts signed up but have no role yet — pick a role to grant access.
+              These accounts signed up directly but have no role yet — pick a role to grant access.
             </p>
             {pendingUsers.map((u) => (
               <div key={u._id} className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
@@ -110,7 +283,8 @@ export default function UsersAndRolesPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead className="text-right">Active</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -143,7 +317,7 @@ export default function UsersAndRolesPage() {
                         </Select>
                       )}
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell>
                       {m.role === "owner" ? (
                         <Badge variant="secondary" className="font-normal">
                           Always active
@@ -155,6 +329,16 @@ export default function UsersAndRolesPage() {
                             setMemberStatus({ membershipId: m._id, status: checked ? "active" : "disabled" })
                           }
                         />
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {m.role !== "owner" && (
+                        <div className="flex justify-end gap-1">
+                          <ResetPasswordDialog membershipId={m._id} name={m.name} />
+                          <Button variant="ghost" size="icon" onClick={() => handleRemove(m._id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
                       )}
                     </TableCell>
                   </TableRow>
@@ -171,14 +355,6 @@ export default function UsersAndRolesPage() {
           {error}
         </p>
       )}
-
-      <Card>
-        <CardContent className="py-4 text-sm text-muted-foreground">
-          To add a new person: have them sign up at the sign-in page with their own email (not the
-          owner account) — they&apos;ll appear above under &quot;Awaiting access&quot; for you to
-          assign a role.
-        </CardContent>
-      </Card>
     </div>
   );
 }

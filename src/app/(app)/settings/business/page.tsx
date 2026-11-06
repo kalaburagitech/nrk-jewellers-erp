@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,76 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
+
+function LoginImageCard() {
+  const currentImageUrl = useQuery(api.organizations.getPublicLoginImageUrl);
+  const generateUploadUrl = useMutation(api.organizations.generateLoginImageUploadUrl);
+  const setLoginImage = useMutation(api.organizations.setLoginImage);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setError(null);
+    setUploading(true);
+    try {
+      const uploadUrl = await generateUploadUrl();
+      const result = await fetch(uploadUrl, {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      const { storageId } = await result.json();
+      await setLoginImage({ storageId });
+    } catch {
+      setError("Could not upload image.");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Login screen background</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-sm text-muted-foreground">
+          Shown behind the sign-in form. Falls back to the default image until one is uploaded.
+        </p>
+        {currentImageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={currentImageUrl}
+            alt="Current login background"
+            className="h-40 w-full rounded-md border border-border object-cover"
+          />
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+          id="login-image-upload"
+        />
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button
+          type="button"
+          variant="outline"
+          disabled={uploading}
+          onClick={() => fileInputRef.current?.click()}
+          className="self-start"
+        >
+          {uploading ? "Uploading…" : "Upload new image"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function ProfileForm({ profile }: { profile: Doc<"organizations"> }) {
   const updateProfile = useMutation(api.organizations.updateProfile);
@@ -105,6 +175,8 @@ export default function BusinessProfilePage() {
           )}
         </CardContent>
       </Card>
+
+      <LoginImageCard />
     </div>
   );
 }

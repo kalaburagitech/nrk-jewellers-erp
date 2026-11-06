@@ -28,6 +28,7 @@ export default defineSchema({
     gstin: v.optional(v.string()),
     address: v.optional(v.string()),
     phone: v.optional(v.string()),
+    loginImageStorageId: v.optional(v.id("_storage")),
     createdAt: v.number(),
   }),
 
