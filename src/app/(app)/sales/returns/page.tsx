@@ -1,6 +1,15 @@
-import { ComingSoon } from "@/components/coming-soon";
-import { Receipt } from "lucide-react";
+"use client";
+
+import { SalesReturnListPage } from "@/components/sales-return-list-page";
 
 export default function SalesReturnsPage() {
-  return <ComingSoon icon={Receipt} title="Sales Returns" milestone="Arriving in a later milestone" />;
+  return (
+    <SalesReturnListPage
+      documentType="sales_return"
+      heading="Sales Returns"
+      description="Returned items go back into their box and the customer's outstanding balance is reduced."
+      triggerLabel="New Sales Return"
+      dialogTitle="Record a sales return"
+    />
+  );
 }

@@ -239,6 +239,11 @@ export default defineSchema({
     branchId: v.id("branches"),
     supplierId: v.id("suppliers"),
     invoiceNumber: v.string(),
+    // Absent on every row created before this field existed — always treat
+    // missing as "purchase_invoice" (the only document type until now).
+    documentType: v.optional(
+      v.union(v.literal("purchase_invoice"), v.literal("purchase_order"), v.literal("purchase_return")),
+    ),
     status: v.union(v.literal("finalized"), v.literal("cancelled")),
     subtotalPaise: v.number(),
     taxPaise: v.number(),
@@ -258,8 +263,11 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     purchaseId: v.id("purchases"),
     productId: v.id("products"),
-    boxId: v.id("boxes"),
-    boxItemId: v.id("boxItems"),
+    // Unset for a purchase order (goods not physically received yet) and
+    // for a purchase return's own line records (the box item already
+    // existed before the return; see boxItemId on the original purchase).
+    boxId: v.optional(v.id("boxes")),
+    boxItemId: v.optional(v.id("boxItems")),
     metalPurityId: v.optional(v.id("metalPurities")),
     label: v.string(),
     grossWeightMg: v.number(),

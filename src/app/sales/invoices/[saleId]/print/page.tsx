@@ -26,6 +26,15 @@ const PAYMENT_MODE_LABEL: Record<string, string> = {
   old_gold_exchange: "Old Gold Exchange",
 };
 
+const DOCUMENT_TITLE: Record<string, string> = {
+  quotation: "Quotation",
+  proforma_invoice: "Proforma Invoice",
+  sales_return: "Sales Return",
+  credit_note: "Credit Note",
+  delivery_challan: "Delivery Challan",
+  sales_order: "Sales Order",
+};
+
 const TEMPLATES = [
   { value: "full-a4", label: "Full A4" },
   { value: "half-a4", label: "Half A4" },
@@ -105,7 +114,9 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
             </p>
           </div>
           <div className="text-right">
-            <p className="font-semibold">{sale.isGst ? "Tax Invoice" : "Invoice"}</p>
+            <p className="font-semibold">
+              {DOCUMENT_TITLE[sale.documentType] ?? (sale.isGst ? "Tax Invoice" : "Invoice")}
+            </p>
             <p className="text-muted-foreground">{sale.invoiceNumber}</p>
             <p className="text-muted-foreground">{new Date(sale.createdAt).toLocaleDateString("en-IN")}</p>
           </div>

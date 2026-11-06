@@ -1,6 +1,15 @@
-import { ComingSoon } from "@/components/coming-soon";
-import { Receipt } from "lucide-react";
+"use client";
+
+import { SalesReturnListPage } from "@/components/sales-return-list-page";
 
 export default function CreditNotesPage() {
-  return <ComingSoon icon={Receipt} title="Credit Notes" milestone="Arriving in a later milestone" />;
+  return (
+    <SalesReturnListPage
+      documentType="credit_note"
+      heading="Credit Notes"
+      description="A formal credit issued against a customer's account for returned goods."
+      triggerLabel="New Credit Note"
+      dialogTitle="Issue a credit note"
+    />
+  );
 }
