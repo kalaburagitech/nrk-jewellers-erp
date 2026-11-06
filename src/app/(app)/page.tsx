@@ -4,12 +4,15 @@ import type { ComponentType } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
   AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
   Coins,
   Gem,
+  Minus,
   Package,
-  Plus,
   Receipt,
   ShoppingCart,
   TrendingUp,
@@ -23,29 +26,99 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 
-function MetricCard({
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good Morning";
+  if (hour < 17) return "Good Afternoon";
+  return "Good Evening";
+}
+
+function DeltaBadge({ percent }: { percent: number | null | undefined }) {
+  if (percent === null || percent === undefined) {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
+        <Minus className="h-3 w-3" />
+        —
+      </span>
+    );
+  }
+  const positive = percent > 0;
+  const flat = percent === 0;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-xs font-medium ${
+        flat ? "text-muted-foreground" : positive ? "text-success" : "text-destructive"
+      }`}
+    >
+      {flat ? <Minus className="h-3 w-3" /> : positive ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+      {flat ? "0%" : `${Math.abs(percent)}%`}
+    </span>
+  );
+}
+
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  const points = data.map((v, i) => ({ i, v }));
+  return (
+    <div className="h-10 w-20">
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={points} margin={{ top: 2, right: 0, bottom: 0, left: 0 }}>
+          <defs>
+            <linearGradient id={`spark-${color.replace("#", "")}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area
+            type="monotone"
+            dataKey="v"
+            stroke={color}
+            strokeWidth={2}
+            fill={`url(#spark-${color.replace("#", "")})`}
+          />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function StatCard({
   label,
   value,
   icon: Icon,
-  tone,
+  deltaPercent,
+  sparklineData,
+  sparklineColor,
 }: {
   label: string;
   value: string | undefined;
   icon: ComponentType<{ className?: string }>;
-  tone?: "default" | "destructive";
+  deltaPercent?: number | null;
+  sparklineData?: number[];
+  sparklineColor?: string;
 }) {
   return (
-    <Card className="gap-2">
+    <Card className="gap-3">
       <CardHeader className="flex flex-row items-center justify-between pb-0">
         <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
-        <Icon className={`h-4 w-4 ${tone === "destructive" ? "text-destructive" : "text-gold"}`} />
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-gold/10">
+          <Icon className="h-4 w-4 text-gold" />
+        </div>
       </CardHeader>
-      <CardContent>
-        {value === undefined ? (
-          <p className="text-2xl font-semibold tracking-tight text-muted-foreground/50">—</p>
-        ) : (
-          <p className="text-2xl font-semibold tracking-tight">{value}</p>
-        )}
+      <CardContent className="flex items-end justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          {value === undefined ? (
+            <p className="text-2xl font-semibold tracking-tight text-muted-foreground/50">—</p>
+          ) : (
+            <p className="text-2xl font-semibold tracking-tight">{value}</p>
+          )}
+          {deltaPercent !== undefined && (
+            <div className="flex items-center gap-1">
+              <DeltaBadge percent={deltaPercent} />
+              <span className="text-xs text-muted-foreground">vs yesterday</span>
+            </div>
+          )}
+        </div>
+        {sparklineData && sparklineColor && <Sparkline data={sparklineData} color={sparklineColor} />}
       </CardContent>
     </Card>
   );
@@ -61,15 +134,31 @@ const QUICK_ACTIONS = [
 export default function DashboardPage() {
   const summary = useQuery(api.dashboard.getSummary);
   const currentRates = useQuery(api.metalRates.getCurrent);
+  const access = useQuery(api.organizations.getMyAccess);
+
+  const firstName = (access?.user?.name ?? access?.user?.email ?? "").split(" ")[0] || "there";
+
+  const salesSpark = summary?.trend.map((t) => t.salesPaise / 100);
+  const purchasesSpark = summary?.trend.map((t) => t.purchasesPaise / 100);
+  const cashSpark = summary?.trend.map((t) => t.cashPaise / 100);
+
+  const chartData = summary?.trend.map((t) => ({
+    label: new Date(t.date).toLocaleDateString("en-IN", { weekday: "short" }),
+    sales: t.salesPaise / 100,
+  }));
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Business overview, calculated from recorded sales, purchases and stock — nothing here is
-          placeholder data.
-        </p>
+      <div className="relative overflow-hidden rounded-xl border border-gold/20 bg-gradient-to-br from-gold/15 via-card to-card p-6">
+        <div className="relative flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {greeting()}, {firstName}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Business overview, calculated from recorded sales, purchases and stock — nothing here is
+            placeholder data.
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
@@ -84,45 +173,34 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard
+        <StatCard
           label="Today's Sales"
           value={summary && formatPaise(summary.todaysSalesPaise)}
           icon={TrendingUp}
+          deltaPercent={summary?.salesDeltaPercent}
+          sparklineData={salesSpark}
+          sparklineColor="#22c55e"
         />
-        <MetricCard
+        <StatCard
           label="Today's Purchases"
           value={summary && formatPaise(summary.todaysPurchasesPaise)}
           icon={ShoppingCart}
+          deltaPercent={summary?.purchasesDeltaPercent}
+          sparklineData={purchasesSpark}
+          sparklineColor="#f59e0b"
         />
-        <MetricCard
+        <StatCard
           label="Net Cash (from payments)"
           value={summary && formatPaise(summary.netCashPaise)}
           icon={Wallet}
+          deltaPercent={summary?.netCashDeltaPercent}
+          sparklineData={cashSpark}
+          sparklineColor="#60a5fa"
         />
-        <MetricCard
+        <StatCard
           label="Customer Receivables"
           value={summary && formatPaise(summary.totalReceivablesPaise)}
           icon={Users2}
-        />
-        <MetricCard
-          label="Supplier Payables"
-          value={summary && formatPaise(summary.totalPayablesPaise)}
-          icon={ShoppingCart}
-        />
-        <MetricCard
-          label="Gold Stock"
-          value={summary && `${mgToGramsDisplay(summary.goldStockMg)}g`}
-          icon={Coins}
-        />
-        <MetricCard
-          label="Silver Stock"
-          value={summary && `${mgToGramsDisplay(summary.silverStockMg)}g`}
-          icon={Coins}
-        />
-        <MetricCard
-          label="Ornaments in Stock"
-          value={summary && String(summary.totalOrnamentCount)}
-          icon={Gem}
         />
       </div>
 
@@ -142,9 +220,60 @@ export default function DashboardPage() {
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Sales Overview — last 7 days</CardTitle>
+          </CardHeader>
+          <CardContent className="h-64 pl-0">
+            {!chartData ? (
+              <p className="px-6 text-sm text-muted-foreground">Loading…</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 4, right: 16, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="sales-overview-fill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--color-gold)" stopOpacity={0.35} />
+                      <stop offset="100%" stopColor="var(--color-gold)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
+                  />
+                  <YAxis
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fontSize: 12, fill: "var(--color-muted-foreground)" }}
+                    tickFormatter={(v) => `₹${Number(v).toLocaleString("en-IN")}`}
+                    width={70}
+                  />
+                  <Tooltip
+                    formatter={(value) => [`₹${Number(value).toLocaleString("en-IN")}`, "Sales"]}
+                    contentStyle={{
+                      background: "var(--color-popover)",
+                      border: "1px solid var(--color-border)",
+                      borderRadius: 8,
+                      fontSize: 12,
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="var(--color-gold)"
+                    strokeWidth={2}
+                    fill="url(#sales-overview-fill)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Metal Rates</CardTitle>
+            <CardTitle className="text-base">Live Metal Rates</CardTitle>
             <Button variant="ghost" size="sm" asChild>
               <Link href="/metal-rates">Manage</Link>
             </Button>
@@ -156,7 +285,10 @@ export default function DashboardPage() {
               <p className="text-sm text-muted-foreground">No purities configured yet.</p>
             ) : (
               currentRates.map(({ purity, latest }) => (
-                <div key={purity._id} className="flex items-center justify-between text-sm">
+                <div
+                  key={purity._id}
+                  className="flex items-center justify-between rounded-md border border-border/60 px-3 py-2 text-sm"
+                >
                   <span className="text-muted-foreground">{purity.label}</span>
                   <span className="font-medium">{latest ? formatPaise(latest.ratePerGramPaise) : "—"}</span>
                 </div>
@@ -164,57 +296,71 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="text-base">Recent Invoices</CardTitle>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href="/sales/invoices">
-                View all
-              </Link>
-            </Button>
-          </CardHeader>
-          <CardContent className="p-0">
-            {summary === undefined ? (
-              <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-            ) : summary.recentInvoices.length === 0 ? (
-              <div className="flex flex-col items-center gap-2 py-10 text-center">
-                <Receipt className="h-8 w-8 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">No bills recorded yet.</p>
-                <Button size="sm" asChild>
-                  <Link href="/sales/new">
-                    <Plus className="h-4 w-4" />
-                    Create the first bill
-                  </Link>
-                </Button>
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summary.recentInvoices.map((inv) => (
-                    <TableRow key={inv._id}>
-                      <TableCell className="font-medium">
-                        <Badge variant="secondary">{inv.invoiceNumber}</Badge>
-                      </TableCell>
-                      <TableCell>{inv.customerName}</TableCell>
-                      <TableCell>{new Date(inv.createdAt).toLocaleDateString("en-IN")}</TableCell>
-                      <TableCell className="text-right">{formatPaise(inv.totalPaise)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
       </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Gold Stock" value={summary && `${mgToGramsDisplay(summary.goldStockMg)}g`} icon={Coins} />
+        <StatCard
+          label="Silver Stock"
+          value={summary && `${mgToGramsDisplay(summary.silverStockMg)}g`}
+          icon={Coins}
+        />
+        <StatCard
+          label="Ornaments in Stock"
+          value={summary && String(summary.totalOrnamentCount)}
+          icon={Gem}
+        />
+        <StatCard
+          label="Supplier Payables"
+          value={summary && formatPaise(summary.totalPayablesPaise)}
+          icon={ShoppingCart}
+        />
+      </div>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle className="text-base">Recent Transactions</CardTitle>
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/sales/invoices">View all</Link>
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {summary === undefined ? (
+            <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+          ) : summary.recentInvoices.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-10 text-center">
+              <Receipt className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">No bills recorded yet.</p>
+              <Button size="sm" asChild>
+                <Link href="/sales/new">Create the first bill</Link>
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {summary.recentInvoices.map((inv) => (
+                  <TableRow key={inv._id}>
+                    <TableCell className="font-medium">
+                      <Badge variant="secondary">{inv.invoiceNumber}</Badge>
+                    </TableCell>
+                    <TableCell>{inv.customerName}</TableCell>
+                    <TableCell>{new Date(inv.createdAt).toLocaleDateString("en-IN")}</TableCell>
+                    <TableCell className="text-right">{formatPaise(inv.totalPaise)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

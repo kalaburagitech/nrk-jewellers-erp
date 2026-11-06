@@ -80,6 +80,34 @@ export const getSummary = query({
       return sum + signed;
     }, 0);
 
+    // Last 7 calendar days (oldest first) — drives the dashboard sparklines
+    // and the Sales Overview chart. "Today vs yesterday" % deltas read off
+    // the last two entries of this same array, so there's one source of truth.
+    const dayMs = 24 * 60 * 60 * 1000;
+    const trend = Array.from({ length: 7 }, (_, i) => {
+      const dayStart = todayStart - (6 - i) * dayMs;
+      const dayEnd = dayStart + dayMs;
+      const salesPaise = recentSales
+        .filter((s) => s.createdAt >= dayStart && s.createdAt < dayEnd && s.status === "finalized")
+        .reduce((sum, s) => sum + s.totalPaise, 0);
+      const purchasesPaise = recentPurchases
+        .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.status === "finalized")
+        .reduce((sum, p) => sum + p.totalPaise, 0);
+      const cashPaise = payments
+        .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.mode !== "old_gold_exchange")
+        .reduce((sum, p) => sum + (p.direction === "receipt" ? p.amountPaise : -p.amountPaise), 0);
+      return { date: dayStart, salesPaise, purchasesPaise, cashPaise };
+    });
+
+    function deltaPercent(today: number, yesterday: number): number | null {
+      if (yesterday === 0) return today === 0 ? 0 : null;
+      return Math.round(((today - yesterday) / Math.abs(yesterday)) * 100);
+    }
+    const yesterday = trend[trend.length - 2];
+    const salesDeltaPercent = deltaPercent(todaysSalesPaise, yesterday.salesPaise);
+    const purchasesDeltaPercent = deltaPercent(todaysPurchasesPaise, yesterday.purchasesPaise);
+    const netCashDeltaPercent = deltaPercent(netCashPaise, yesterday.cashPaise);
+
     const totalReceivablesPaise = customers.reduce((sum, c) => {
       const balance = c.currentBalancePaise ?? c.openingBalancePaise;
       return sum + Math.max(0, balance);
@@ -131,6 +159,10 @@ export const getSummary = query({
       totalOrnamentCount: boxItems.length,
       lowStockCount,
       recentInvoices,
+      trend,
+      salesDeltaPercent,
+      purchasesDeltaPercent,
+      netCashDeltaPercent,
     };
   },
 });
