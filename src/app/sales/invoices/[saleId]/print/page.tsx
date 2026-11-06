@@ -57,7 +57,7 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
   const [template, setTemplate] = useState<Template>("full-a4");
 
   if (data === undefined) {
-    return <p className="p-8 text-sm text-muted-foreground">Loading…</p>;
+    return <p className="p-8 text-sm text-gray-500">Loading…</p>;
   }
 
   const { sale, items, customer, organization, oldGoldExchange, payments } = data;
@@ -103,12 +103,12 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
         </div>
       </div>
 
-      <div className={`mx-auto flex flex-col gap-4 bg-white p-6 shadow-sm print:shadow-none ${widthClass}`}>
-        <div className="flex items-start justify-between border-b border-border pb-3">
+      <div className={`mx-auto flex flex-col gap-4 bg-white p-6 text-gray-900 shadow-sm print:shadow-none ${widthClass}`}>
+        <div className="flex items-start justify-between border-b border-gray-200 pb-3">
           <div>
             <h1 className="text-lg font-semibold">{organization?.name ?? "NRK Jewellers"}</h1>
-            {organization?.address && <p className="whitespace-pre-line text-muted-foreground">{organization.address}</p>}
-            <p className="text-muted-foreground">
+            {organization?.address && <p className="whitespace-pre-line text-gray-500">{organization.address}</p>}
+            <p className="text-gray-500">
               {organization?.phone && <>{organization.phone} · </>}
               {organization?.gstin && <>GSTIN: {organization.gstin}</>}
             </p>
@@ -117,21 +117,21 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
             <p className="font-semibold">
               {DOCUMENT_TITLE[sale.documentType] ?? (sale.isGst ? "Tax Invoice" : "Invoice")}
             </p>
-            <p className="text-muted-foreground">{sale.invoiceNumber}</p>
-            <p className="text-muted-foreground">{new Date(sale.createdAt).toLocaleDateString("en-IN")}</p>
+            <p className="text-gray-500">{sale.invoiceNumber}</p>
+            <p className="text-gray-500">{new Date(sale.createdAt).toLocaleDateString("en-IN")}</p>
           </div>
         </div>
 
         <div>
           <p className="font-medium">Bill To</p>
           <p>{customer?.name}</p>
-          {customer?.phone && <p className="text-muted-foreground">{customer.phone}</p>}
-          {customer?.gstin && <p className="text-muted-foreground">GSTIN: {customer.gstin}</p>}
+          {customer?.phone && <p className="text-gray-500">{customer.phone}</p>}
+          {customer?.gstin && <p className="text-gray-500">GSTIN: {customer.gstin}</p>}
         </div>
 
         <table className="w-full border-collapse">
           <thead>
-            <tr className="border-b border-border text-left">
+            <tr className="border-b border-gray-200 text-left">
               <th className="py-1">Item</th>
               <th className="py-1 text-right">Net Wt (g)</th>
               <th className="py-1 text-right">Rate/g</th>
@@ -142,7 +142,7 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
           </thead>
           <tbody>
             {items.map((item) => (
-              <tr key={item._id} className="border-b border-border/60">
+              <tr key={item._id} className="border-b border-gray-200/60">
                 <td className="py-1">{item.label}</td>
                 <td className="py-1 text-right">{mgToGramsDisplay(item.netWeightMg)}</td>
                 <td className="py-1 text-right">{formatPaise(item.ratePerGramPaise)}</td>
@@ -156,37 +156,37 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
 
         <div className="ml-auto flex w-full max-w-xs flex-col gap-1">
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
+            <span className="text-gray-500">Subtotal</span>
             <span>{formatPaise(sale.subtotalPaise)}</span>
           </div>
           {sale.discountPaise > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Discount</span>
+              <span className="text-gray-500">Discount</span>
               <span>-{formatPaise(sale.discountPaise)}</span>
             </div>
           )}
           {sale.isGst && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax</span>
+              <span className="text-gray-500">Tax</span>
               <span>{formatPaise(sale.taxPaise)}</span>
             </div>
           )}
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Round off</span>
+            <span className="text-gray-500">Round off</span>
             <span>{formatPaise(sale.roundOffPaise)}</span>
           </div>
-          <div className="flex justify-between border-t border-border pt-1 font-semibold">
+          <div className="flex justify-between border-t border-gray-200 pt-1 font-semibold">
             <span>Total</span>
             <span>{formatPaise(sale.totalPaise)}</span>
           </div>
           {oldGoldExchange && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Old gold exchange</span>
+              <span className="text-gray-500">Old gold exchange</span>
               <span>-{formatPaise(oldGoldExchange.exchangeValuePaise)}</span>
             </div>
           )}
           {payments.map((p) => (
-            <div key={p._id} className="flex justify-between text-muted-foreground">
+            <div key={p._id} className="flex justify-between text-gray-500">
               <span>Paid ({PAYMENT_MODE_LABEL[p.mode] ?? p.mode})</span>
               <span>{formatPaise(p.amountPaise)}</span>
             </div>
@@ -197,9 +197,9 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
           </div>
         </div>
 
-        <p className="border-t border-border pt-2 text-muted-foreground">{amountInWordsFromPaise(sale.totalPaise)}</p>
+        <p className="border-t border-gray-200 pt-2 text-gray-500">{amountInWordsFromPaise(sale.totalPaise)}</p>
 
-        <p className="pt-4 text-center text-muted-foreground">Thank you for your business!</p>
+        <p className="pt-4 text-center text-gray-500">Thank you for your business!</p>
       </div>
     </div>
   );

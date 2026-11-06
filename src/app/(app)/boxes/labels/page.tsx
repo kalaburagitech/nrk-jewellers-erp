@@ -20,12 +20,15 @@ function Label({ item, boxNumber }: { item: Doc<"boxItems">; boxNumber: number }
   }, [item._id]);
 
   return (
-    <div className="flex items-center gap-2 border border-dashed border-border p-2" style={{ width: "72mm" }}>
+    <div
+      className="flex items-center gap-2 border border-dashed border-border bg-card p-2 print:border-gray-400 print:bg-white"
+      style={{ width: "72mm" }}
+    >
       <canvas ref={canvasRef} className="h-[18mm] w-[18mm] shrink-0" />
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-semibold tracking-wide">NRK JEWELLERS</p>
-        <p className="truncate text-xs font-medium">{item.label}</p>
-        <p className="text-[10px] text-muted-foreground">
+        <p className="text-[10px] font-semibold tracking-wide print:text-black">NRK JEWELLERS</p>
+        <p className="truncate text-xs font-medium print:text-black">{item.label}</p>
+        <p className="text-[10px] text-muted-foreground print:text-gray-600">
           Box {boxNumber} · {mgToGramsDisplay(item.netWeightMg)}g
         </p>
       </div>
