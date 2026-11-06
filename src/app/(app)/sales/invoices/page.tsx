@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Pencil, Plus, Printer, Receipt } from "lucide-react";
+import { Pencil, Plus, Printer, Receipt, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +39,12 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
               <Link href={`/sales/invoices/${saleId}/print`} target="_blank">
                 <Printer className="h-4 w-4" />
                 Print / Share
+              </Link>
+            </Button>
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/sales/invoices/${saleId}/eway-bill`} target="_blank">
+                <Truck className="h-4 w-4" />
+                E-Way Bill
               </Link>
             </Button>
           </div>

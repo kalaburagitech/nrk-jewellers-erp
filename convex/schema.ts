@@ -450,4 +450,22 @@ export default defineSchema({
     createdByUserId: v.id("users"),
     createdAt: v.number(),
   }).index("by_org", ["organizationId"]),
+
+  // ---------- E-Way Bill ----------
+  // We have no GSP/government API access, so this is "Part A" document data
+  // entry only — staff still generate the actual EWB on ewaybillgst.gov.in
+  // and paste the number back in. One row per sale; updating re-saves it.
+  ewayBills: defineTable({
+    organizationId: v.id("organizations"),
+    saleId: v.id("sales"),
+    transportMode: v.union(v.literal("road"), v.literal("rail"), v.literal("air"), v.literal("ship")),
+    vehicleNumber: v.optional(v.string()),
+    transporterName: v.optional(v.string()),
+    transporterGstin: v.optional(v.string()),
+    approxDistanceKm: v.optional(v.number()),
+    ewayBillNumber: v.optional(v.string()),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_sale", ["saleId"]),
 });

@@ -13,6 +13,7 @@ import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
 import type * as customers from "../customers.js";
 import type * as dashboard from "../dashboard.js";
+import type * as ewayBills from "../ewayBills.js";
 import type * as expenses from "../expenses.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
@@ -44,6 +45,7 @@ declare const fullApi: ApiFromModules<{
   cashBank: typeof cashBank;
   customers: typeof customers;
   dashboard: typeof dashboard;
+  ewayBills: typeof ewayBills;
   expenses: typeof expenses;
   http: typeof http;
   "lib/auth": typeof lib_auth;
