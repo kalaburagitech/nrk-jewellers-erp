@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { requireAuthContext, requireRole } from "./lib/auth";
 
 /**
  * Returns the signed-in user's membership + organization, or null if they
@@ -84,5 +85,37 @@ export const ensureBootstrapped = mutation({
     }
 
     return { created: true };
+  },
+});
+
+export const getProfile = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    return await ctx.db.get(auth.organizationId);
+  },
+});
+
+export const updateProfile = mutation({
+  args: {
+    name: v.string(),
+    legalName: v.optional(v.string()),
+    gstin: v.optional(v.string()),
+    address: v.optional(v.string()),
+    phone: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    const name = args.name.trim();
+    if (!name) throw new Error("Business name is required");
+
+    await ctx.db.patch(auth.organizationId, {
+      name,
+      legalName: args.legalName?.trim() || undefined,
+      gstin: args.gstin?.trim() || undefined,
+      address: args.address?.trim() || undefined,
+      phone: args.phone?.trim() || undefined,
+    });
   },
 });

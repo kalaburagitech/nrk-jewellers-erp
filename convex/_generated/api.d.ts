@@ -15,6 +15,7 @@ import type * as dashboard from "../dashboard.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_sequences from "../lib/sequences.js";
+import type * as memberships from "../memberships.js";
 import type * as metalPurities from "../metalPurities.js";
 import type * as metalRates from "../metalRates.js";
 import type * as organizations from "../organizations.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/auth": typeof lib_auth;
   "lib/sequences": typeof lib_sequences;
+  memberships: typeof memberships;
   metalPurities: typeof metalPurities;
   metalRates: typeof metalRates;
   organizations: typeof organizations;

@@ -43,6 +43,46 @@ export const getOldGoldExchange = query({
   },
 });
 
+/** Everything a printable invoice needs, in one query. */
+export const getInvoiceData = query({
+  args: { saleId: v.id("sales") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+
+    const [saleItems, customer, organization, oldGoldExchange, payments] = await Promise.all([
+      ctx.db
+        .query("saleItems")
+        .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+        .collect(),
+      ctx.db.get(sale.customerId),
+      ctx.db.get(auth.organizationId),
+      ctx.db
+        .query("oldGoldExchanges")
+        .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+        .first(),
+      ctx.db
+        .query("payments")
+        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.and(q.eq(q.field("sourceTable"), "sales"), q.eq(q.field("sourceId"), args.saleId)))
+        .collect(),
+    ]);
+
+    const items = await Promise.all(
+      saleItems.map(async (item) => {
+        const [product, boxItem] = await Promise.all([
+          ctx.db.get(item.productId),
+          item.boxItemId ? ctx.db.get(item.boxItemId) : null,
+        ]);
+        return { ...item, productName: product?.name ?? "Item", label: boxItem?.label ?? product?.name ?? "Item" };
+      }),
+    );
+
+    return { sale, items, customer, organization, oldGoldExchange, payments };
+  },
+});
+
 export const listByCustomer = query({
   args: { customerId: v.id("customers") },
   handler: async (ctx, args) => {

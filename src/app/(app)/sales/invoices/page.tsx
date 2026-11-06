@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Plus, Receipt } from "lucide-react";
+import { Plus, Printer, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,8 +21,14 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
+        <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Sale items</DialogTitle>
+          <Button variant="outline" size="sm" asChild>
+            <Link href={`/sales/invoices/${saleId}/print`} target="_blank">
+              <Printer className="h-4 w-4" />
+              Print / Share
+            </Link>
+          </Button>
         </DialogHeader>
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>

@@ -27,6 +27,7 @@ export default defineSchema({
     legalName: v.optional(v.string()),
     gstin: v.optional(v.string()),
     address: v.optional(v.string()),
+    phone: v.optional(v.string()),
     createdAt: v.number(),
   }),
 

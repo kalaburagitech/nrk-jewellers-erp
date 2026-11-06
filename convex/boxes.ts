@@ -53,6 +53,39 @@ export const createNext = mutation({
   },
 });
 
+/** Moves one physical item to a different box — never two boxes at once, since this patches the single boxItem.boxId that is the source of truth for its location. */
+export const transferItem = mutation({
+  args: { boxItemId: v.id("boxItems"), toBoxId: v.id("boxes") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, ["inventory_manager"]);
+
+    const boxItem = await ctx.db.get(args.boxItemId);
+    if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (boxItem.status !== "in_stock") throw new Error("Only in-stock items can be transferred");
+
+    const toBox = await ctx.db.get(args.toBoxId);
+    if (!toBox || toBox.organizationId !== auth.organizationId) throw new Error("Destination box not found");
+    if (toBox._id === boxItem.boxId) throw new Error("Item is already in this box");
+
+    const fromBox = await ctx.db.get(boxItem.boxId);
+
+    await ctx.db.patch(args.boxItemId, { boxId: args.toBoxId });
+    if (fromBox) await ctx.db.patch(fromBox._id, { itemCount: Math.max(0, (fromBox.itemCount ?? 0) - 1) });
+    await ctx.db.patch(args.toBoxId, { itemCount: (toBox.itemCount ?? 0) + 1 });
+
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "box.transfer",
+      entityTable: "boxItems",
+      entityId: args.boxItemId,
+      metadata: { fromBoxNumber: fromBox?.boxNumber, toBoxNumber: toBox.boxNumber, label: boxItem.label },
+      createdAt: Date.now(),
+    });
+  },
+});
+
 /** One-off data repair: recomputes itemCount for boxes created before the field existed. Not exposed in the UI. */
 export const recomputeItemCounts = internalMutation({
   args: {},
