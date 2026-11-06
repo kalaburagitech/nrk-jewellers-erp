@@ -248,12 +248,7 @@ export const create = mutation({
       if (box) await ctx.db.patch(boxId, { itemCount: Math.max(0, (box.itemCount ?? 0) - delta) });
     }
 
-    const lastLedgerEntry = await ctx.db
-      .query("customerLedgerEntries")
-      .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
-      .order("desc")
-      .first();
-    const priorBalance = lastLedgerEntry?.balancePaise ?? customer.openingBalancePaise;
+    const priorBalance = customer.currentBalancePaise ?? customer.openingBalancePaise;
     const newBalance = priorBalance + roundedTotalPaise - amountPaidPaise;
 
     await ctx.db.insert("customerLedgerEntries", {
@@ -266,6 +261,7 @@ export const create = mutation({
       balancePaise: newBalance,
       createdAt: now,
     });
+    await ctx.db.patch(args.customerId, { currentBalancePaise: newBalance });
 
     for (const payment of args.payments) {
       await ctx.db.insert("payments", {

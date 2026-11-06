@@ -82,6 +82,10 @@ export default defineSchema({
     customerType: v.union(v.literal("cash"), v.literal("regular"), v.literal("credit")),
     creditLimitPaise: v.optional(v.number()),
     openingBalancePaise: v.number(),
+    // Maintained running balance (= latest customerLedgerEntries.balancePaise),
+    // updated by every mutation that writes a ledger entry — avoids reading
+    // the ledger per customer just to show an outstanding figure.
+    currentBalancePaise: v.optional(v.number()),
     notes: v.optional(v.string()),
     isActive: v.boolean(),
     createdAt: v.number(),
@@ -97,6 +101,7 @@ export default defineSchema({
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
     openingBalancePaise: v.number(),
+    currentBalancePaise: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
   }).index("by_org", ["organizationId"]),

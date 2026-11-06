@@ -1,12 +1,5 @@
-import { ComingSoon } from "@/components/coming-soon";
-import { Boxes } from "lucide-react";
+import { redirect } from "next/navigation";
 
 export default function StockOverviewPage() {
-  return (
-    <ComingSoon
-      icon={Boxes}
-      title="Stock Overview"
-      milestone="Arrives once purchases start recording real weight movements (Milestone 3)"
-    />
-  );
+  redirect("/reports/stock");
 }

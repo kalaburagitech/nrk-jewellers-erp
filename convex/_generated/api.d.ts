@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as boxes from "../boxes.js";
 import type * as customers from "../customers.js";
+import type * as dashboard from "../dashboard.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_sequences from "../lib/sequences.js";
@@ -19,6 +20,7 @@ import type * as metalRates from "../metalRates.js";
 import type * as organizations from "../organizations.js";
 import type * as products from "../products.js";
 import type * as purchases from "../purchases.js";
+import type * as reports from "../reports.js";
 import type * as sales from "../sales.js";
 import type * as stockCategories from "../stockCategories.js";
 import type * as stockGroups from "../stockGroups.js";
@@ -35,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   boxes: typeof boxes;
   customers: typeof customers;
+  dashboard: typeof dashboard;
   http: typeof http;
   "lib/auth": typeof lib_auth;
   "lib/sequences": typeof lib_sequences;
@@ -43,6 +46,7 @@ declare const fullApi: ApiFromModules<{
   organizations: typeof organizations;
   products: typeof products;
   purchases: typeof purchases;
+  reports: typeof reports;
   sales: typeof sales;
   stockCategories: typeof stockCategories;
   stockGroups: typeof stockGroups;

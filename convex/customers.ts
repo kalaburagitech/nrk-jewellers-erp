@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { requireAuthContext } from "./lib/auth";
 
 export const list = query({
@@ -25,16 +25,10 @@ export const listWithOutstanding = query({
       .order("desc")
       .take(500);
 
-    return await Promise.all(
-      customers.map(async (customer) => {
-        const latest = await ctx.db
-          .query("customerLedgerEntries")
-          .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
-          .order("desc")
-          .first();
-        return { ...customer, outstandingPaise: latest?.balancePaise ?? customer.openingBalancePaise };
-      }),
-    );
+    return customers.map((customer) => ({
+      ...customer,
+      outstandingPaise: customer.currentBalancePaise ?? customer.openingBalancePaise,
+    }));
   },
 });
 
@@ -128,5 +122,24 @@ export const setActive = mutation({
     const existing = await ctx.db.get(args.id);
     if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });
+  },
+});
+
+/** One-off data repair: backfills currentBalancePaise for customers created before the field existed. Not exposed in the UI. */
+export const recomputeBalances = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const customers = await ctx.db.query("customers").collect();
+    for (const customer of customers) {
+      if (customer.currentBalancePaise !== undefined) continue;
+      const latest = await ctx.db
+        .query("customerLedgerEntries")
+        .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
+        .order("desc")
+        .first();
+      await ctx.db.patch(customer._id, {
+        currentBalancePaise: latest?.balancePaise ?? customer.openingBalancePaise,
+      });
+    }
   },
 });
