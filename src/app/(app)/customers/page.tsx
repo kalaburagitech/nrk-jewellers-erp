@@ -60,6 +60,7 @@ function CreateCustomerDialog() {
       gstin: "",
       customerType: "regular",
       creditLimitRupees: "",
+      dueDate: "",
       notes: "",
     },
   });
@@ -76,6 +77,7 @@ function CreateCustomerDialog() {
         gstin: values.gstin || undefined,
         customerType: values.customerType,
         creditLimitPaise: values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
+        dueDateMs: values.dueDate ? new Date(values.dueDate).getTime() : undefined,
         notes: values.notes || undefined,
       });
       setOpen(false);
@@ -197,19 +199,34 @@ function CreateCustomerDialog() {
               />
             </div>
             {customerType === "credit" && (
-              <FormField
-                control={form.control}
-                name="creditLimitRupees"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Credit limit (₹)</FormLabel>
-                    <FormControl>
-                      <Input {...field} inputMode="decimal" placeholder="0.00" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="creditLimitRupees"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Credit limit (₹)</FormLabel>
+                      <FormControl>
+                        <Input {...field} inputMode="decimal" placeholder="0.00" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="dueDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment due date</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             )}
             <FormField
               control={form.control}

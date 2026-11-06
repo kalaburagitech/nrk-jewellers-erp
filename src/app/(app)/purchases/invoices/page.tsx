@@ -2,36 +2,67 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Pencil, Plus, Receipt } from "lucide-react";
+import { Pencil, Plus, Receipt, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { Doc } from "../../../../../convex/_generated/dataModel";
 
-function PurchaseDetailDialog({ purchaseId, onClose }: { purchaseId: Id<"purchases">; onClose: () => void }) {
-  const items = useQuery(api.purchases.getItems, { purchaseId });
+function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases">; onClose: () => void }) {
+  const items = useQuery(api.purchases.getItems, { purchaseId: purchase._id });
   const access = useQuery(api.organizations.getMyAccess);
+  const cancelPurchase = useMutation(api.purchases.cancel);
   const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
+
+  const [deleting, setDeleting] = useState(false);
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setError(null);
+    if (!reason.trim()) {
+      setError("A reason is required.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await cancelPurchase({ purchaseId: purchase._id, reason });
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete this bill.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Purchase items</DialogTitle>
-          {canEdit && (
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/purchases/new?edit=${purchaseId}`}>
-                <Pencil className="h-4 w-4" />
-                Edit
-              </Link>
-            </Button>
+          {canEdit && purchase.status === "finalized" && (
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" asChild>
+                <Link href={`/purchases/new?edit=${purchase._id}`}>
+                  <Pencil className="h-4 w-4" />
+                  Edit
+                </Link>
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => setDeleting(true)}>
+                <Trash2 className="h-4 w-4" />
+                Delete
+              </Button>
+            </div>
           )}
         </DialogHeader>
         {items === undefined ? (
@@ -60,6 +91,32 @@ function PurchaseDetailDialog({ purchaseId, onClose }: { purchaseId: Id<"purchas
             </Table>
           </div>
         )}
+
+        {deleting && (
+          <Dialog open onOpenChange={(open) => !open && setDeleting(false)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Delete bill {purchase.invoiceNumber}?</DialogTitle>
+              </DialogHeader>
+              <p className="text-sm text-muted-foreground">
+                This reverses the stock it added and the supplier balance it affected. It can&apos;t be undone.
+              </p>
+              <div className="grid gap-2">
+                <Label>Reason</Label>
+                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. entered by mistake" />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDeleting(false)} disabled={submitting}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" onClick={handleDelete} disabled={submitting}>
+                  {submitting ? "Deleting…" : "Delete bill"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -68,7 +125,7 @@ function PurchaseDetailDialog({ purchaseId, onClose }: { purchaseId: Id<"purchas
 export default function PurchaseInvoicesPage() {
   const purchases = useQuery(api.purchases.list);
   const suppliers = useQuery(api.suppliers.list);
-  const [selected, setSelected] = useState<Id<"purchases"> | null>(null);
+  const [selected, setSelected] = useState<Doc<"purchases"> | null>(null);
 
   const supplierName = useMemo(() => {
     const map = new Map<string, string>();
@@ -131,7 +188,7 @@ export default function PurchaseInvoicesPage() {
                 </TableHeader>
                 <TableBody>
                   {purchases.map((p) => (
-                    <TableRow key={p._id} className="cursor-pointer" onClick={() => setSelected(p._id)}>
+                    <TableRow key={p._id} className="cursor-pointer" onClick={() => setSelected(p)}>
                       <TableCell className="font-medium">{p.invoiceNumber}</TableCell>
                       <TableCell>{new Date(p.createdAt).toLocaleDateString("en-IN")}</TableCell>
                       <TableCell>{supplierName.get(p.supplierId) ?? "—"}</TableCell>
@@ -151,7 +208,7 @@ export default function PurchaseInvoicesPage() {
         </CardContent>
       </Card>
 
-      {selected && <PurchaseDetailDialog purchaseId={selected} onClose={() => setSelected(null)} />}
+      {selected && <PurchaseDetailDialog purchase={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }

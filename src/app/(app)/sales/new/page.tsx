@@ -585,7 +585,7 @@ export default function NewBillPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Old Gold Exchange</CardTitle>
+              <CardTitle className="text-base">Old Gold / Silver Exchange</CardTitle>
               <Switch checked={oldGoldEnabled} onCheckedChange={setOldGoldEnabled} />
             </CardHeader>
             {oldGoldEnabled && (
@@ -600,7 +600,7 @@ export default function NewBillPage() {
                       <SelectContent>
                         {purities.map((p) => (
                           <SelectItem key={p._id} value={p._id}>
-                            {p.label}
+                            {p.label} ({p.metal === "gold" ? "Gold" : "Silver"})
                           </SelectItem>
                         ))}
                       </SelectContent>

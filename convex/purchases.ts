@@ -465,6 +465,52 @@ export const update = mutation({
   },
 });
 
+/**
+ * Owner/Admin only: deletes a purchase (stock) bill — reverses its stock,
+ * ledger and payment effects (same reversal `update` uses) and marks it
+ * cancelled rather than removing the row, so the invoice number and audit
+ * trail survive. Refuses if any received item has already left stock.
+ */
+export const cancel = mutation({
+  args: { purchaseId: v.id("purchases"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+
+    const reason = args.reason.trim();
+    if (!reason) throw new Error("A reason is required to delete a purchase bill");
+
+    const purchase = await ctx.db.get(args.purchaseId);
+    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (purchase.status !== "finalized") throw new Error("This bill is already cancelled");
+
+    const purchaseItems = await ctx.db
+      .query("purchaseItems")
+      .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+      .collect();
+    for (const item of purchaseItems) {
+      if (!item.boxItemId) continue;
+      const boxItem = await ctx.db.get(item.boxItemId);
+      if (boxItem && boxItem.status !== "in_stock") {
+        throw new Error(`"${boxItem.label}" has already left stock — this bill can no longer be deleted`);
+      }
+    }
+
+    await reversePurchaseTransaction(ctx, auth, purchase);
+    await ctx.db.patch(args.purchaseId, { status: "cancelled" });
+
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "purchase.cancel",
+      entityTable: "purchases",
+      entityId: args.purchaseId,
+      metadata: { invoiceNumber: purchase.invoiceNumber, totalPaise: purchase.totalPaise, reason },
+      createdAt: Date.now(),
+    });
+  },
+});
+
 const orderLineValidator = v.object({
   productId: v.id("products"),
   label: v.string(),

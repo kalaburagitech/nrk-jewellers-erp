@@ -17,7 +17,7 @@ const PAYMENT_MODE_LABEL: Record<string, string> = {
   card: "Card",
   cheque: "Cheque",
   bank_transfer: "Bank Transfer",
-  old_gold_exchange: "Old Gold Exchange",
+  old_gold_exchange: "Old Gold / Silver Exchange",
 };
 
 export default function SalesReportPage() {

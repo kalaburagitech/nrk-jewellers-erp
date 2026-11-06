@@ -59,6 +59,7 @@ export const create = mutation({
     gstin: v.optional(v.string()),
     customerType: v.union(v.literal("cash"), v.literal("regular"), v.literal("credit")),
     creditLimitPaise: v.optional(v.number()),
+    dueDateMs: v.optional(v.number()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -75,6 +76,7 @@ export const create = mutation({
       gstin: args.gstin?.trim() || undefined,
       customerType: args.customerType,
       creditLimitPaise: args.creditLimitPaise,
+      dueDateMs: args.dueDateMs,
       openingBalancePaise: 0,
       notes: args.notes?.trim() || undefined,
       isActive: true,
@@ -93,6 +95,7 @@ export const update = mutation({
     gstin: v.optional(v.string()),
     customerType: v.union(v.literal("cash"), v.literal("regular"), v.literal("credit")),
     creditLimitPaise: v.optional(v.number()),
+    dueDateMs: v.optional(v.number()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -111,8 +114,20 @@ export const update = mutation({
       gstin: args.gstin?.trim() || undefined,
       customerType: args.customerType,
       creditLimitPaise: args.creditLimitPaise,
+      dueDateMs: args.dueDateMs,
       notes: args.notes?.trim() || undefined,
     });
+  },
+});
+
+export const setDueDate = mutation({
+  args: { id: v.id("customers"), dueDateMs: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    const existing = await ctx.db.get(args.id);
+    if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
+    await ctx.db.patch(args.id, { dueDateMs: args.dueDateMs });
   },
 });
 

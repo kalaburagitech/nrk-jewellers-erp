@@ -50,6 +50,7 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Gross wt (g)</TableHead>
                   <TableHead>Net wt (g)</TableHead>
                   <TableHead>Rate / g</TableHead>
                   <TableHead>Wastage</TableHead>
@@ -60,6 +61,7 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
               <TableBody>
                 {items.map((item) => (
                   <TableRow key={item._id}>
+                    <TableCell>{mgToGramsDisplay(item.grossWeightMg)}</TableCell>
                     <TableCell>{mgToGramsDisplay(item.netWeightMg)}</TableCell>
                     <TableCell>{formatPaise(item.ratePerGramPaise)}</TableCell>
                     <TableCell>{(item.wastageBasisPoints / 100).toFixed(2)}%</TableCell>
@@ -73,7 +75,7 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
         )}
         {oldGoldExchange && (
           <div className="rounded-md border border-border p-3 text-sm">
-            <p className="font-medium">Old gold exchange</p>
+            <p className="font-medium">Old gold / silver exchange</p>
             <p className="text-muted-foreground">
               {mgToGramsDisplay(oldGoldExchange.netWeightMg)}g net (after{" "}
               {(oldGoldExchange.meltingDeductionBasisPoints / 100).toFixed(2)}% melting deduction) @{" "}

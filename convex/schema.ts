@@ -89,6 +89,9 @@ export default defineSchema({
     // updated by every mutation that writes a ledger entry — avoids reading
     // the ledger per customer just to show an outstanding figure.
     currentBalancePaise: v.optional(v.number()),
+    // Deadline for the customer's current outstanding balance — surfaced on
+    // the Outstanding Balances page so staff know who to remind and when.
+    dueDateMs: v.optional(v.number()),
     notes: v.optional(v.string()),
     isActive: v.boolean(),
     createdAt: v.number(),

@@ -8,6 +8,7 @@ export const customerFormSchema = z.object({
   gstin: z.string().trim().optional().or(z.literal("")),
   customerType: z.enum(["cash", "regular", "credit"]),
   creditLimitRupees: z.string().trim().optional().or(z.literal("")),
+  dueDate: z.string().trim().optional().or(z.literal("")),
   notes: z.string().trim().optional().or(z.literal("")),
 });
 
