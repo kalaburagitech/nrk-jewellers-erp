@@ -17,7 +17,8 @@ export const getGstSalesRegister = query({
         .query("sales")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .order("desc")
-        .take(2000)
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(2000)
     ).filter(
       (s) => s.isGst && s.status === "finalized" && s.createdAt >= args.startDate && s.createdAt <= args.endDate,
     );
@@ -25,6 +26,7 @@ export const getGstSalesRegister = query({
     const customers = await ctx.db
       .query("customers")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const customerNameById = new Map(customers.map((c) => [c._id, c.name]));
 
@@ -35,7 +37,8 @@ export const getGstSalesRegister = query({
       const items = await ctx.db
         .query("saleItems")
         .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
-        .collect();
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
 
       let cgstPaise = 0;
       let sgstPaise = 0;
@@ -91,7 +94,8 @@ export const getGstPurchaseRegister = query({
         .query("purchases")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .order("desc")
-        .take(2000)
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(2000)
     ).filter(
       (p) => p.taxPaise > 0 && p.status === "finalized" && p.createdAt >= args.startDate && p.createdAt <= args.endDate,
     );
@@ -99,6 +103,7 @@ export const getGstPurchaseRegister = query({
     const suppliers = await ctx.db
       .query("suppliers")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const supplierNameById = new Map(suppliers.map((s) => [s._id, s.name]));
 
@@ -124,7 +129,8 @@ export const getSalesReport = query({
         .query("sales")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .order("desc")
-        .take(2000)
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(2000)
     ).filter((s) => s.status === "finalized" && s.createdAt >= args.startDate && s.createdAt <= args.endDate);
 
     const payments = (
@@ -132,7 +138,8 @@ export const getSalesReport = query({
         .query("payments")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .order("desc")
-        .take(5000)
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(5000)
     ).filter(
       (p) =>
         // Old gold exchange credits are stored with sourceTable
@@ -180,15 +187,18 @@ export const getStockByPurity = query({
         .query("boxItems")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .filter((q) => q.eq(q.field("status"), "in_stock"))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("products")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("metalPurities")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
     ]);
 
     const productById = new Map(products.map((p) => [p._id, p]));
@@ -225,12 +235,14 @@ export const getPurchaseReport = query({
         .query("purchases")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .order("desc")
-        .take(2000)
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(2000)
     ).filter((p) => p.status === "finalized" && p.createdAt >= args.startDate && p.createdAt <= args.endDate);
 
     const suppliers = await ctx.db
       .query("suppliers")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const supplierNameById = new Map(suppliers.map((s) => [s._id, s.name]));
 
@@ -246,6 +258,7 @@ export const getPurchaseReport = query({
     const purities = await ctx.db
       .query("metalPurities")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const purityById = new Map(purities.map((p) => [p._id, p]));
 
@@ -254,7 +267,8 @@ export const getPurchaseReport = query({
       const items = await ctx.db
         .query("purchaseItems")
         .withIndex("by_purchase", (q) => q.eq("purchaseId", p._id))
-        .collect();
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
       for (const item of items) {
         const key = item.metalPurityId ?? "unassigned";
         const label = item.metalPurityId ? (purityById.get(item.metalPurityId)?.label ?? "Unknown") : "No purity set";
@@ -282,6 +296,7 @@ export const getBoxReport = query({
       .query("boxes")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("asc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
 
     const rows = await Promise.all(
@@ -292,7 +307,8 @@ export const getBoxReport = query({
             .query("boxItems")
             .withIndex("by_box", (q) => q.eq("boxId", box._id))
             .filter((q) => q.eq(q.field("status"), "in_stock"))
-            .collect();
+            .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
           return {
             boxId: box._id,
             boxNumber: box.boxNumber,
@@ -316,7 +332,8 @@ export const getCustomerAging = query({
       await ctx.db
         .query("customers")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .collect()
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect()
     ).filter((c) => (c.currentBalancePaise ?? c.openingBalancePaise) > 0);
 
     const now = Date.now();
@@ -329,7 +346,8 @@ export const getCustomerAging = query({
           .withIndex("by_customer", (q) => q.eq("customerId", customer._id))
           .filter((q) => q.and(q.eq(q.field("status"), "finalized"), q.lt(q.field("amountPaidPaise"), q.field("totalPaise"))))
           .order("asc")
-          .first();
+          .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
 
         const ageDays = unpaidSale ? Math.floor((now - unpaidSale.createdAt) / DAY) : 0;
         const bucket = ageDays <= 30 ? "0-30" : ageDays <= 60 ? "31-60" : ageDays <= 90 ? "61-90" : "90+";
@@ -357,11 +375,13 @@ export const getStockJournal = query({
       .query("stockMovements")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
 
     const products = await ctx.db
       .query("products")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const productNameById = new Map(products.map((p) => [p._id, p.name]));
 

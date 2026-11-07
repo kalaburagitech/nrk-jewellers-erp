@@ -10,6 +10,7 @@ export const list = query({
       .query("boxes")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("asc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(1000);
   },
 });
@@ -19,18 +20,19 @@ export const getItems = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const box = await ctx.db.get(args.boxId);
-    if (!box || box.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!box || box.deletedAt || box.organizationId !== auth.organizationId) throw new Error("Not found");
     return await ctx.db
       .query("boxItems")
       .withIndex("by_box", (q) => q.eq("boxId", args.boxId))
       .filter((q) => q.eq(q.field("status"), "in_stock"))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });
 
-/** Creates the next sequential box above the current highest number — boxes are never user-numbered to avoid collisions. */
+/** Manually chosen number, with an automatic fallback for existing callers. */
 export const createNext = mutation({
-  args: { label: v.optional(v.string()) },
+  args: { label: v.optional(v.string()), boxNumber: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -39,9 +41,14 @@ export const createNext = mutation({
       .query("boxes")
       .withIndex("by_org_and_number", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
 
-    const boxNumber = (highest?.boxNumber ?? 100) + 1;
+    const boxNumber = args.boxNumber ?? (highest?.boxNumber ?? 100) + 1;
+    if (!Number.isSafeInteger(boxNumber) || boxNumber < 1) throw new Error("Enter a positive whole box number");
+    const duplicate = await ctx.db.query("boxes").withIndex("by_org_and_number", q => q.eq("organizationId", auth.organizationId).eq("boxNumber", boxNumber))
+      .first();
+    if (duplicate) throw new Error("This box number already exists");
     return await ctx.db.insert("boxes", {
       organizationId: auth.organizationId,
       boxNumber,
@@ -61,11 +68,11 @@ export const transferItem = mutation({
     requireRole(auth, ["inventory_manager"]);
 
     const boxItem = await ctx.db.get(args.boxItemId);
-    if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
     if (boxItem.status !== "in_stock") throw new Error("Only in-stock items can be transferred");
 
     const toBox = await ctx.db.get(args.toBoxId);
-    if (!toBox || toBox.organizationId !== auth.organizationId) throw new Error("Destination box not found");
+    if (!toBox || toBox.deletedAt || toBox.organizationId !== auth.organizationId) throw new Error("Destination box not found");
     if (toBox._id === boxItem.boxId) throw new Error("Item is already in this box");
 
     const fromBox = await ctx.db.get(boxItem.boxId);
@@ -90,13 +97,15 @@ export const transferItem = mutation({
 export const recomputeItemCounts = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const boxes = await ctx.db.query("boxes").collect();
+    const boxes = await ctx.db.query("boxes").filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
     for (const box of boxes) {
       const items = await ctx.db
         .query("boxItems")
         .withIndex("by_box", (q) => q.eq("boxId", box._id))
         .filter((q) => q.eq(q.field("status"), "in_stock"))
-        .collect();
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
       if (box.itemCount !== items.length) {
         await ctx.db.patch(box._id, { itemCount: items.length });
       }

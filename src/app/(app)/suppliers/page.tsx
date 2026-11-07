@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
@@ -251,7 +253,7 @@ export default function SuppliersPage() {
                       className="cursor-pointer"
                       onClick={() => router.push(`/suppliers/history?supplierId=${s._id}`)}
                     >
-                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{s.name}</span><DeleteRecordButton table="suppliers" id={s._id} name={s.name} /></div></TableCell>
                       <TableCell>{s.phone ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{s.gstin ?? "—"}</TableCell>
                       <TableCell className="text-right">{formatPaise(s.outstandingPaise)}</TableCell>

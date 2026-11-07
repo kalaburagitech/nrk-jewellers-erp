@@ -29,6 +29,9 @@ export type NavSection = {
 // not-yet-built screens as placeholders until their milestone lands.
 export const NAV_SECTIONS: NavSection[] = [
   { title: "Dashboard", icon: LayoutDashboard, href: "/" },
+  { title: "Girvi / Metal Loans", icon: Landmark, href: "/girvi" },
+  { title: "Backup & Restore", icon: Settings, href: "/backup" },
+  { title: "Manage / Delete Data", icon: Boxes, href: "/manage-data" },
   {
     title: "Sales",
     icon: Receipt,

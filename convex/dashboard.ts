@@ -3,8 +3,7 @@ import { requireAuthContext } from "./lib/auth";
 
 /**
  * One aggregated query for the whole dashboard — avoids a separate useQuery
- * per card. "Today" is a UTC calendar day (documented assumption; revisit if
- * the shop needs a specific local timezone boundary).
+ * per card. "Today" follows the shop's Asia/Kolkata calendar day.
  */
 export const getSummary = query({
   args: {},
@@ -12,9 +11,7 @@ export const getSummary = query({
     const auth = await requireAuthContext(ctx);
     const orgId = auth.organizationId;
 
-    const startOfTodayUtc = new Date();
-    startOfTodayUtc.setUTCHours(0, 0, 0, 0);
-    const todayStart = startOfTodayUtc.getTime();
+    const todayStart = Math.floor((Date.now() + 19_800_000) / 86_400_000) * 86_400_000 - 19_800_000;
 
     const [
       recentSales,
@@ -30,45 +27,53 @@ export const getSummary = query({
         .query("sales")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .order("desc")
-        .take(500),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(500),
       ctx.db
         .query("purchases")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .order("desc")
-        .take(500),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(500),
       ctx.db
         .query("customers")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("suppliers")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("boxItems")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .filter((q) => q.eq(q.field("status"), "in_stock"))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("products")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("metalPurities")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db
         .query("payments")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .order("desc")
-        .take(1000),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(1000),
     ]);
 
     const todaysSalesPaise = recentSales
-      .filter((s) => s.createdAt >= todayStart && s.status === "finalized")
+      .filter((s) => s.createdAt >= todayStart && s.status === "finalized" && s.documentType === "sales_invoice")
       .reduce((sum, s) => sum + s.totalPaise, 0);
     const todaysPurchasesPaise = recentPurchases
-      .filter((p) => p.createdAt >= todayStart && p.status === "finalized")
+      .filter((p) => p.createdAt >= todayStart && p.status === "finalized" && (!p.documentType || p.documentType === "purchase_invoice"))
       .reduce((sum, p) => sum + p.totalPaise, 0);
 
     // Net cash position derived from recorded payments — not a full
@@ -88,10 +93,10 @@ export const getSummary = query({
       const dayStart = todayStart - (6 - i) * dayMs;
       const dayEnd = dayStart + dayMs;
       const salesPaise = recentSales
-        .filter((s) => s.createdAt >= dayStart && s.createdAt < dayEnd && s.status === "finalized")
+        .filter((s) => s.createdAt >= dayStart && s.createdAt < dayEnd && s.status === "finalized" && s.documentType === "sales_invoice")
         .reduce((sum, s) => sum + s.totalPaise, 0);
       const purchasesPaise = recentPurchases
-        .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.status === "finalized")
+        .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.status === "finalized" && (!p.documentType || p.documentType === "purchase_invoice"))
         .reduce((sum, p) => sum + p.totalPaise, 0);
       const cashPaise = payments
         .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.mode !== "old_gold_exchange")
@@ -157,7 +162,7 @@ export const getSummary = query({
 
     const customerNameById = new Map(customers.map((c) => [c._id, c.name]));
     const recentInvoices = recentSales
-      .filter((s) => s.status === "finalized")
+      .filter((s) => s.status === "finalized" && s.documentType === "sales_invoice")
       .slice(0, 5)
       .map((s) => ({
         _id: s._id,

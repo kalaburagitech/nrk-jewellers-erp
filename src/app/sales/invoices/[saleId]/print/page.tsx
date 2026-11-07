@@ -37,7 +37,7 @@ const DOCUMENT_TITLE: Record<string, string> = {
 };
 
 const TEMPLATES = [
-  { value: "full-a4", label: "Full A4" },
+  { value: "full-a4", label: "A4 Landscape · Reference Layout" },
   { value: "half-a4", label: "Half A4" },
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
@@ -87,7 +87,7 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
   const cashPayments = payments.filter((p) => p.mode !== "old_gold_exchange");
   const cashReceivedPaise = cashPayments.reduce((sum, p) => sum + p.amountPaise, 0);
   const grandTotalNetPaise = sale.totalPaise - (oldGoldExchange?.exchangeValuePaise ?? 0);
-  const balanceDuePaise = sale.totalPaise - sale.amountPaidPaise;
+  const balanceDuePaise = Math.max(0, sale.totalPaise - sale.amountPaidPaise);
   const paymentTypeLabel =
     cashPayments.length > 0
       ? [...new Set(cashPayments.map((p) => PAYMENT_MODE_LABEL[p.mode] ?? p.mode))].join(", ")
@@ -134,15 +134,15 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
   }
 
   const widthClass =
-    template === "thermal" ? "max-w-[80mm] text-xs" : template === "half-a4" ? "max-w-[105mm] text-sm" : "max-w-[210mm] text-sm";
+    template === "thermal" ? "max-w-[80mm] text-xs" : template === "half-a4" ? "max-w-[105mm] text-sm" : "max-w-[297mm] min-h-[185mm] text-sm";
 
   return (
     <div className="min-h-screen bg-muted/40 py-8 print:bg-white print:py-0">
       <style>{`
-        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5" : "A4"}; margin: ${template === "thermal" ? "2mm" : "10mm"}; }
+        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : "10mm"}; }
       `}</style>
 
-      <div className="mx-auto flex max-w-[210mm] items-center justify-between px-4 pb-4 print:hidden">
+      <div className="mx-auto flex max-w-[297mm] items-center justify-between px-4 pb-4 print:hidden">
         <Select value={template} onValueChange={(v) => setTemplate(v as Template)}>
           <SelectTrigger className="w-44">
             <SelectValue />
@@ -175,40 +175,41 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
 
       {template === "full-a4" ? (
         <div ref={invoiceRef} className={`mx-auto flex flex-col gap-3 bg-white p-6 text-[#13253f] ${widthClass}`}>
+          {sale.status === "cancelled" && <p className="text-center font-bold text-red-700">CANCELLED · {sale.cancelReason}</p>}
           <h1 className="text-center text-3xl font-bold text-[#13406e]">
             {DOCUMENT_TITLE[sale.documentType] ?? (sale.isGst ? "Tax Invoice" : "Invoice")}
           </h1>
 
           <div className="flex items-center justify-between gap-4 border-2 border-[#13406e] p-4">
             <div className="flex items-center gap-4">
-              {logoUrl && (
+              {(
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={logoUrl} alt="" className="h-20 w-20 object-contain" />
+                <img src={logoUrl || "/nrk-logo.png"} alt="NRK Jewellers logo" className="h-24 w-36 object-contain" />
               )}
               <div>
-                <h2 className="text-xl font-bold">{organization?.name ?? "NRK Jewellers"}</h2>
-                {organization?.tagline && <p className="font-semibold">{organization.tagline}</p>}
-                {organization?.motto && <p className="italic text-[#8a6a2f]">{organization.motto}</p>}
-                {organization?.address && (
+                <h2 className="text-xl font-bold">{organization?.name ?? "NR Karakalli Jewellers"}</h2>
+                <p className="text-lg font-semibold">{organization?.tagline || "Gold and Silver Merchants"}</p>
+                <p className="my-1 border-y border-[#bd974f]/50 py-1 text-center font-serif text-xl italic">{organization?.motto || "The Name of Purity"}</p>
+                {(
                   <p className="flex items-center gap-1 text-sm text-gray-600">
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    <span className="whitespace-pre-line">{organization.address}</span>
+                    <span className="whitespace-pre-line">{organization?.address || "Near Maruti Temple, Basaveshwara Chowk road, Shahapur"}</span>
                   </p>
                 )}
-                {organization?.phone && (
+                {(
                   <p className="flex items-center gap-1 text-sm text-gray-600">
                     <Phone className="h-3.5 w-3.5 shrink-0" />
-                    {organization.phone}
+                    {organization?.phone || "+91 9972786818 / +91 7760000717"}
                   </p>
                 )}
               </div>
             </div>
-            {organization?.state && (
-              <p className="shrink-0 self-start font-semibold">State: {organization.state}</p>
+            {(
+              <p className="shrink-0 self-start font-semibold">State: {organization?.state || "Karnataka"}</p>
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-[3fr_1fr] gap-3">
             <div className="border border-[#13406e] p-3">
               <p className="font-bold">Bill To:</p>
               <p>{customer?.name}</p>
@@ -252,6 +253,7 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
                   <td className="border border-[#13406e] px-2 py-1 text-right">{formatPaise(item.lineTotalPaise)}</td>
                 </tr>
               ))}
+              {items.length < 5 && <tr aria-hidden="true">{Array.from({ length: sale.isGst ? 10 : 9 }, (_, i) => <td key={i} className="h-12 border border-[#13406e]" />)}</tr>}
               <tr className="bg-[#dbe8f7] font-bold">
                 <td className="border border-[#13406e] px-2 py-1" colSpan={3}>
                   Sub Total
@@ -324,7 +326,7 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
             </div>
           </div>
 
-          <p className="pt-6 text-right font-semibold">For {organization?.name ?? "NRK Jewellers"}</p>
+          <p className="mt-auto pt-6 text-right font-semibold">For {organization?.name ?? "NR Karakalli Jewellers"}</p>
         </div>
       ) : (
         <div
@@ -333,7 +335,7 @@ export default function PrintInvoicePage({ params }: { params: Promise<{ saleId:
         >
           <div className="flex items-start justify-between border-b border-gray-200 pb-3">
             <div>
-              <h1 className="text-lg font-semibold">{organization?.name ?? "NRK Jewellers"}</h1>
+              <h1 className="text-lg font-semibold">{organization?.name ?? "NR Karakalli Jewellers"}</h1>
               {organization?.address && <p className="whitespace-pre-line text-gray-500">{organization.address}</p>}
               <p className="text-gray-500">
                 {organization?.phone && <>{organization.phone} · </>}

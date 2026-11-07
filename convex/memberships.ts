@@ -13,6 +13,7 @@ export const listMembers = query({
     const memberships = await ctx.db
       .query("memberships")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
 
     return await Promise.all(
@@ -43,7 +44,8 @@ export const listPendingUsers = query({
       const existing = await ctx.db
         .query("memberships")
         .withIndex("by_user", (q) => q.eq("userId", user._id))
-        .first();
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
       if (!existing) pending.push({ _id: user._id, name: user.name ?? user.email ?? "Unknown", email: user.email });
     }
     return pending;
@@ -62,6 +64,7 @@ export const addMember = mutation({
     const existing = await ctx.db
       .query("memberships")
       .withIndex("by_user_and_org", (q) => q.eq("userId", args.userId).eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) throw new Error("This user already belongs to the organization");
 
@@ -82,7 +85,7 @@ export const updateMemberRole = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const membership = await ctx.db.get(args.membershipId);
-    if (!membership || membership.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!membership || membership.deletedAt || membership.organizationId !== auth.organizationId) throw new Error("Not found");
     if (membership.userId === auth.userId) throw new Error("You cannot change your own role");
     await ctx.db.patch(args.membershipId, { role: args.role });
   },
@@ -94,7 +97,7 @@ export const setMemberStatus = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const membership = await ctx.db.get(args.membershipId);
-    if (!membership || membership.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!membership || membership.deletedAt || membership.organizationId !== auth.organizationId) throw new Error("Not found");
     if (membership.userId === auth.userId) throw new Error("You cannot disable your own access");
     await ctx.db.patch(args.membershipId, { status: args.status });
   },
@@ -106,10 +109,10 @@ export const removeMember = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const membership = await ctx.db.get(args.membershipId);
-    if (!membership || membership.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!membership || membership.deletedAt || membership.organizationId !== auth.organizationId) throw new Error("Not found");
     if (membership.userId === auth.userId) throw new Error("You cannot remove your own access");
     if (membership.role === "owner") throw new Error("Cannot remove an Owner — change their role first");
-    await ctx.db.delete(args.membershipId);
+    await ctx.db.patch(args.membershipId, { deletedAt: Date.now(), status: "disabled" });
   },
 });
 
@@ -177,11 +180,13 @@ export const createStaffAccount = action({
 export const getFirstOrgAndBranchInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const organization = await ctx.db.query("organizations").first();
+    const organization = await ctx.db.query("organizations").filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
     if (!organization) return null;
     const branch = await ctx.db
       .query("branches")
       .withIndex("by_org", (q) => q.eq("organizationId", organization._id))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     return { organizationId: organization._id, branchId: branch?._id };
   },

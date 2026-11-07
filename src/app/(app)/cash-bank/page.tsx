@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
@@ -409,6 +411,7 @@ export default function CashBankPage() {
                 )}
                 <p className="text-2xl font-semibold tracking-tight">{formatPaise(account.balancePaise)}</p>
                 <div className="flex flex-wrap gap-2">
+                  <DeleteRecordButton table="bankAccounts" id={account._id} name={account.name} />
                   <Button size="sm" variant="outline" onClick={() => setTransactionFor(account)}>
                     Record Transaction
                   </Button>

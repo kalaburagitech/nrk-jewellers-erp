@@ -156,6 +156,7 @@ export default function NewBillPage() {
   const updateSale = useMutation(api.sales.update);
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [invoiceNumber, setInvoiceNumber] = useState("");
   const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
   const [isGst, setIsGst] = useState(true);
@@ -180,6 +181,7 @@ export default function NewBillPage() {
   useEffect(() => {
     if (!editSaleId || !existingSale || prefilled) return;
     const { sale, items, oldGoldExchange, payments: existingPayments } = existingSale;
+    setInvoiceNumber(sale.invoiceNumber);
     setBillDate(timestampToDateInput(sale.createdAt));
     setCustomerId(sale.customerId);
     setIsGst(sale.isGst);
@@ -308,8 +310,8 @@ export default function NewBillPage() {
     }
     discountPaise = Math.min(discountPaise, subtotalPaise);
     const preRound = subtotalPaise - discountPaise + taxPaise;
-    const roundedTotal = Math.round(preRound / 100) * 100;
-    const roundOffPaise = roundedTotal - preRound;
+    const roundedTotal = preRound;
+    const roundOffPaise = 0;
     const paymentsPaise = payments.reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
     const oldGoldValuePaise = oldGoldComputed?.exchangeValuePaise ?? 0;
     const amountPaidPaise = paymentsPaise + oldGoldValuePaise;
@@ -389,6 +391,7 @@ export default function NewBillPage() {
 
       if (editSaleId) {
         await updateSale({
+          invoiceNumber,
           saleId: editSaleId,
           customerId: customerId as Id<"customers">,
           isGst,
@@ -404,6 +407,7 @@ export default function NewBillPage() {
       }
 
       const result = await createSale({
+        invoiceNumber: invoiceNumber.trim() || undefined,
         customerId: customerId as Id<"customers">,
         isGst,
         items,
@@ -506,6 +510,8 @@ export default function NewBillPage() {
                   </Select>
                 </div>
                 <div>
+                  <Label className="mb-2 block">Invoice serial number</Label>
+                  <Input aria-label="Invoice serial number" maxLength={60} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Enter number / leave blank for auto" className="mb-3 w-64" />
                   <Label className="mb-2 block">Bill date</Label>
                   <Input
                     type="date"

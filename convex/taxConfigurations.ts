@@ -9,6 +9,7 @@ export const list = query({
     return await ctx.db
       .query("taxConfigurations")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });
@@ -48,7 +49,7 @@ export const setActive = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const row = await ctx.db.get(args.id);
-    if (!row || row.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!row || row.deletedAt || row.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });
   },
 });

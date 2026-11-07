@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -306,7 +308,7 @@ export default function ProductsPage() {
                 <TableBody>
                   {filtered.map((p) => (
                     <TableRow key={p._id}>
-                      <TableCell className="font-medium">{p.name}</TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{p.name}</span><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
                       <TableCell className="text-muted-foreground">{p.sku ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="capitalize">

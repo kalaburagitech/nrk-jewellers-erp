@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 export function ThemeToggle() {
   const [isDark, setIsDark] = useState(() =>
-    typeof document !== "undefined" ? document.documentElement.classList.contains("dark") : true,
+    typeof document !== "undefined" ? document.documentElement.classList.contains("dark") : false,
   );
 
   function toggle() {

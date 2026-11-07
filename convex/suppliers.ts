@@ -10,6 +10,7 @@ export const list = query({
       .query("suppliers")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(500);
   },
 });
@@ -23,6 +24,7 @@ export const listWithOutstanding = query({
       .query("suppliers")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(500);
 
     return suppliers.map((supplier) => ({
@@ -37,11 +39,12 @@ export const getLedger = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const supplier = await ctx.db.get(args.supplierId);
-    if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!supplier || supplier.deletedAt || supplier.organizationId !== auth.organizationId) throw new Error("Not found");
     const entries = await ctx.db
       .query("supplierLedgerEntries")
       .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
     return {
       outstandingPaise: entries[0]?.balancePaise ?? supplier.openingBalancePaise,
@@ -90,7 +93,7 @@ export const update = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
-    if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!existing || existing.deletedAt || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     const name = args.name.trim();
     if (!name) throw new Error("Name is required");
 
@@ -110,7 +113,7 @@ export const setActive = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
-    if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!existing || existing.deletedAt || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });
   },
 });
@@ -119,14 +122,16 @@ export const setActive = mutation({
 export const recomputeBalances = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const suppliers = await ctx.db.query("suppliers").collect();
+    const suppliers = await ctx.db.query("suppliers").filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
     for (const supplier of suppliers) {
       if (supplier.currentBalancePaise !== undefined) continue;
       const latest = await ctx.db
         .query("supplierLedgerEntries")
         .withIndex("by_supplier", (q) => q.eq("supplierId", supplier._id))
         .order("desc")
-        .first();
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
       await ctx.db.patch(supplier._id, {
         currentBalancePaise: latest?.balancePaise ?? supplier.openingBalancePaise,
       });

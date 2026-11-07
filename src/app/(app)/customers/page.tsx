@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
@@ -352,7 +354,7 @@ export default function CustomersPage() {
                       className="cursor-pointer"
                       onClick={() => router.push(`/customers/ledgers?customerId=${c._id}`)}
                     >
-                      <TableCell className="font-medium">{c.name}</TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{c.name}</span><DeleteRecordButton table="customers" id={c._id} name={c.name} /></div></TableCell>
                       <TableCell>{c.phone ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="secondary">{CUSTOMER_TYPE_LABEL[c.customerType]}</Badge>

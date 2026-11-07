@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -152,7 +154,7 @@ export default function MetalPurityPage() {
               <TableBody>
                 {purities.map((p) => (
                   <TableRow key={p._id}>
-                    <TableCell className="font-medium">{p.label}</TableCell>
+                    <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{p.label}</span><DeleteRecordButton table="metalPurities" id={p._id} name={p.label} /></div></TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">
                         {p.metal}

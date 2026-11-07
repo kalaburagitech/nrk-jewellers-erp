@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
-import { computeOldGoldExchange, computeSaleLine, basisPointsOf, roundOffToRupee } from "../src/lib/jewelry-calc";
+import { computeOldGoldExchange, computeSaleLine, basisPointsOf } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 
 /** Sales invoices only — quotations, proforma invoices, returns and credit notes each have their own dedicated list page/query. */
@@ -15,6 +15,7 @@ export const list = query({
       .query("sales")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(500);
     return rows.filter((r) => r.documentType === "sales_invoice").slice(0, 200);
   },
@@ -29,6 +30,7 @@ export const getItems = query({
     return await ctx.db
       .query("saleItems")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });
@@ -42,6 +44,7 @@ export const getOldGoldExchange = query({
     return await ctx.db
       .query("oldGoldExchanges")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
   },
 });
@@ -58,18 +61,21 @@ export const getInvoiceData = query({
       ctx.db
         .query("saleItems")
         .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-        .collect(),
+        .filter((q) => q.or(q.eq(q.field("deletedAt"), undefined), q.eq(q.field("deletedAt"), sale.cancelledAt ?? -1)))
+      .collect(),
       ctx.db.get(sale.customerId),
       ctx.db.get(auth.organizationId),
       ctx.db
         .query("oldGoldExchanges")
         .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-        .first(),
+        .filter((q) => q.or(q.eq(q.field("deletedAt"), undefined), q.eq(q.field("deletedAt"), sale.cancelledAt ?? -1)))
+      .first(),
       ctx.db
         .query("payments")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .filter((q) => q.and(q.eq(q.field("sourceTable"), "sales"), q.eq(q.field("sourceId"), args.saleId)))
-        .collect(),
+        .filter((q) => q.or(q.eq(q.field("deletedAt"), undefined), q.eq(q.field("deletedAt"), sale.cancelledAt ?? -1)))
+      .collect(),
     ]);
 
     const items = await Promise.all(
@@ -109,6 +115,7 @@ export const listByDocumentType = query({
       .query("sales")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
     const filtered = rows.filter((r) => r.documentType === args.documentType);
     const customerIds = [...new Set(filtered.map((r) => r.customerId))];
@@ -126,6 +133,7 @@ export const listReturnableInvoices = query({
     const sales = await ctx.db
       .query("sales")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     return sales.filter((s) => s.organizationId === auth.organizationId && s.documentType === "sales_invoice" && s.status === "finalized");
   },
@@ -137,10 +145,11 @@ export const listReturnableItems = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const sale = await ctx.db.get(args.saleId);
-    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Not found");
     const items = await ctx.db
       .query("saleItems")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const withBoxItem = await Promise.all(
       items.map(async (item) => ({ item, boxItem: item.boxItemId ? await ctx.db.get(item.boxItemId) : null })),
@@ -156,11 +165,12 @@ export const listByCustomer = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const customer = await ctx.db.get(args.customerId);
-    if (!customer || customer.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!customer || customer.deletedAt || customer.organizationId !== auth.organizationId) throw new Error("Not found");
     return await ctx.db
       .query("sales")
       .withIndex("by_customer", (q) => q.eq("customerId", args.customerId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });
@@ -228,7 +238,7 @@ async function applySaleTransaction(
   if (args.items.length === 0) throw new Error("At least one item is required");
 
   const customer = await ctx.db.get(args.customerId);
-  if (!customer || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
+  if (!customer || customer.deletedAt || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
 
   // Resolve + lock in every box item up front: must exist, belong to this
   // org, and still be in stock — prevents selling the same physical item
@@ -243,14 +253,14 @@ async function applySaleTransaction(
   for (const item of args.items) {
     if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
     const boxItem = await ctx.db.get(item.boxItemId);
-    if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
     if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);
 
     let gstBasisPoints = 0;
     if (args.isGst && item.taxConfigurationId) {
       if (!taxConfigs.has(item.taxConfigurationId)) {
         const config = await ctx.db.get(item.taxConfigurationId);
-        if (!config || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
+        if (!config || config.deletedAt || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
         taxConfigs.set(item.taxConfigurationId, config.cgstBasisPoints + config.sgstBasisPoints + config.igstBasisPoints);
       }
       gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
@@ -278,7 +288,7 @@ async function applySaleTransaction(
     }
     if (ratePerGramPaise <= 0) throw new Error("Old gold rate must be greater than zero");
     const purity = await ctx.db.get(metalPurityId);
-    if (!purity || purity.organizationId !== auth.organizationId) throw new Error("Metal purity not found");
+    if (!purity || purity.deletedAt || purity.organizationId !== auth.organizationId) throw new Error("Metal purity not found");
     oldGoldComputed = computeOldGoldExchange({ grossWeightMg, meltingDeductionBasisPoints, ratePerGramPaise });
   }
 
@@ -294,7 +304,8 @@ async function applySaleTransaction(
   discountPaise = Math.min(discountPaise, itemsSubtotalPaise);
 
   const preRoundTotal = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
-  const { roundedTotalPaise, roundOffPaise } = roundOffToRupee(preRoundTotal);
+  const roundedTotalPaise = preRoundTotal;
+  const roundOffPaise = 0;
 
   const paymentsTotalPaise = args.payments.reduce((sum, p) => sum + p.amountPaise, 0);
   const amountPaidPaise = paymentsTotalPaise + (oldGoldComputed?.exchangeValuePaise ?? 0);
@@ -429,11 +440,12 @@ async function applySaleTransaction(
  * edited values — never exposed directly, since an un-reapplied reversal
  * would leave the sale row's totals stale.
  */
-async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale: Doc<"sales">) {
+async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale: Doc<"sales">, retainLines = false, reversedAt = Date.now()) {
   const saleItems = await ctx.db
     .query("saleItems")
     .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
-    .collect();
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
 
   const boxDeltas = new Map<Id<"boxes">, number>();
   for (const item of saleItems) {
@@ -451,11 +463,11 @@ async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale:
           quantity: 1,
           sourceTable: "sales",
           sourceId: sale._id,
-          createdAt: Date.now(),
+          createdAt: reversedAt,
         });
       }
     }
-    await ctx.db.delete(item._id);
+    if (!retainLines) await ctx.db.patch(item._id, { deletedAt: reversedAt });
   }
   for (const [boxId, delta] of boxDeltas) {
     const box = await ctx.db.get(boxId);
@@ -474,7 +486,7 @@ async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale:
       debitPaise: sale.amountPaidPaise,
       creditPaise: sale.totalPaise,
       balancePaise: revertedBalance,
-      createdAt: Date.now(),
+      createdAt: reversedAt,
     });
     await ctx.db.patch(sale.customerId, { currentBalancePaise: revertedBalance });
   }
@@ -483,26 +495,30 @@ async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale:
     .query("payments")
     .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
     .filter((q) => q.and(q.eq(q.field("sourceTable"), "sales"), q.eq(q.field("sourceId"), sale._id)))
-    .collect();
-  for (const payment of oldPayments) await ctx.db.delete(payment._id);
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
+  for (const payment of oldPayments) await ctx.db.patch(payment._id, { deletedAt: reversedAt });
 
   const oldExchange = await ctx.db
     .query("oldGoldExchanges")
     .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
-    .first();
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
   if (oldExchange) {
     const exchangePayments = await ctx.db
       .query("payments")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.and(q.eq(q.field("sourceTable"), "old_gold_exchanges"), q.eq(q.field("sourceId"), oldExchange._id)))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
-    for (const payment of exchangePayments) await ctx.db.delete(payment._id);
-    await ctx.db.delete(oldExchange._id);
+    for (const payment of exchangePayments) await ctx.db.patch(payment._id, { deletedAt: reversedAt });
+    await ctx.db.patch(oldExchange._id, { deletedAt: reversedAt });
   }
 }
 
 export const create = mutation({
   args: {
+    invoiceNumber: v.optional(v.string()),
     customerId: v.id("customers"),
     isGst: v.boolean(),
     items: v.array(saleLineValidator),
@@ -522,11 +538,17 @@ export const create = mutation({
       .withIndex("by_org_and_idempotency", (q) =>
         q.eq("organizationId", auth.organizationId).eq("idempotencyKey", args.idempotencyKey),
       )
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) return { saleId: existing._id, duplicate: true };
 
     const branchId = await resolveBranchId(ctx, auth.organizationId, auth.branchId);
-    const invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "sales_invoice", "INV-");
+    let invoiceNumber = args.invoiceNumber?.trim();
+    if (!invoiceNumber) {
+      const existingNumbers = new Set((await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).collect()).map(row => row.invoiceNumber.toLowerCase()));
+      do { invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "sales_invoice", "INV-"); } while (existingNumbers.has(invoiceNumber.toLowerCase()));
+    }
+    await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber);
     const billDate = args.billDate ?? Date.now();
 
     const saleId = await ctx.db.insert("sales", {
@@ -572,6 +594,7 @@ export const create = mutation({
  */
 export const update = mutation({
   args: {
+    invoiceNumber: v.optional(v.string()),
     saleId: v.id("sales"),
     customerId: v.id("customers"),
     isGst: v.boolean(),
@@ -587,10 +610,16 @@ export const update = mutation({
     requireRole(auth, []);
 
     const sale = await ctx.db.get(args.saleId);
-    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Not found");
     if (sale.documentType !== "sales_invoice") throw new Error("Only a finalized sales invoice can be edited");
     if (sale.status !== "finalized") throw new Error("Cannot edit a cancelled invoice");
 
+    if (args.invoiceNumber !== undefined) {
+      const invoiceNumber = args.invoiceNumber.trim();
+      if (!invoiceNumber) throw new Error("Invoice number is required");
+      await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber, sale._id);
+      await ctx.db.patch(sale._id, { invoiceNumber });
+    }
     await reverseSaleTransaction(ctx, auth, sale);
     const result = await applySaleTransaction(ctx, auth, args.saleId, args, args.billDate);
 
@@ -653,11 +682,12 @@ export const createEstimate = mutation({
       .withIndex("by_org_and_idempotency", (q) =>
         q.eq("organizationId", auth.organizationId).eq("idempotencyKey", args.idempotencyKey),
       )
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) return { saleId: existing._id, duplicate: true };
 
     const customer = await ctx.db.get(args.customerId);
-    if (!customer || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
+    if (!customer || customer.deletedAt || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
 
     const taxConfigs = new Map<Id<"taxConfigurations">, number>();
     const computedLines: Array<{ item: (typeof args.items)[number]; computed: ReturnType<typeof computeSaleLine> }> = [];
@@ -672,7 +702,7 @@ export const createEstimate = mutation({
       if (args.isGst && item.taxConfigurationId) {
         if (!taxConfigs.has(item.taxConfigurationId)) {
           const config = await ctx.db.get(item.taxConfigurationId);
-          if (!config || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
+          if (!config || config.deletedAt || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
           taxConfigs.set(item.taxConfigurationId, config.cgstBasisPoints + config.sgstBasisPoints + config.igstBasisPoints);
         }
         gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
@@ -703,7 +733,8 @@ export const createEstimate = mutation({
     discountPaise = Math.min(discountPaise, itemsSubtotalPaise);
 
     const preRoundTotal = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
-    const { roundedTotalPaise, roundOffPaise } = roundOffToRupee(preRoundTotal);
+    const roundedTotalPaise = preRoundTotal;
+  const roundOffPaise = 0;
 
     const branchId = await resolveBranchId(ctx, auth.organizationId, auth.branchId);
     const invoiceNumber = await allocateInvoiceNumber(
@@ -798,11 +829,12 @@ export const createReturn = mutation({
       .withIndex("by_org_and_idempotency", (q) =>
         q.eq("organizationId", auth.organizationId).eq("idempotencyKey", args.idempotencyKey),
       )
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) return { saleId: existing._id, duplicate: true };
 
     const originalSale = await ctx.db.get(args.originalSaleId);
-    if (!originalSale || originalSale.organizationId !== auth.organizationId) {
+    if (!originalSale || originalSale.deletedAt || originalSale.organizationId !== auth.organizationId) {
       throw new Error("Original invoice not found");
     }
     const customer = await ctx.db.get(originalSale.customerId);
@@ -918,5 +950,60 @@ export const createReturn = mutation({
     });
 
     return { saleId: returnId, duplicate: false };
+  },
+});
+
+async function assertUniqueInvoice(ctx: MutationCtx, organizationId: Id<"organizations">, number: string, except?: Id<"sales">) {
+  if (number.length > 60) throw new Error("Invoice number must be 60 characters or fewer");
+  const rows = await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", organizationId))
+      .collect();
+  if (rows.some(row => row._id !== except && row.invoiceNumber.toLowerCase() === number.toLowerCase())) throw new Error("Invoice number already exists");
+}
+export const cancel = mutation({
+  args: { saleId: v.id("sales"), reason: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx); requireRole(auth, []);
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Invoice not found");
+    if (sale.status !== "finalized") throw new Error("This document is already deleted");
+    if (!args.reason.trim()) throw new Error("Please enter a reason");
+    if (sale.documentType !== "sales_invoice") {
+      if (sale.documentType === "sales_return" || sale.documentType === "credit_note") {
+        const items = await ctx.db.query("saleItems").withIndex("by_sale", q => q.eq("saleId", sale._id)).filter(q => q.eq(q.field("deletedAt"), undefined)).collect();
+        for (const item of items) if (item.boxItemId) {
+          const stock = await ctx.db.get(item.boxItemId);
+          if (!stock || stock.deletedAt || stock.status !== "in_stock") throw new Error("Returned stock has already moved. Reverse the later transaction first.");
+          const latestMovement = await ctx.db.query("stockMovements").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).filter(q => q.eq(q.field("boxItemId"), stock._id)).order("desc").first();
+          if (latestMovement && latestMovement.sourceId !== sale._id) throw new Error("Returned stock has later adjustments. Reverse those first.");
+          const box = await ctx.db.get(stock.boxId);
+          await ctx.db.patch(stock._id, { status: "sold" });
+          if (box) await ctx.db.patch(box._id, { itemCount: Math.max(0, (box.itemCount ?? 0) - 1) });
+          await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, direction: "out", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "sales", sourceId: sale._id, createdAt: Date.now() });
+        }
+        const customer = await ctx.db.get(sale.customerId);
+        if (!customer) throw new Error("Customer not found");
+        const balancePaise = (customer.currentBalancePaise ?? customer.openingBalancePaise) + sale.totalPaise;
+        await ctx.db.insert("customerLedgerEntries", { organizationId: auth.organizationId, customerId: sale.customerId, sourceTable: "sales", sourceId: sale._id, debitPaise: sale.totalPaise, creditPaise: 0, balancePaise, createdAt: Date.now() });
+        await ctx.db.patch(sale.customerId, { currentBalancePaise: balancePaise });
+      }
+      await ctx.db.patch(sale._id, { status: "cancelled", cancelledAt: Date.now(), deletedAt: Date.now(), cancelReason: args.reason });
+      await ctx.db.insert("auditLogs", { organizationId: auth.organizationId, userId: auth.userId, action: "sale.soft_delete", entityTable: "sales", entityId: sale._id, metadata: { reason: args.reason }, createdAt: Date.now() });
+      return;
+    }
+    const activeReturnIds = new Set((await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).collect()).filter(row => !row.deletedAt && row.status === "finalized" && (row.documentType === "sales_return" || row.documentType === "credit_note")).map(row => row._id as string));
+    const movements = await ctx.db.query("stockMovements").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
+    const items = await ctx.db.query("saleItems").withIndex("by_sale", q => q.eq("saleId", sale._id)).filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
+    for (const item of items) {
+      if (item.boxItemId) {
+        const stock = await ctx.db.get(item.boxItemId);
+        if (!stock || stock.status !== "sold" || movements.some(m => m.boxItemId === item.boxItemId && m.sourceTable === "sales" && activeReturnIds.has(m.sourceId) && m.direction === "in")) throw new Error("This invoice has returned or changed stock; reverse the related transaction first");
+      }
+    }
+    const cancelledAt = Date.now();
+    await reverseSaleTransaction(ctx, auth, sale, true, cancelledAt);
+    await ctx.db.patch(sale._id, { status: "cancelled", cancelledAt, deletedAt: cancelledAt, cancelReason: args.reason.trim() });
+    await ctx.db.insert("auditLogs", { organizationId: auth.organizationId, userId: auth.userId, action: "sale.cancel", entityTable: "sales", entityId: sale._id, metadata: { reason: args.reason }, createdAt: Date.now() });
   },
 });

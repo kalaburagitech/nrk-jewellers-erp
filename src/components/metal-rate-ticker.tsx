@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Radio } from "lucide-react";
 import { formatPaise } from "@/lib/money";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -8,13 +9,13 @@ export function MetalRateTicker({
 }: {
   currentRates: { purity: Doc<"metalPurities">; latest: Doc<"metalRates"> | null }[] | undefined;
 }) {
-  if (!currentRates || currentRates.length === 0) return null;
+  if (!currentRates) return <div className="rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground">Loading daily metal rates…</div>;
   const withRates = currentRates.filter((r) => r.latest);
-  if (withRates.length === 0) return null;
+  if (withRates.length === 0) return <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-blue-50 px-4 py-3 text-sm text-blue-950"><span>Daily metal rates have not been set.</span><Link href="/metal-rates" className="font-semibold underline">Set gold & silver rates →</Link></div>;
   const latestEffectiveAt = Math.max(...withRates.map((r) => r.latest!.effectiveAt));
 
   return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-md border border-border bg-muted/40 px-4 py-2 text-sm">
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-border dark:bg-muted/40 dark:text-foreground">
       <span className="flex items-center gap-1 font-medium text-success">
         <Radio className="h-3.5 w-3.5" />
         LIVE

@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -95,7 +97,7 @@ export default function StockGroupsPage() {
               <TableBody>
                 {groups.map((g) => (
                   <TableRow key={g._id}>
-                    <TableCell className="font-medium">{g.name}</TableCell>
+                    <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{g.name}</span><DeleteRecordButton table="stockGroups" id={g._id} name={g.name} /></div></TableCell>
                   </TableRow>
                 ))}
               </TableBody>

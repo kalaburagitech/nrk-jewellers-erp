@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteDocumentButton } from "@/components/delete-document-button";
+
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -60,6 +62,7 @@ export function EstimateListPage({
                   <TableRow key={r._id}>
                     <TableCell className="font-medium">
                       <Badge variant="secondary">{r.invoiceNumber}</Badge>
+                      <DeleteDocumentButton table="sales" id={r._id} name={r.invoiceNumber} />
                     </TableCell>
                     <TableCell>{r.customerName}</TableCell>
                     <TableCell>{new Date(r.createdAt).toLocaleDateString("en-IN")}</TableCell>

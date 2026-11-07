@@ -11,6 +11,7 @@ export const list = query({
     const accounts = await ctx.db
       .query("bankAccounts")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     return accounts.map((a) => ({ ...a, balancePaise: a.currentBalancePaise ?? a.openingBalancePaise }));
   },
@@ -21,11 +22,12 @@ export const getLedger = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const account = await ctx.db.get(args.accountId);
-    if (!account || account.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!account || account.deletedAt || account.organizationId !== auth.organizationId) throw new Error("Not found");
     const entries = await ctx.db
       .query("cashBankLedgerEntries")
       .withIndex("by_account", (q) => q.eq("accountId", args.accountId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
     return {
       balancePaise: entries[0]?.balancePaise ?? account.openingBalancePaise,
@@ -41,7 +43,7 @@ export async function appendCashBankEntry(
   args: { accountId: Id<"bankAccounts">; sourceTable: string; sourceId: string; description: string; debitPaise: number; creditPaise: number },
 ) {
   const account = await ctx.db.get(args.accountId);
-  if (!account || account.organizationId !== auth.organizationId) throw new Error("Account not found");
+  if (!account || account.deletedAt || account.organizationId !== auth.organizationId) throw new Error("Account not found");
   const priorBalance = account.currentBalancePaise ?? account.openingBalancePaise;
   const balancePaise = priorBalance + args.creditPaise - args.debitPaise;
 
@@ -112,7 +114,7 @@ export const setActive = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
-    if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!existing || existing.deletedAt || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });
   },
 });
@@ -171,8 +173,8 @@ export const transfer = mutation({
       ctx.db.get(args.fromAccountId),
       ctx.db.get(args.toAccountId),
     ]);
-    if (!fromAccount || fromAccount.organizationId !== auth.organizationId) throw new Error("Source account not found");
-    if (!toAccount || toAccount.organizationId !== auth.organizationId) throw new Error("Destination account not found");
+    if (!fromAccount || fromAccount.deletedAt || fromAccount.organizationId !== auth.organizationId) throw new Error("Source account not found");
+    if (!toAccount || toAccount.deletedAt || toAccount.organizationId !== auth.organizationId) throw new Error("Destination account not found");
 
     const transferId = crypto.randomUUID();
     const description = args.description?.trim() || `Transfer to ${toAccount.name}`;

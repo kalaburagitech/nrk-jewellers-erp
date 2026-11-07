@@ -6,10 +6,15 @@ export async function resolveBranchId(
   organizationId: Id<"organizations">,
   preferred?: Id<"branches">,
 ) {
-  if (preferred) return preferred;
+  if (preferred) {
+    const branch = await ctx.db.get(preferred);
+    if (!branch || branch.deletedAt || branch.organizationId !== organizationId) throw new Error("Branch is unavailable. Restore the branch or select an active branch.");
+    return preferred;
+  }
   const branch = await ctx.db
     .query("branches")
     .withIndex("by_org", (q) => q.eq("organizationId", organizationId))
+    .filter(q => q.eq(q.field("deletedAt"), undefined))
     .first();
   if (!branch) throw new Error("No branch configured for this organization");
   return branch._id;
@@ -28,6 +33,7 @@ export async function allocateInvoiceNumber(
     .withIndex("by_org_branch_type", (q) =>
       q.eq("organizationId", organizationId).eq("branchId", branchId).eq("documentType", documentType),
     )
+    .filter(q => q.eq(q.field("deletedAt"), undefined))
     .first();
 
   const nextNumber = existing?.nextNumber ?? 1;

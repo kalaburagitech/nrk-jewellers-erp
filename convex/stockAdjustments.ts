@@ -14,7 +14,7 @@ export const correctWeight = mutation({
     if (!reason) throw new Error("A reason is required for every stock adjustment");
 
     const boxItem = await ctx.db.get(args.boxItemId);
-    if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
     if (boxItem.status !== "in_stock") throw new Error("Only in-stock items can be adjusted");
 
     const deltaMg = args.newNetWeightMg - boxItem.netWeightMg;
@@ -58,7 +58,7 @@ export const writeOff = mutation({
     if (!reason) throw new Error("A reason is required for every stock adjustment");
 
     const boxItem = await ctx.db.get(args.boxItemId);
-    if (!boxItem || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
     if (boxItem.status !== "in_stock") throw new Error("Only in-stock items can be written off");
 
     const box = await ctx.db.get(boxItem.boxId);
@@ -100,6 +100,7 @@ export const listRecent = query({
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.or(q.eq(q.field("action"), "stock.correct_weight"), q.eq(q.field("action"), "stock.write_off")))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(100);
   },
 });

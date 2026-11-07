@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteDocumentButton } from "@/components/delete-document-button";
+
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { ShoppingCart } from "lucide-react";
@@ -48,6 +50,7 @@ export default function PurchaseOrdersPage() {
                   <TableRow key={r._id}>
                     <TableCell className="font-medium">
                       <Badge variant="secondary">{r.invoiceNumber}</Badge>
+                      <DeleteDocumentButton table="purchases" id={r._id} name={r.invoiceNumber} />
                     </TableCell>
                     <TableCell>{r.supplierName}</TableCell>
                     <TableCell>{new Date(r.createdAt).toLocaleDateString("en-IN")}</TableCell>

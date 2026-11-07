@@ -11,6 +11,7 @@ export const list = query({
       .query("expenses")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(500);
     return rows.filter((e) => e.status === "recorded");
   },
@@ -68,7 +69,7 @@ export const remove = mutation({
     if (!reason) throw new Error("A reason is required to delete an expense");
 
     const expense = await ctx.db.get(args.id);
-    if (!expense || expense.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!expense || expense.deletedAt || expense.organizationId !== auth.organizationId) throw new Error("Not found");
     if (expense.status !== "recorded") throw new Error("This expense is already deleted");
 
     if (expense.paymentAccountId) {

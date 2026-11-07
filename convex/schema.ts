@@ -21,8 +21,21 @@ export const ROLES = v.union(
 export default defineSchema({
   ...authTables,
 
+  girviLoans: defineTable({
+    deletedAt: v.optional(v.number()),
+    organizationId: v.id("organizations"), ticketNumber: v.string(), customerName: v.string(), phone: v.string(),
+    metal: v.union(v.literal("gold"), v.literal("silver")), description: v.string(), weightMg: v.number(), storageLocation: v.string(),
+    accountId: v.id("bankAccounts"), principalPaise: v.number(), monthlyInterestBasisPoints: v.number(), principalRepaidPaise: v.number(), interestReceivedPaise: v.number(),
+    issuedAt: v.number(), dueAt: v.number(), status: v.union(v.literal("active"), v.literal("released"), v.literal("cancelled")),
+    releasedAt: v.optional(v.number()), createdByUserId: v.id("users"), createdAt: v.number(),
+  }).index("by_org", ["organizationId"]),
+  girviReceipts: defineTable({
+    deletedAt: v.optional(v.number()),
+    organizationId: v.id("organizations"), loanId: v.id("girviLoans"), principalPaise: v.number(), interestPaise: v.number(), createdAt: v.number(), createdByUserId: v.id("users"),
+  }).index("by_org", ["organizationId"]).index("by_loan", ["loanId"]),
   // ---------- Org / Access ----------
   organizations: defineTable({
+    deletedAt: v.optional(v.number()),
     name: v.string(),
     legalName: v.optional(v.string()),
     gstin: v.optional(v.string()),
@@ -39,6 +52,7 @@ export default defineSchema({
   }),
 
   branches: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
     isDefault: v.boolean(),
@@ -49,6 +63,7 @@ export default defineSchema({
   // auth user, so a person can belong to multiple orgs in the future without
   // restructuring.
   memberships: defineTable({
+    deletedAt: v.optional(v.number()),
     userId: v.id("users"),
     organizationId: v.id("organizations"),
     branchId: v.optional(v.id("branches")),
@@ -61,6 +76,7 @@ export default defineSchema({
     .index("by_user_and_org", ["userId", "organizationId"]),
 
   auditLogs: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     userId: v.id("users"),
     action: v.string(),
@@ -73,6 +89,7 @@ export default defineSchema({
     .index("by_entity", ["entityTable", "entityId"]),
 
   applicationSettings: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     key: v.string(),
     value: v.any(),
@@ -81,6 +98,7 @@ export default defineSchema({
 
   // ---------- Parties ----------
   customers: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
     phone: v.optional(v.string()),
@@ -105,6 +123,7 @@ export default defineSchema({
     .index("by_org_and_phone", ["organizationId", "phone"]),
 
   suppliers: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
     phone: v.optional(v.string()),
@@ -119,17 +138,20 @@ export default defineSchema({
 
   // ---------- Catalog / Inventory config ----------
   stockGroups: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
     parentId: v.optional(v.id("stockGroups")),
   }).index("by_org", ["organizationId"]),
 
   stockCategories: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
   }).index("by_org", ["organizationId"]),
 
   metalPurities: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     metal: v.union(v.literal("gold"), v.literal("silver")),
     label: v.string(), // "22K", "24K", "18K", "Silver 925"
@@ -138,6 +160,7 @@ export default defineSchema({
   }).index("by_org", ["organizationId"]),
 
   products: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
     sku: v.optional(v.string()),
@@ -155,6 +178,7 @@ export default defineSchema({
 
   // ---------- Box management ----------
   boxes: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     boxNumber: v.number(), // 101-200 seeded, unlimited thereafter
     label: v.optional(v.string()),
@@ -172,6 +196,7 @@ export default defineSchema({
   // updates this row and writes a stockMovements record — an item can never
   // be in two boxes at once because this is the single source of truth.
   boxItems: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     boxId: v.id("boxes"),
     productId: v.id("products"),
@@ -191,6 +216,7 @@ export default defineSchema({
   // inventory writes one of these in the same transaction — nothing
   // overwrites a quantity without leaving this trail.
   stockMovements: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     productId: v.id("products"),
     boxItemId: v.optional(v.id("boxItems")),
@@ -210,6 +236,7 @@ export default defineSchema({
   // transactions snapshot the rate they used, so changing today's rate can
   // never alter a historical bill.
   metalRates: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     metalPurityId: v.id("metalPurities"),
     ratePerGramPaise: v.number(),
@@ -221,6 +248,7 @@ export default defineSchema({
 
   // ---------- Tax ----------
   taxConfigurations: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(), // "GST 3%", "GST 0.25%" etc.
     cgstBasisPoints: v.number(),
@@ -235,6 +263,7 @@ export default defineSchema({
   // an atomic increment inside the owning mutation — never derived by
   // counting existing documents (racy under concurrent billing).
   invoiceSequences: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     branchId: v.id("branches"),
     documentType: v.string(), // "sales_invoice" | "purchase_invoice" | "credit_note" ...
@@ -244,6 +273,7 @@ export default defineSchema({
 
   // ---------- Purchases ----------
   purchases: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     branchId: v.id("branches"),
     supplierId: v.id("suppliers"),
@@ -269,6 +299,7 @@ export default defineSchema({
     .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"]),
 
   purchaseItems: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     purchaseId: v.id("purchases"),
     productId: v.id("products"),
@@ -290,6 +321,7 @@ export default defineSchema({
 
   // ---------- Sales ----------
   sales: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     branchId: v.id("branches"),
     customerId: v.id("customers"),
@@ -322,6 +354,7 @@ export default defineSchema({
     .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"]),
 
   saleItems: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     saleId: v.id("sales"),
     productId: v.id("products"),
@@ -342,6 +375,7 @@ export default defineSchema({
 
   // ---------- Payments & ledgers ----------
   payments: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     direction: v.union(v.literal("receipt"), v.literal("payment")),
     partyType: v.union(v.literal("customer"), v.literal("supplier")),
@@ -368,6 +402,7 @@ export default defineSchema({
   // payment) and also inserted into `payments` with mode
   // "old_gold_exchange" so it still nets correctly against the bill total.
   oldGoldExchanges: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     saleId: v.id("sales"),
     customerId: v.id("customers"),
@@ -384,6 +419,7 @@ export default defineSchema({
     .index("by_sale", ["saleId"]),
 
   customerLedgerEntries: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     customerId: v.id("customers"),
     sourceTable: v.string(),
@@ -395,6 +431,7 @@ export default defineSchema({
   }).index("by_customer", ["customerId"]),
 
   supplierLedgerEntries: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     supplierId: v.id("suppliers"),
     sourceTable: v.string(),
@@ -409,6 +446,7 @@ export default defineSchema({
   // "Cash in hand" is just an account with type "cash" — same shape as a bank
   // account, so the ledger and balance logic below never has to special-case it.
   bankAccounts: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
     type: v.union(v.literal("cash"), v.literal("bank")),
@@ -423,6 +461,7 @@ export default defineSchema({
   }).index("by_org", ["organizationId"]),
 
   cashBankLedgerEntries: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     accountId: v.id("bankAccounts"),
     sourceTable: v.string(), // "cash_bank_opening" | "cash_bank_transaction" | "cash_bank_transfer" | "expenses"
@@ -440,6 +479,7 @@ export default defineSchema({
   // supplier purchases, which are always inventory. Category is free text
   // (not a managed list) so staff aren't blocked creating a new one.
   expenses: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     category: v.string(),
     amountPaise: v.number(),
@@ -456,6 +496,7 @@ export default defineSchema({
   // entry only — staff still generate the actual EWB on ewaybillgst.gov.in
   // and paste the number back in. One row per sale; updating re-saves it.
   ewayBills: defineTable({
+    deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     saleId: v.id("sales"),
     transportMode: v.union(v.literal("road"), v.literal("rail"), v.literal("air"), v.literal("ship")),

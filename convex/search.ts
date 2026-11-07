@@ -14,16 +14,19 @@ export const globalSearch = query({
       ctx.db
         .query("customers")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .take(500),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(500),
       ctx.db
         .query("products")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .take(500),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(500),
       ctx.db
         .query("sales")
         .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .order("desc")
-        .take(500),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(500),
     ]);
 
     return {

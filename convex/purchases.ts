@@ -15,6 +15,7 @@ export const list = query({
       .query("purchases")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(500);
     return rows.filter((r) => (r.documentType ?? "purchase_invoice") === "purchase_invoice").slice(0, 200);
   },
@@ -25,10 +26,11 @@ export const getItems = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const purchase = await ctx.db.get(args.purchaseId);
-    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
     return await ctx.db
       .query("purchaseItems")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });
@@ -39,15 +41,17 @@ export const getForEdit = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const purchase = await ctx.db.get(args.purchaseId);
-    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
     const items = await ctx.db
       .query("purchaseItems")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const payment = await ctx.db
       .query("payments")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.and(q.eq(q.field("sourceTable"), "purchases"), q.eq(q.field("sourceId"), args.purchaseId)))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     return { purchase, items, payment };
   },
@@ -61,6 +65,7 @@ export const listByDocumentType = query({
       .query("purchases")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
     const filtered = rows.filter((r) => r.documentType === args.documentType);
     const supplierIds = [...new Set(filtered.map((r) => r.supplierId))];
@@ -78,6 +83,7 @@ export const listReturnableInvoices = query({
     const purchases = await ctx.db
       .query("purchases")
       .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     return purchases.filter(
       (p) =>
@@ -94,10 +100,11 @@ export const listReturnableItems = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const purchase = await ctx.db.get(args.purchaseId);
-    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
     const items = await ctx.db
       .query("purchaseItems")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const withBoxItem = await Promise.all(
       items.map(async (item) => ({ item, boxItem: item.boxItemId ? await ctx.db.get(item.boxItemId) : null })),
@@ -113,11 +120,12 @@ export const listBySupplier = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const supplier = await ctx.db.get(args.supplierId);
-    if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!supplier || supplier.deletedAt || supplier.organizationId !== auth.organizationId) throw new Error("Not found");
     return await ctx.db
       .query("purchases")
       .withIndex("by_supplier", (q) => q.eq("supplierId", args.supplierId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });
@@ -168,7 +176,7 @@ async function applyPurchaseTransaction(
   if (args.items.length === 0) throw new Error("At least one item is required");
 
   const supplier = await ctx.db.get(args.supplierId);
-  if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
+  if (!supplier || supplier.deletedAt || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
 
   const boxes = new Map<Id<"boxes">, { itemCount?: number }>();
   for (const item of args.items) {
@@ -178,10 +186,10 @@ async function applyPurchaseTransaction(
     }
     if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
     const box = await ctx.db.get(item.boxId);
-    if (!box || box.organizationId !== auth.organizationId) throw new Error("Box not found");
+    if (!box || box.deletedAt || box.organizationId !== auth.organizationId) throw new Error("Box not found");
     boxes.set(item.boxId, box);
     const product = await ctx.db.get(item.productId);
-    if (!product || product.organizationId !== auth.organizationId) throw new Error("Product not found");
+    if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");
   }
 
   const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
@@ -293,16 +301,17 @@ async function applyPurchaseTransaction(
  * unless every one of them is still physically in stock — see `update`),
  * offsets the supplier ledger, and removes the old payment row.
  */
-async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, purchase: Doc<"purchases">) {
+async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, purchase: Doc<"purchases">, retainLines = false) {
   const purchaseItems = await ctx.db
     .query("purchaseItems")
     .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
-    .collect();
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
 
   const boxDeltas = new Map<Id<"boxes">, number>();
   for (const item of purchaseItems) {
     if (item.boxItemId && item.boxId) {
-      await ctx.db.delete(item.boxItemId);
+      await ctx.db.patch(item.boxItemId, { deletedAt: Date.now(), status: "written_off" });
       boxDeltas.set(item.boxId, (boxDeltas.get(item.boxId) ?? 0) + 1);
       await ctx.db.insert("stockMovements", {
         organizationId: auth.organizationId,
@@ -315,7 +324,7 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
         createdAt: Date.now(),
       });
     }
-    await ctx.db.delete(item._id);
+    if (!retainLines) await ctx.db.patch(item._id, { deletedAt: Date.now() });
   }
   for (const [boxId, delta] of boxDeltas) {
     const box = await ctx.db.get(boxId);
@@ -343,8 +352,9 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
     .query("payments")
     .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
     .filter((q) => q.and(q.eq(q.field("sourceTable"), "purchases"), q.eq(q.field("sourceId"), purchase._id)))
-    .collect();
-  for (const payment of oldPayments) await ctx.db.delete(payment._id);
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
+  for (const payment of oldPayments) await ctx.db.patch(payment._id, { deletedAt: Date.now() });
 }
 
 export const create = mutation({
@@ -368,6 +378,7 @@ export const create = mutation({
       .withIndex("by_org_and_idempotency", (q) =>
         q.eq("organizationId", auth.organizationId).eq("idempotencyKey", args.idempotencyKey),
       )
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) return { purchaseId: existing._id, duplicate: true };
 
@@ -430,7 +441,7 @@ export const update = mutation({
     requireRole(auth, []);
 
     const purchase = await ctx.db.get(args.purchaseId);
-    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
     if ((purchase.documentType ?? "purchase_invoice") !== "purchase_invoice") {
       throw new Error("Only a finalized purchase invoice can be edited");
     }
@@ -439,6 +450,7 @@ export const update = mutation({
     const existingItems = await ctx.db
       .query("purchaseItems")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     for (const item of existingItems) {
       if (!item.boxItemId) continue;
@@ -481,12 +493,37 @@ export const cancel = mutation({
     if (!reason) throw new Error("A reason is required to delete a purchase bill");
 
     const purchase = await ctx.db.get(args.purchaseId);
-    if (!purchase || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
     if (purchase.status !== "finalized") throw new Error("This bill is already cancelled");
 
+    if (purchase.documentType === "purchase_order") {
+      await ctx.db.patch(purchase._id, { status: "cancelled", deletedAt: Date.now(), cancelledAt: Date.now(), cancelReason: reason });
+      await ctx.db.insert("auditLogs", { organizationId: auth.organizationId, userId: auth.userId, action: "purchase_order.soft_delete", entityTable: "purchases", entityId: purchase._id, metadata: { reason }, createdAt: Date.now() });
+      return;
+    }
+    if (purchase.documentType === "purchase_return") {
+      const items = await ctx.db.query("purchaseItems").withIndex("by_purchase", q => q.eq("purchaseId", purchase._id)).filter(q => q.eq(q.field("deletedAt"), undefined)).collect();
+      for (const item of items) if (item.boxItemId) {
+        const stock = await ctx.db.get(item.boxItemId);
+        if (!stock || stock.deletedAt || stock.status !== "written_off") throw new Error("Returned stock has changed. Reverse the later transaction first.");
+        const box = await ctx.db.get(stock.boxId);
+        await ctx.db.patch(stock._id, { status: "in_stock" });
+        if (box) await ctx.db.patch(box._id, { itemCount: (box.itemCount ?? 0) + 1 });
+        await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, direction: "in", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "purchases", sourceId: purchase._id, createdAt: Date.now() });
+      }
+      const supplier = await ctx.db.get(purchase.supplierId);
+      if (!supplier) throw new Error("Supplier not found");
+      const balancePaise = (supplier.currentBalancePaise ?? supplier.openingBalancePaise) + purchase.totalPaise;
+      await ctx.db.insert("supplierLedgerEntries", { organizationId: auth.organizationId, supplierId: supplier._id, sourceTable: "purchases", sourceId: purchase._id, debitPaise: 0, creditPaise: purchase.totalPaise, balancePaise, createdAt: Date.now() });
+      await ctx.db.patch(supplier._id, { currentBalancePaise: balancePaise });
+      await ctx.db.patch(purchase._id, { status: "cancelled", deletedAt: Date.now(), cancelledAt: Date.now(), cancelReason: reason });
+      await ctx.db.insert("auditLogs", { organizationId: auth.organizationId, userId: auth.userId, action: "purchase_return.soft_delete", entityTable: "purchases", entityId: purchase._id, metadata: { reason }, createdAt: Date.now() });
+      return;
+    }
     const purchaseItems = await ctx.db
       .query("purchaseItems")
       .withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     for (const item of purchaseItems) {
       if (!item.boxItemId) continue;
@@ -496,8 +533,8 @@ export const cancel = mutation({
       }
     }
 
-    await reversePurchaseTransaction(ctx, auth, purchase);
-    await ctx.db.patch(args.purchaseId, { status: "cancelled" });
+    await reversePurchaseTransaction(ctx, auth, purchase, true);
+    await ctx.db.patch(args.purchaseId, { status: "cancelled", deletedAt: Date.now(), cancelledAt: Date.now(), cancelReason: reason });
 
     await ctx.db.insert("auditLogs", {
       organizationId: auth.organizationId,
@@ -545,11 +582,12 @@ export const createPurchaseOrder = mutation({
       .withIndex("by_org_and_idempotency", (q) =>
         q.eq("organizationId", auth.organizationId).eq("idempotencyKey", args.idempotencyKey),
       )
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) return { purchaseId: existing._id, duplicate: true };
 
     const supplier = await ctx.db.get(args.supplierId);
-    if (!supplier || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
+    if (!supplier || supplier.deletedAt || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
 
     for (const item of args.items) {
       if (item.grossWeightMg <= 0) throw new Error("Gross weight must be greater than zero");
@@ -558,7 +596,7 @@ export const createPurchaseOrder = mutation({
       }
       if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
       const product = await ctx.db.get(item.productId);
-      if (!product || product.organizationId !== auth.organizationId) throw new Error("Product not found");
+      if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");
     }
 
     const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
@@ -638,11 +676,12 @@ export const createPurchaseReturn = mutation({
       .withIndex("by_org_and_idempotency", (q) =>
         q.eq("organizationId", auth.organizationId).eq("idempotencyKey", args.idempotencyKey),
       )
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existing) return { purchaseId: existing._id, duplicate: true };
 
     const originalPurchase = await ctx.db.get(args.originalPurchaseId);
-    if (!originalPurchase || originalPurchase.organizationId !== auth.organizationId) {
+    if (!originalPurchase || originalPurchase.deletedAt || originalPurchase.organizationId !== auth.organizationId) {
       throw new Error("Original purchase not found");
     }
     const supplier = await ctx.db.get(originalPurchase.supplierId);

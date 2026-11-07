@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -164,7 +166,7 @@ export default function GstConfigurationPage() {
               <TableBody>
                 {configs.map((c) => (
                   <TableRow key={c._id}>
-                    <TableCell className="font-medium">{c.name}</TableCell>
+                    <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{c.name}</span><DeleteRecordButton table="taxConfigurations" id={c._id} name={c.name} /></div></TableCell>
                     <TableCell>{formatBasisPointsPercent(c.cgstBasisPoints)}</TableCell>
                     <TableCell>{formatBasisPointsPercent(c.sgstBasisPoints)}</TableCell>
                     <TableCell>{formatBasisPointsPercent(c.igstBasisPoints)}</TableCell>

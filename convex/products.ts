@@ -10,6 +10,7 @@ export const list = query({
       .query("products")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(500);
   },
 });
@@ -55,7 +56,7 @@ export const setActive = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
     const existing = await ctx.db.get(args.id);
-    if (!existing || existing.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!existing || existing.deletedAt || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     await ctx.db.patch(args.id, { isActive: args.isActive });
   },
 });

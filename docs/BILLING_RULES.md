@@ -50,9 +50,7 @@ GSTR-1/3B filings.
 
 ## Round-off
 
-The final total is rounded to the nearest whole rupee; the signed
-adjustment (±49 paise max) is stored as `roundOffPaise` and shown as its own
-line on the bill — never silently absorbed into another figure.
+New invoices preserve exact integer paise to match the reference bill (for example, ₹2,524.50 remains ₹2,524.50). `roundOffPaise` is zero for new invoices. Historical invoices retain their saved round-off values.
 
 ## Old gold exchange (implemented)
 

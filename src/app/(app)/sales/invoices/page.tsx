@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { Pencil, Plus, Printer, Receipt, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,9 @@ import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: () => void }) {
+  const cancel = useMutation(api.sales.cancel);
+  const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const items = useQuery(api.sales.getItems, { saleId });
   const oldGoldExchange = useQuery(api.sales.getOldGoldExchange, { saleId });
   const access = useQuery(api.organizations.getMyAccess);
@@ -26,7 +29,13 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Sale items</DialogTitle>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {canEdit && <Button variant="destructive" size="sm" disabled={deleting} onClick={async () => {
+              const reason = window.prompt("Delete invoice and reverse its stock and payments. Enter a reason:");
+              if (!reason?.trim()) return;
+              setDeleting(true);
+              try { await cancel({ saleId, reason }); onClose(); } catch (e) { setError(e instanceof Error ? e.message : "Delete failed"); } finally { setDeleting(false); }
+            }}>Delete</Button>}
             {canEdit && (
               <Button variant="outline" size="sm" asChild>
                 <Link href={`/sales/new?edit=${saleId}`}>
@@ -49,6 +58,7 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
             </Button>
           </div>
         </DialogHeader>
+        {error && <p role="alert" className="text-destructive">{error}</p>}
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (

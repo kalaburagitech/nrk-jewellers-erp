@@ -1,5 +1,7 @@
 "use client";
 
+import { DeleteRecordButton } from "@/components/delete-record-button";
+
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
@@ -48,6 +50,9 @@ export default function BoxOverviewPage() {
   const createNext = useMutation(api.boxes.createNext);
   const [search, setSearch] = useState("");
   const [selectedBox, setSelectedBox] = useState<Id<"boxes"> | null>(null);
+  const [boxNumber, setBoxNumber] = useState("");
+  const [label, setLabel] = useState("");
+  const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(() => {
@@ -60,7 +65,12 @@ export default function BoxOverviewPage() {
   async function handleCreate() {
     setCreating(true);
     try {
-      await createNext({});
+      setError("");
+      if (!boxNumber.trim()) throw new Error("Enter a box number");
+      await createNext({ boxNumber: Number(boxNumber), label });
+      setBoxNumber(""); setLabel("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to create box");
     } finally {
       setCreating(false);
     }
@@ -73,12 +83,13 @@ export default function BoxOverviewPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Box Overview</h1>
           <p className="text-sm text-muted-foreground">{boxes?.length ?? 0} boxes</p>
         </div>
-        <Button onClick={handleCreate} disabled={creating}>
+        <div className="flex flex-wrap gap-2"><Input aria-label="Box number" type="number" min="1" step="1" value={boxNumber} onChange={e => setBoxNumber(e.target.value)} placeholder="Box no." className="w-28" /><Input aria-label="Box label" value={label} onChange={e => setLabel(e.target.value)} placeholder="Label (optional)" className="w-44" /><Button onClick={handleCreate} disabled={creating}>
           <Plus className="h-4 w-4" />
-          {creating ? "Creating…" : "Add Next Box"}
-        </Button>
+          {creating ? "Creating…" : "Create Box"}
+        </Button></div>
       </div>
 
+      {error && <p role="alert" className="text-destructive">{error}</p>}
       <div className="relative max-w-sm">
         <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -102,6 +113,7 @@ export default function BoxOverviewPage() {
               onClick={() => setSelectedBox(box._id)}
             >
               <CardContent className="flex flex-col items-center gap-1 px-2">
+                <DeleteRecordButton table="boxes" id={box._id} name={`Box ${box.boxNumber}`} />
                 <Package className="h-5 w-5 text-gold" />
                 <p className="text-lg font-semibold">{box.boxNumber}</p>
                 {box.label && <p className="truncate text-xs text-muted-foreground">{box.label}</p>}

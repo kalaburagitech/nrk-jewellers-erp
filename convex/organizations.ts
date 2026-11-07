@@ -17,6 +17,7 @@ export const getMyAccess = query({
       .query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .filter((q) => q.eq(q.field("status"), "active"))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
 
     if (!membership) return { user: await ctx.db.get(userId), membership: null, organization: null };
@@ -44,10 +45,12 @@ export const ensureBootstrapped = mutation({
     const existingMembership = await ctx.db
       .query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
     if (existingMembership) return { created: false };
 
-    const anyOrganization = await ctx.db.query("organizations").first();
+    const anyOrganization = await ctx.db.query("organizations").filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
     if (anyOrganization) {
       // An org already exists; this user needs to be invited explicitly.
       return { created: false, pending: true };
@@ -143,7 +146,8 @@ export const setLoginImage = mutation({
     const org = await ctx.db.get(auth.organizationId);
     const previous = org?.loginImageStorageId;
     await ctx.db.patch(auth.organizationId, { loginImageStorageId: args.storageId });
-    if (previous) await ctx.storage.delete(previous);
+    // Retain previous uploaded assets so historical backups can still reference them.
+    void previous;
   },
 });
 
@@ -155,7 +159,8 @@ export const setLoginImage = mutation({
 export const getPublicLoginImageUrl = query({
   args: {},
   handler: async (ctx) => {
-    const org = await ctx.db.query("organizations").first();
+    const org = await ctx.db.query("organizations").filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
     if (!org?.loginImageStorageId) return null;
     return await ctx.storage.getUrl(org.loginImageStorageId);
   },
@@ -178,7 +183,8 @@ export const setAppIcon = mutation({
     const org = await ctx.db.get(auth.organizationId);
     const previous = org?.appIconStorageId;
     await ctx.db.patch(auth.organizationId, { appIconStorageId: args.storageId });
-    if (previous) await ctx.storage.delete(previous);
+    // Retain previous uploaded assets so historical backups can still reference them.
+    void previous;
   },
 });
 
@@ -186,7 +192,8 @@ export const setAppIcon = mutation({
 export const getPublicAppIconUrl = query({
   args: {},
   handler: async (ctx) => {
-    const org = await ctx.db.query("organizations").first();
+    const org = await ctx.db.query("organizations").filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
     if (!org?.appIconStorageId) return null;
     return await ctx.storage.getUrl(org.appIconStorageId);
   },
@@ -209,7 +216,8 @@ export const setInvoiceLogo = mutation({
     const org = await ctx.db.get(auth.organizationId);
     const previous = org?.invoiceLogoStorageId;
     await ctx.db.patch(auth.organizationId, { invoiceLogoStorageId: args.storageId });
-    if (previous) await ctx.storage.delete(previous);
+    // Retain previous uploaded assets so historical backups can still reference them.
+    void previous;
   },
 });
 

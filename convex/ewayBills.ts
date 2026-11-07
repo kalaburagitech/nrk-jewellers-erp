@@ -7,10 +7,11 @@ export const getForSale = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const sale = await ctx.db.get(args.saleId);
-    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Not found");
     return await ctx.db
       .query("ewayBills")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
   },
 });
@@ -21,19 +22,21 @@ export const getDocumentData = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const sale = await ctx.db.get(args.saleId);
-    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Not found");
 
     const [saleItems, customer, organization, ewayBill] = await Promise.all([
       ctx.db
         .query("saleItems")
         .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-        .collect(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
       ctx.db.get(sale.customerId),
       ctx.db.get(auth.organizationId),
       ctx.db
         .query("ewayBills")
         .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
-        .first(),
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first(),
     ]);
 
     const products = await Promise.all(saleItems.map((item) => ctx.db.get(item.productId)));
@@ -72,11 +75,12 @@ export const upsert = mutation({
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["billing_operator"]);
     const sale = await ctx.db.get(args.saleId);
-    if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Not found");
 
     const existing = await ctx.db
       .query("ewayBills")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .first();
 
     const fields = {

@@ -9,6 +9,7 @@ export const list = query({
     return await ctx.db
       .query("stockGroups")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
   },
 });

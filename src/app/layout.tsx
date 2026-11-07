@@ -25,11 +25,11 @@ export const viewport = {
   themeColor: "#1c140d",
 };
 
-// Runs before paint so the dashboard's dark-first theme never flashes light on load.
+// Runs before paint so the selected theme never flashes light on load.
 const THEME_INIT_SCRIPT = `
   try {
     var stored = localStorage.getItem("nrk-theme");
-    document.documentElement.classList.toggle("dark", stored !== "light");
+    document.documentElement.classList.toggle("dark", stored === "dark");
   } catch (e) {}
 `;
 
@@ -38,7 +38,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <ConvexAuthNextjsServerProvider>
       <html
         lang="en"
-        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+        className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
         suppressHydrationWarning
       >
         <head>

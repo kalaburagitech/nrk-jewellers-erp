@@ -11,6 +11,7 @@ export const getCurrent = query({
       .query("metalPurities")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.eq(q.field("isActive"), true))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
 
     const rates = await Promise.all(
@@ -21,7 +22,8 @@ export const getCurrent = query({
             q.eq("organizationId", auth.organizationId).eq("metalPurityId", purity._id),
           )
           .order("desc")
-          .first();
+          .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .first();
         return { purity, latest };
       }),
     );
@@ -39,6 +41,7 @@ export const getHistory = query({
         q.eq("organizationId", auth.organizationId).eq("metalPurityId", args.metalPurityId),
       )
       .order("desc")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(100);
   },
 });
@@ -55,7 +58,7 @@ export const setRate = mutation({
       throw new Error("Rate must be a positive integer number of paise per gram");
     }
     const purity = await ctx.db.get(args.metalPurityId);
-    if (!purity || purity.organizationId !== auth.organizationId) throw new Error("Not found");
+    if (!purity || purity.deletedAt || purity.organizationId !== auth.organizationId) throw new Error("Not found");
 
     await ctx.db.insert("metalRates", {
       organizationId: auth.organizationId,
