@@ -55,7 +55,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <SidebarProvider className="erp-shell">
+    <SidebarProvider defaultOpen={false} className="erp-shell">
       <AppSidebar />
       <SidebarInset>
         <AppTopbar

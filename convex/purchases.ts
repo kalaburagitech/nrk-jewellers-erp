@@ -653,6 +653,74 @@ export const createPurchaseOrder = mutation({
   },
 });
 
+/** Purchase orders have no stock or ledger effects, so their lines can be replaced safely. */
+export const updatePurchaseOrder = mutation({
+  args: {
+    purchaseId: v.id("purchases"),
+    supplierId: v.id("suppliers"),
+    items: v.array(orderLineValidator),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, ["purchase_manager"]);
+    if (args.items.length === 0) throw new Error("At least one item is required");
+
+    const purchase = await ctx.db.get(args.purchaseId);
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Purchase order not found");
+    if (purchase.documentType !== "purchase_order" || purchase.status !== "finalized") throw new Error("Only an active purchase order can be edited");
+    const supplier = await ctx.db.get(args.supplierId);
+    if (!supplier || supplier.deletedAt || supplier.organizationId !== auth.organizationId) throw new Error("Supplier not found");
+
+    for (const item of args.items) {
+      if (item.grossWeightMg <= 0) throw new Error("Gross weight must be greater than zero");
+      if (item.stoneWeightMg < 0 || item.stoneWeightMg > item.grossWeightMg) throw new Error("Stone weight must be between 0 and gross weight");
+      if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
+      const product = await ctx.db.get(item.productId);
+      if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");
+    }
+
+    const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
+    const subtotalPaise = computedLines.reduce((sum, line) => sum + line.computed.lineTotalPaise, 0);
+    const now = Date.now();
+    const existingItems = await ctx.db.query("purchaseItems").withIndex("by_purchase", (q) => q.eq("purchaseId", purchase._id)).filter((q) => q.eq(q.field("deletedAt"), undefined)).collect();
+    for (const item of existingItems) await ctx.db.patch(item._id, { deletedAt: now });
+
+    for (const { item, computed } of computedLines) {
+      await ctx.db.insert("purchaseItems", {
+        organizationId: auth.organizationId,
+        purchaseId: purchase._id,
+        productId: item.productId,
+        metalPurityId: item.metalPurityId,
+        label: item.label,
+        grossWeightMg: item.grossWeightMg,
+        stoneWeightMg: item.stoneWeightMg,
+        netWeightMg: computed.netWeightMg,
+        ratePerGramPaise: item.ratePerGramPaise,
+        makingChargePaise: item.makingChargePaise,
+        stoneChargePaise: item.stoneChargePaise,
+        lineTotalPaise: computed.lineTotalPaise,
+      });
+    }
+
+    await ctx.db.patch(purchase._id, {
+      supplierId: args.supplierId,
+      subtotalPaise,
+      taxPaise: 0,
+      totalPaise: subtotalPaise,
+    });
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "purchase_order.update",
+      entityTable: "purchases",
+      entityId: purchase._id,
+      metadata: { invoiceNumber: purchase.invoiceNumber, totalPaise: subtotalPaise, itemCount: computedLines.length },
+      createdAt: now,
+    });
+    return { purchaseId: purchase._id };
+  },
+});
+
 /**
  * Sends a received item back to the supplier: removes it from stock
  * (write-off — it has physically left the shop) and reduces what we owe

@@ -9,10 +9,12 @@ export function DeleteDocumentButton({
   table,
   id,
   name,
+  compact = false,
 }: {
   table: "sales" | "purchases";
   id: string;
   name: string;
+  compact?: boolean;
 }) {
   const access = useQuery(api.organizations.getMyAccess);
   const sales = useMutation(api.sales.cancel);
@@ -22,10 +24,11 @@ export function DeleteDocumentButton({
   return (
     <Button
       variant="ghost"
-      size="sm"
+      size={compact ? "icon" : "sm"}
       className="text-destructive"
       disabled={busy}
       aria-label={`Delete ${name}`}
+      title={`Soft delete ${name}`}
       onClick={async (e) => {
         e.stopPropagation();
         const reason = window.prompt(
@@ -45,7 +48,7 @@ export function DeleteDocumentButton({
       }}
     >
       <Trash2 className="h-4 w-4" />
-      Delete
+      {!compact && "Delete"}
     </Button>
   );
 }

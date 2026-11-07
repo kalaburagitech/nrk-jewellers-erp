@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { gramsToMg } from "@/lib/jewelry-calc";
+import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Id } from "../../convex/_generated/dataModel";
 
 type DraftLine = {
@@ -34,6 +34,11 @@ type DraftLine = {
   ratePerGramRupees: string;
   makingChargeRupees: string;
   stoneChargeRupees: string;
+};
+type DraftState = {
+  key: string;
+  supplierId: Id<"suppliers"> | "";
+  lines: DraftLine[];
 };
 
 function emptyLine(): DraftLine {
@@ -49,36 +54,66 @@ function emptyLine(): DraftLine {
   };
 }
 
-export function PurchaseOrderFormDialog() {
+export function PurchaseOrderFormDialog({
+  purchaseId,
+  onClose,
+}: {
+  purchaseId?: Id<"purchases">;
+  onClose?: () => void;
+}) {
   const suppliers = useQuery(api.suppliers.list);
   const products = useQuery(api.products.list);
   const purities = useQuery(api.metalRates.getCurrent);
+  const purchaseData = useQuery(api.purchases.getForEdit, purchaseId ? { purchaseId } : "skip");
   const createPurchaseOrder = useMutation(api.purchases.createPurchaseOrder);
+  const updatePurchaseOrder = useMutation(api.purchases.updatePurchaseOrder);
 
-  const [open, setOpen] = useState(false);
-  const [supplierId, setSupplierId] = useState<Id<"suppliers"> | "">("");
-  const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
+  const [open, setOpen] = useState(Boolean(purchaseId));
+  const [draft, setDraft] = useState<DraftState | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const draftKey = purchaseId ?? "new";
+  const initialDraft: DraftState = {
+    key: draftKey,
+    supplierId: purchaseData?.purchase.supplierId ?? "",
+    lines: purchaseData ? purchaseData.items.map((item) => ({
+      productId: item.productId,
+      metalPurityId: item.metalPurityId ?? "",
+      label: item.label,
+      grossWeightGrams: mgToGramsDisplay(item.grossWeightMg),
+      stoneWeightGrams: mgToGramsDisplay(item.stoneWeightMg),
+      ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
+      makingChargeRupees: (item.makingChargePaise / 100).toFixed(2),
+      stoneChargeRupees: (item.stoneChargePaise / 100).toFixed(2),
+    })) : [emptyLine()],
+  };
+  const form = draft?.key === draftKey ? draft : initialDraft;
+
+  function updateDraft(patch: Partial<Omit<DraftState, "key">>) {
+    setDraft((previous) => ({
+      ...(previous?.key === draftKey ? previous : initialDraft),
+      ...patch,
+      key: draftKey,
+    }));
+  }
 
   function reset() {
-    setSupplierId("");
-    setLines([emptyLine()]);
+    setDraft({ key: draftKey, supplierId: "", lines: [emptyLine()] });
     setError(null);
   }
 
   function updateLine(index: number, patch: Partial<DraftLine>) {
-    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+    updateDraft({ lines: form.lines.map((line, i) => i === index ? { ...line, ...patch } : line) });
   }
 
   async function handleSubmit() {
     setError(null);
-    if (!supplierId) {
+    if (!form.supplierId) {
       setError("Select a supplier");
       return;
     }
     const items = [];
-    for (const line of lines) {
+    for (const line of form.lines) {
       if (!line.productId || !line.label.trim()) {
         setError("Select a product and enter a description for every line");
         return;
@@ -102,9 +137,14 @@ export function PurchaseOrderFormDialog() {
 
     setSubmitting(true);
     try {
-      await createPurchaseOrder({ supplierId, items, idempotencyKey: crypto.randomUUID() });
-      reset();
-      setOpen(false);
+      if (purchaseId) {
+        await updatePurchaseOrder({ purchaseId, supplierId: form.supplierId, items });
+        onClose?.();
+      } else {
+        await createPurchaseOrder({ supplierId: form.supplierId, items, idempotencyKey: crypto.randomUUID() });
+        reset();
+        setOpen(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save.");
     } finally {
@@ -114,26 +154,34 @@ export function PurchaseOrderFormDialog() {
 
   return (
     <Dialog
-      open={open}
+      open={purchaseId ? true : open}
       onOpenChange={(next) => {
+        if (purchaseId) {
+          if (!next) onClose?.();
+          return;
+        }
         setOpen(next);
         if (!next) reset();
       }}
     >
-      <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          New Purchase Order
-        </Button>
-      </DialogTrigger>
+      {!purchaseId && (
+        <DialogTrigger asChild>
+          <Button>
+            <Plus className="h-4 w-4" />
+            New Purchase Order
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create a purchase order</DialogTitle>
+          <DialogTitle>{purchaseId ? "Edit purchase order" : "Create a purchase order"}</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
+        {purchaseId && purchaseData === undefined ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">Loading purchase order…</p>
+        ) : <div className="flex flex-col gap-4">
           <div className="grid gap-2">
             <Label>Supplier</Label>
-            <Select value={supplierId} onValueChange={(v) => setSupplierId(v as Id<"suppliers">)}>
+            <Select value={form.supplierId} onValueChange={(v) => updateDraft({ supplierId: v as Id<"suppliers"> })}>
               <SelectTrigger className="w-full">
                 <SelectValue placeholder="Select supplier" />
               </SelectTrigger>
@@ -148,9 +196,9 @@ export function PurchaseOrderFormDialog() {
           </div>
 
           <div className="flex flex-col gap-3">
-            {lines.map((line, i) => (
+            {form.lines.map((line, i) => (
               <div key={i} className="grid grid-cols-12 gap-2 rounded-md border border-border p-3">
-                <div className="col-span-6 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-6">
                   <Label className="text-xs">Product</Label>
                   <Select
                     value={line.productId}
@@ -168,11 +216,11 @@ export function PurchaseOrderFormDialog() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="col-span-6 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-6">
                   <Label className="text-xs">Description</Label>
                   <Input value={line.label} onChange={(e) => updateLine(i, { label: e.target.value })} />
                 </div>
-                <div className="col-span-4 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-4">
                   <Label className="text-xs">Metal purity</Label>
                   <Select
                     value={line.metalPurityId}
@@ -190,7 +238,7 @@ export function PurchaseOrderFormDialog() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="col-span-4 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-4">
                   <Label className="text-xs">Gross wt (g)</Label>
                   <Input
                     value={line.grossWeightGrams}
@@ -198,7 +246,7 @@ export function PurchaseOrderFormDialog() {
                     inputMode="decimal"
                   />
                 </div>
-                <div className="col-span-4 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-4">
                   <Label className="text-xs">Stone wt (g)</Label>
                   <Input
                     value={line.stoneWeightGrams}
@@ -206,7 +254,7 @@ export function PurchaseOrderFormDialog() {
                     inputMode="decimal"
                   />
                 </div>
-                <div className="col-span-4 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-4">
                   <Label className="text-xs">Rate/g (₹)</Label>
                   <Input
                     value={line.ratePerGramRupees}
@@ -214,7 +262,7 @@ export function PurchaseOrderFormDialog() {
                     inputMode="decimal"
                   />
                 </div>
-                <div className="col-span-4 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-4">
                   <Label className="text-xs">Making (₹)</Label>
                   <Input
                     value={line.makingChargeRupees}
@@ -222,7 +270,7 @@ export function PurchaseOrderFormDialog() {
                     inputMode="decimal"
                   />
                 </div>
-                <div className="col-span-4 grid gap-1">
+                <div className="col-span-12 grid gap-1 sm:col-span-4">
                   <Label className="text-xs">Stone charge (₹)</Label>
                   <Input
                     value={line.stoneChargeRupees}
@@ -231,11 +279,11 @@ export function PurchaseOrderFormDialog() {
                   />
                 </div>
                 <div className="col-span-12 flex justify-end">
-                  {lines.length > 1 && (
+                  {form.lines.length > 1 && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => setLines((prev) => prev.filter((_, idx) => idx !== i))}
+                      onClick={() => updateDraft({ lines: form.lines.filter((_, idx) => idx !== i) })}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -243,17 +291,17 @@ export function PurchaseOrderFormDialog() {
                 </div>
               </div>
             ))}
-            <Button variant="outline" size="sm" className="self-start" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
+            <Button variant="outline" size="sm" className="self-start" onClick={() => updateDraft({ lines: [...form.lines, emptyLine()] })}>
               <Plus className="h-4 w-4" />
               Add line
             </Button>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
+        </div>}
         <DialogFooter>
-          <Button onClick={handleSubmit} disabled={submitting}>
-            {submitting ? "Saving…" : "Save"}
+          <Button onClick={handleSubmit} disabled={submitting || Boolean(purchaseId && !purchaseData)}>
+            {submitting ? "Saving…" : purchaseId ? "Save changes" : "Save"}
           </Button>
         </DialogFooter>
       </DialogContent>

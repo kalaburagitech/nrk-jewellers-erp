@@ -156,9 +156,10 @@ html[data-reading-size="large"] :is(.erp-shell, [data-slot="dialog-content"], [d
 .premium-sidebar [data-sidebar="menu-button"] { font-size: var(--navigation-size); }
 .premium-sidebar [data-sidebar="menu-button"][data-active="true"] {
   background: linear-gradient(90deg, rgb(230 191 120 / 16%), rgb(255 255 255 / 7%));
-  box-shadow: inset 3px 0 0 #e6bf78;
+  box-shadow: inset 3px 0 0 #e1475c;
   color: #fff;
 }
+.group[data-collapsible="icon"] .premium-sidebar [data-sidebar="menu-button"] { justify-content: center; }
 .premium-sidebar [data-sidebar="menu-sub-button"] { font-size: var(--subnavigation-size) !important; }
 .premium-sidebar [data-sidebar="menu-sub-button"][data-active="true"] { background: rgb(255 255 255 / 11%); }
 .premium-sidebar [data-slot="sidebar-content"] { scrollbar-width: thin; scrollbar-color: rgb(255 255 255 / 20%) transparent; }

@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { DeleteDocumentButton } from "@/components/delete-document-button";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
 function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases">; onClose: () => void }) {
@@ -103,7 +104,7 @@ function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases"
                 <DialogTitle>Delete bill {purchase.invoiceNumber}?</DialogTitle>
               </DialogHeader>
               <p className="text-sm text-muted-foreground">
-                This reverses the stock it added and the supplier balance it affected. It can&apos;t be undone.
+                This reverses the stock and supplier balance effects, then keeps the bill in deleted records with its audit history.
               </p>
               <div className="grid gap-2">
                 <Label>Reason</Label>
@@ -129,7 +130,9 @@ function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases"
 export default function PurchaseInvoicesPage() {
   const purchases = useQuery(api.purchases.list);
   const suppliers = useQuery(api.suppliers.list);
+  const access = useQuery(api.organizations.getMyAccess);
   const [selected, setSelected] = useState<Doc<"purchases"> | null>(null);
+  const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const supplierName = useMemo(() => {
     const map = new Map<string, string>();
@@ -194,6 +197,7 @@ export default function PurchaseInvoicesPage() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead>Status</TableHead>
+                    {canEdit && <TableHead className="w-24 text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -210,6 +214,20 @@ export default function PurchaseInvoicesPage() {
                           {p.status}
                         </Badge>
                       </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                          {p.status === "finalized" && (
+                            <div className="flex justify-end gap-1">
+                              <Button asChild variant="ghost" size="icon" title={`Edit ${p.invoiceNumber}`} aria-label={`Edit ${p.invoiceNumber}`}>
+                                <Link href={`/purchases/new?edit=${p._id}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                              <DeleteDocumentButton compact table="purchases" id={p._id} name={p.invoiceNumber} />
+                            </div>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

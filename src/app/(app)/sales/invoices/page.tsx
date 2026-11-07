@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ExportCsvButton } from "@/components/export-csv-button";
+import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Id } from "../../../../../convex/_generated/dataModel";
@@ -112,7 +113,9 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
 export default function SalesInvoicesPage() {
   const sales = useQuery(api.sales.list);
   const customers = useQuery(api.customers.list);
+  const access = useQuery(api.organizations.getMyAccess);
   const [selected, setSelected] = useState<Id<"sales"> | null>(null);
+  const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const customerName = useMemo(() => {
     const map = new Map<string, string>();
@@ -179,6 +182,7 @@ export default function SalesInvoicesPage() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead>Status</TableHead>
+                    {canEdit && <TableHead className="w-24 text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -198,6 +202,20 @@ export default function SalesInvoicesPage() {
                           {s.status}
                         </Badge>
                       </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                          {s.status === "finalized" && (
+                            <div className="flex justify-end gap-1">
+                              <Button asChild variant="ghost" size="icon" title={`Edit ${s.invoiceNumber}`} aria-label={`Edit ${s.invoiceNumber}`}>
+                                <Link href={`/sales/new?edit=${s._id}`}>
+                                  <Pencil className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                              <DeleteDocumentButton compact table="sales" id={s._id} name={s.invoiceNumber} />
+                            </div>
+                          )}
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>

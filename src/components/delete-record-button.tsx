@@ -28,7 +28,7 @@ export function DeleteRecordButton({
         e.stopPropagation();
         if (
           !window.confirm(
-            `Delete ${name}? Records used by transactions cannot be deleted.`,
+            `Move ${name} to the recycle bin? Records used by transactions are protected.`,
           )
         )
           return;

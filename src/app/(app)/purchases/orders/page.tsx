@@ -1,10 +1,17 @@
 "use client";
 
+import { useState } from "react";
+
 import { DeleteDocumentButton } from "@/components/delete-document-button";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { ShoppingCart } from "lucide-react";
+import { Pencil, ShoppingCart } from "lucide-react";
+import type { Id } from "../../../../../convex/_generated/dataModel";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,10 +20,14 @@ import { PurchaseOrderFormDialog } from "@/components/purchase-order-form";
 
 export default function PurchaseOrdersPage() {
   const rows = useQuery(api.purchases.listByDocumentType, { documentType: "purchase_order" });
+  const access = useQuery(api.organizations.getMyAccess);
+  const selection = useRecordSelection(rows?.map((row) => row._id) ?? [], "purchaseOrders");
+  const [editingOrderId, setEditingOrderId] = useState<Id<"purchases"> | null>(null);
+  const canEdit = ["owner", "admin", "purchase_manager"].includes(access?.membership?.role ?? "");
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Purchase Orders</h1>
           <p className="text-sm text-muted-foreground">
@@ -25,6 +36,8 @@ export default function PurchaseOrdersPage() {
         </div>
         <PurchaseOrderFormDialog />
       </div>
+
+      <BulkRecordActions selection={selection} table="purchases" />
 
       <Card>
         <CardContent className="p-0">
@@ -36,32 +49,49 @@ export default function PurchaseOrdersPage() {
               <p className="text-sm text-muted-foreground">No purchase orders yet.</p>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto"><Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={(checked) => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Number</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="text-right">Estimated Total</TableHead>
+                  {canEdit && <TableHead className="w-24 text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((r) => (
-                  <TableRow key={r._id}>
+                  <TableRow key={r._id} data-state={selection.has(r._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${r.invoiceNumber}`} checked={selection.has(r._id)} onCheckedChange={() => selection.toggle(r._id)} /></TableCell>
                     <TableCell className="font-medium">
                       <Badge variant="secondary">{r.invoiceNumber}</Badge>
-                      <DeleteDocumentButton table="purchases" id={r._id} name={r.invoiceNumber} />
+                      <DeleteDocumentButton compact table="purchases" id={r._id} name={r.invoiceNumber} />
                     </TableCell>
                     <TableCell>{r.supplierName}</TableCell>
                     <TableCell>{new Date(r.createdAt).toLocaleDateString("en-IN")}</TableCell>
                     <TableCell className="text-right">{formatPaise(r.totalPaise)}</TableCell>
+                    {canEdit && (
+                      <TableCell className="text-right">
+                        <Button variant="ghost" size="icon" title={`Edit ${r.invoiceNumber}`} aria-label={`Edit ${r.invoiceNumber}`} onClick={() => setEditingOrderId(r._id)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></div>
           )}
         </CardContent>
       </Card>
+      {editingOrderId && (
+        <PurchaseOrderFormDialog
+          key={editingOrderId}
+          purchaseId={editingOrderId}
+          onClose={() => setEditingOrderId(null)}
+        />
+      )}
     </div>
   );
 }

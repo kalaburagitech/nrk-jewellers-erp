@@ -1,6 +1,9 @@
 "use client";
 
 import { DeleteDocumentButton } from "@/components/delete-document-button";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -13,6 +16,7 @@ import { PurchaseReturnFormDialog } from "@/components/purchase-return-form";
 
 export default function PurchaseReturnsPage() {
   const rows = useQuery(api.purchases.listByDocumentType, { documentType: "purchase_return" });
+  const selection = useRecordSelection(rows?.map((row) => row._id) ?? [], "purchaseReturns");
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -26,6 +30,8 @@ export default function PurchaseReturnsPage() {
         <PurchaseReturnFormDialog />
       </div>
 
+      <BulkRecordActions selection={selection} table="purchases" />
+
       <Card>
         <CardContent className="p-0">
           {rows === undefined ? (
@@ -36,9 +42,10 @@ export default function PurchaseReturnsPage() {
               <p className="text-sm text-muted-foreground">No purchase returns yet.</p>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto"><Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={(checked) => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Number</TableHead>
                   <TableHead>Supplier</TableHead>
                   <TableHead>Date</TableHead>
@@ -47,10 +54,11 @@ export default function PurchaseReturnsPage() {
               </TableHeader>
               <TableBody>
                 {rows.map((r) => (
-                  <TableRow key={r._id}>
+                  <TableRow key={r._id} data-state={selection.has(r._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${r.invoiceNumber}`} checked={selection.has(r._id)} onCheckedChange={() => selection.toggle(r._id)} /></TableCell>
                     <TableCell className="font-medium">
                       <Badge variant="secondary">{r.invoiceNumber}</Badge>
-                      <DeleteDocumentButton table="purchases" id={r._id} name={r.invoiceNumber} />
+                      <DeleteDocumentButton compact table="purchases" id={r._id} name={r.invoiceNumber} />
                     </TableCell>
                     <TableCell>{r.supplierName}</TableCell>
                     <TableCell>{new Date(r.createdAt).toLocaleDateString("en-IN")}</TableCell>
@@ -58,7 +66,7 @@ export default function PurchaseReturnsPage() {
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></div>
           )}
         </CardContent>
       </Card>

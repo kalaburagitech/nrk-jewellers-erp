@@ -181,7 +181,7 @@ export function AppTopbar({
   return (
     <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-card/95 px-4 backdrop-blur-xl sm:gap-5 lg:px-8 print:hidden">
       <div className="flex min-w-0 items-center gap-2">
-        <SidebarTrigger />
+        <SidebarTrigger aria-label="Expand or collapse navigation" title="Expand or collapse navigation" />
         <Separator orientation="vertical" className="h-5" />
         <div className="min-w-0">
           <p className="truncate text-base font-semibold tracking-tight">

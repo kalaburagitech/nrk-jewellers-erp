@@ -1,6 +1,9 @@
 "use client";
 
 import { DeleteDocumentButton } from "@/components/delete-document-button";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 
 import Link from "next/link";
 import { useQuery } from "convex/react";
@@ -26,6 +29,7 @@ export function EstimateListPage({
   dialogTitle: string;
 }) {
   const rows = useQuery(api.sales.listByDocumentType, { documentType });
+  const selection = useRecordSelection(rows?.map((row) => row._id) ?? [], `sales:${documentType}`);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -37,6 +41,8 @@ export function EstimateListPage({
         <EstimateFormDialog documentType={documentType} triggerLabel={triggerLabel} title={dialogTitle} />
       </div>
 
+      <BulkRecordActions selection={selection} table="sales" />
+
       <Card>
         <CardContent className="p-0">
           {rows === undefined ? (
@@ -47,9 +53,10 @@ export function EstimateListPage({
               <p className="text-sm text-muted-foreground">Nothing here yet.</p>
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto"><Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={(checked) => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Number</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Date</TableHead>
@@ -59,10 +66,11 @@ export function EstimateListPage({
               </TableHeader>
               <TableBody>
                 {rows.map((r) => (
-                  <TableRow key={r._id}>
+                  <TableRow key={r._id} data-state={selection.has(r._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${r.invoiceNumber}`} checked={selection.has(r._id)} onCheckedChange={() => selection.toggle(r._id)} /></TableCell>
                     <TableCell className="font-medium">
                       <Badge variant="secondary">{r.invoiceNumber}</Badge>
-                      <DeleteDocumentButton table="sales" id={r._id} name={r.invoiceNumber} />
+                      <DeleteDocumentButton compact table="sales" id={r._id} name={r.invoiceNumber} />
                     </TableCell>
                     <TableCell>{r.customerName}</TableCell>
                     <TableCell>{new Date(r.createdAt).toLocaleDateString("en-IN")}</TableCell>
@@ -75,7 +83,7 @@ export function EstimateListPage({
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
+            </Table></div>
           )}
         </CardContent>
       </Card>
