@@ -42,6 +42,9 @@ export default function DashboardPage() {
   }, [router, latest]);
   const payment = (mode: string) =>
     summary ? formatPaise(summary.todaysPaymentsByMode[mode] ?? 0) : "—";
+  const istHour = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }).format(new Date()));
+  const greeting = istHour < 12 ? "Good morning" : istHour < 17 ? "Good afternoon" : "Good evening";
+  const firstName = access?.user?.name?.trim().split(/\s+/)[0];
   return (
     <div className="counter-dashboard mx-auto flex max-w-7xl flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-5">
@@ -61,8 +64,8 @@ export default function DashboardPage() {
             <h1 className="text-xl font-bold sm:text-2xl">
               {access?.organization?.name || "NR Karakalli Jewellers"}
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Your daily counter overview
+            <p className="mt-1 text-sm font-medium text-[#13406e]">
+              {greeting}{firstName ? `, ${firstName}` : ""} · Your daily counter overview
             </p>
           </div>
         </div>
