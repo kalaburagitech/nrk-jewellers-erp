@@ -1,5 +1,8 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useMemo, useState } from "react";
@@ -10,10 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type { Id } from "../../../../convex/_generated/dataModel";
 
-function BoxDetailDialog({ boxId, onClose }: { boxId: Id<"boxes">; onClose: () => void }) {
+function BoxDetailDialog({
+  boxId,
+  onClose,
+}: {
+  boxId: Id<"boxes">;
+  onClose: () => void;
+}) {
   const items = useQuery(api.boxes.getItems, { boxId });
 
   return (
@@ -28,13 +42,16 @@ function BoxDetailDialog({ boxId, onClose }: { boxId: Id<"boxes">; onClose: () =
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <Package className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              This box is empty. Items are placed into boxes during purchase inward (Milestone 3).
+              This box is empty. Add items when recording a new purchase.
             </p>
           </div>
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((item) => (
-              <li key={item._id} className="rounded-md border border-border p-3 text-sm">
+              <li
+                key={item._id}
+                className="rounded-md border border-border p-3 text-sm"
+              >
                 {item.label} — {(item.netWeightMg / 1000).toFixed(3)}g net
               </li>
             ))}
@@ -59,8 +76,17 @@ export default function BoxOverviewPage() {
     if (!boxes) return undefined;
     const q = search.trim();
     if (!q) return boxes;
-    return boxes.filter((b) => String(b.boxNumber).includes(q) || b.label?.toLowerCase().includes(q.toLowerCase()));
+    return boxes.filter(
+      (b) =>
+        String(b.boxNumber).includes(q) ||
+        b.label?.toLowerCase().includes(q.toLowerCase()),
+    );
   }, [boxes, search]);
+
+  const selection = useRecordSelection(
+    filtered?.map((box) => box._id) ?? [],
+    `boxes:${search}`,
+  );
 
   async function handleCreate() {
     setCreating(true);
@@ -68,7 +94,8 @@ export default function BoxOverviewPage() {
       setError("");
       if (!boxNumber.trim()) throw new Error("Enter a box number");
       await createNext({ boxNumber: Number(boxNumber), label });
-      setBoxNumber(""); setLabel("");
+      setBoxNumber("");
+      setLabel("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to create box");
     } finally {
@@ -80,16 +107,43 @@ export default function BoxOverviewPage() {
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Box Overview</h1>
-          <p className="text-sm text-muted-foreground">{boxes?.length ?? 0} boxes</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Box Overview
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {boxes?.length ?? 0} boxes
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2"><Input aria-label="Box number" type="number" min="1" step="1" value={boxNumber} onChange={e => setBoxNumber(e.target.value)} placeholder="Box no." className="w-28" /><Input aria-label="Box label" value={label} onChange={e => setLabel(e.target.value)} placeholder="Label (optional)" className="w-44" /><Button onClick={handleCreate} disabled={creating}>
-          <Plus className="h-4 w-4" />
-          {creating ? "Creating…" : "Create Box"}
-        </Button></div>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            aria-label="Box number"
+            type="number"
+            min="1"
+            step="1"
+            value={boxNumber}
+            onChange={(e) => setBoxNumber(e.target.value)}
+            placeholder="Box no."
+            className="w-28"
+          />
+          <Input
+            aria-label="Box label"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Label (optional)"
+            className="w-44"
+          />
+          <Button onClick={handleCreate} disabled={creating}>
+            <Plus className="h-4 w-4" />
+            {creating ? "Creating…" : "Create Box"}
+          </Button>
+        </div>
       </div>
 
-      {error && <p role="alert" className="text-destructive">{error}</p>}
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
       <div className="relative max-w-sm">
         <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -100,33 +154,63 @@ export default function BoxOverviewPage() {
         />
       </div>
 
+      <BulkRecordActions selection={selection} table="boxes" />
       {filtered === undefined ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
-        <p className="py-12 text-center text-sm text-muted-foreground">No boxes match your search.</p>
+        <p className="py-12 text-center text-sm text-muted-foreground">
+          No boxes match your search.
+        </p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           {filtered.map((box) => (
             <Card
               key={box._id}
-              className="cursor-pointer gap-1 py-4 text-center transition-colors hover:border-gold"
-              onClick={() => setSelectedBox(box._id)}
+              className={`relative gap-2 py-5 text-center transition-all hover:shadow-md ${selection.has(box._id) ? "ring-2 ring-primary bg-primary/5" : ""}`}
             >
               <CardContent className="flex flex-col items-center gap-1 px-2">
-                <DeleteRecordButton table="boxes" id={box._id} name={`Box ${box.boxNumber}`} />
-                <Package className="h-5 w-5 text-gold" />
-                <p className="text-lg font-semibold">{box.boxNumber}</p>
-                {box.label && <p className="truncate text-xs text-muted-foreground">{box.label}</p>}
-                <Badge variant="secondary" className="text-[10px] font-normal">
-                  {box.itemCount ? `${box.itemCount} item${box.itemCount === 1 ? "" : "s"}` : "Empty"}
-                </Badge>
+                <Checkbox
+                  className="absolute left-3 top-3"
+                  aria-label={`Select Box ${box.boxNumber}`}
+                  checked={selection.has(box._id)}
+                  onCheckedChange={() => selection.toggle(box._id)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setSelectedBox(box._id)}
+                  className="flex w-full flex-col items-center gap-2 rounded-lg py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={`View Box ${box.boxNumber}`}
+                >
+                  <Package className="h-5 w-5 text-gold" />
+                  <p className="text-lg font-semibold">{box.boxNumber}</p>
+                  {box.label && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {box.label}
+                    </p>
+                  )}
+                  <Badge variant="secondary" className="text-xs font-normal">
+                    {box.itemCount
+                      ? `${box.itemCount} item${box.itemCount === 1 ? "" : "s"}`
+                      : "Empty"}
+                  </Badge>
+                </button>
+                <DeleteRecordButton
+                  table="boxes"
+                  id={box._id}
+                  name={`Box ${box.boxNumber}`}
+                />
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      {selectedBox && <BoxDetailDialog boxId={selectedBox} onClose={() => setSelectedBox(null)} />}
+      {selectedBox && (
+        <BoxDetailDialog
+          boxId={selectedBox}
+          onClose={() => setSelectedBox(null)}
+        />
+      )}
     </div>
   );
 }

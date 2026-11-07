@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useState } from "react";
@@ -46,6 +50,8 @@ export default function StockGroupsPage() {
     }
   }
 
+  const selection = useRecordSelection(groups?.map(row => row._id) ?? [], "stockGroups");
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -78,6 +84,7 @@ export default function StockGroupsPage() {
         </Dialog>
       </div>
 
+      <BulkRecordActions selection={selection} table="stockGroups" />
       <Card>
         <CardContent className="p-0">
           {groups === undefined ? (
@@ -90,13 +97,14 @@ export default function StockGroupsPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow><TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Name</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {groups.map((g) => (
-                  <TableRow key={g._id}>
+                  <TableRow key={g._id} data-state={selection.has(g._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${g.name}`} checked={selection.has(g._id)} onCheckedChange={() => selection.toggle(g._id)} /></TableCell>
                     <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{g.name}</span><DeleteRecordButton table="stockGroups" id={g._id} name={g.name} /></div></TableCell>
                   </TableRow>
                 ))}

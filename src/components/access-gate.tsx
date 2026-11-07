@@ -55,7 +55,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="erp-shell">
       <AppSidebar />
       <SidebarInset>
         <AppTopbar
@@ -63,7 +63,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
           userName={access.user?.name ?? access.user?.email}
           role={access.membership?.role}
         />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 print:overflow-visible print:p-0">{children}</main>
+        <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

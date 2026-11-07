@@ -1,5 +1,7 @@
 "use client";
 
+import { RecordSelectionToolbar } from "@/components/record-selection-toolbar";
+import { useRecordSelection } from "@/hooks/use-record-selection";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -33,27 +35,30 @@ export function PurchaseReturnFormDialog() {
   const [open, setOpen] = useState(false);
   const [supplierId, setSupplierId] = useState<Id<"suppliers"> | "">("");
   const [purchaseId, setPurchaseId] = useState<Id<"purchases"> | "">("");
-  const [selectedItemIds, setSelectedItemIds] = useState<Set<Id<"purchaseItems">>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const invoices = useQuery(api.purchases.listReturnableInvoices, supplierId ? { supplierId } : "skip");
-  const items = useQuery(api.purchases.listReturnableItems, purchaseId ? { purchaseId } : "skip");
+  const invoices = useQuery(
+    api.purchases.listReturnableInvoices,
+    supplierId ? { supplierId } : "skip",
+  );
+  const items = useQuery(
+    api.purchases.listReturnableItems,
+    purchaseId ? { purchaseId } : "skip",
+  );
+
+  const selection = useRecordSelection(
+    items?.map((item) => item._id) ?? [],
+    `${purchaseId}`,
+    true,
+  );
+  const selectedItemIds = new Set(selection.ids as Id<"purchaseItems">[]);
 
   function reset() {
     setSupplierId("");
     setPurchaseId("");
-    setSelectedItemIds(new Set());
+    selection.clear();
     setError(null);
-  }
-
-  function toggleItem(id: Id<"purchaseItems">) {
-    setSelectedItemIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   }
 
   async function handleSubmit() {
@@ -104,7 +109,7 @@ export function PurchaseReturnFormDialog() {
               onValueChange={(v) => {
                 setSupplierId(v as Id<"suppliers">);
                 setPurchaseId("");
-                setSelectedItemIds(new Set());
+                selection.clear();
               }}
             >
               <SelectTrigger className="w-full">
@@ -127,11 +132,17 @@ export function PurchaseReturnFormDialog() {
                 value={purchaseId}
                 onValueChange={(v) => {
                   setPurchaseId(v as Id<"purchases">);
-                  setSelectedItemIds(new Set());
+                  selection.clear();
                 }}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder={invoices?.length === 0 ? "No invoices found" : "Select invoice"} />
+                  <SelectValue
+                    placeholder={
+                      invoices?.length === 0
+                        ? "No invoices found"
+                        : "Select invoice"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {invoices?.map((p) => (
@@ -147,23 +158,36 @@ export function PurchaseReturnFormDialog() {
           {purchaseId && (
             <div className="flex flex-col gap-2">
               <Label>Items to return</Label>
+              <RecordSelectionToolbar
+                selection={selection}
+                disabled={submitting}
+              />
               {items === undefined ? (
                 <p className="text-sm text-muted-foreground">Loading…</p>
               ) : items.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nothing on this invoice is still in stock to return.</p>
+                <p className="text-sm text-muted-foreground">
+                  Nothing on this invoice is still in stock to return.
+                </p>
               ) : (
                 items.map((item) => (
                   <label
                     key={item._id}
-                    className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-sm"
+                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5"
                   >
                     <div className="flex items-center gap-2">
-                      <Checkbox checked={selectedItemIds.has(item._id)} onCheckedChange={() => toggleItem(item._id)} />
+                      <Checkbox
+                        checked={selectedItemIds.has(item._id)}
+                        aria-label={`Select ${item.label}`}
+                        disabled={submitting}
+                        onCheckedChange={() => selection.toggle(item._id)}
+                      />
                       <span>
                         {item.label} · {mgToGramsDisplay(item.netWeightMg)}g
                       </span>
                     </div>
-                    <span className="font-medium">{formatPaise(item.lineTotalPaise)}</span>
+                    <span className="font-medium">
+                      {formatPaise(item.lineTotalPaise)}
+                    </span>
                   </label>
                 ))
               )}
@@ -173,7 +197,10 @@ export function PurchaseReturnFormDialog() {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
-          <Button onClick={handleSubmit} disabled={submitting}>
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting || selection.count === 0}
+          >
             {submitting ? "Saving…" : "Save"}
           </Button>
         </DialogFooter>

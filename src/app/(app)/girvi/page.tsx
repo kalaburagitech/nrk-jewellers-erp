@@ -1,4 +1,8 @@
 "use client";
+
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
@@ -175,6 +179,18 @@ export default function GirviPage() {
   const [busy, setBusy] = useState(false);
   const active = loans?.filter((l) => l.status === "active");
   const today = new Date().toLocaleDateString("en-CA");
+  const visibleLoans = loans?.filter(
+    (loan) =>
+      (status === "all" || loan.status === status) &&
+      `${loan.ticketNumber} ${loan.customerName} ${loan.phone}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+  );
+  const selection = useRecordSelection(
+    visibleLoans?.map((row) => row._id) ?? [],
+    `girvi:${status}:${search}`,
+  );
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -258,10 +274,26 @@ export default function GirviPage() {
           {error}
         </p>
       )}
+      <BulkRecordActions selection={selection} table="girviLoans" />
       <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-left text-sm">
           <thead className="bg-blue-50 text-blue-950">
             <tr>
+              <th className="w-12 p-4">
+                <Checkbox
+                  aria-label="Select all visible records"
+                  checked={
+                    selection.all
+                      ? true
+                      : selection.partial
+                        ? "indeterminate"
+                        : false
+                  }
+                  onCheckedChange={(checked) =>
+                    selection.selectAll(checked === true)
+                  }
+                />
+              </th>
               {[
                 "Ticket / Customer",
                 "Metal held",
@@ -287,7 +319,17 @@ export default function GirviPage() {
                     .includes(search.toLowerCase()),
               )
               .map((loan) => (
-                <tr key={loan._id} className="border-t">
+                <tr
+                  key={loan._id}
+                  className={`border-t ${selection.has(loan._id) ? "bg-primary/5" : ""}`}
+                >
+                  <td className="p-4">
+                    <Checkbox
+                      aria-label={`Select ticket ${loan.ticketNumber}`}
+                      checked={selection.has(loan._id)}
+                      onCheckedChange={() => selection.toggle(loan._id)}
+                    />
+                  </td>
                   <td className="p-4">
                     <strong>{loan.ticketNumber}</strong>
                     <p>{loan.customerName}</p>

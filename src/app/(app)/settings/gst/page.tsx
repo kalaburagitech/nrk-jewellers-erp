@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useState } from "react";
@@ -76,6 +80,8 @@ export default function GstConfigurationPage() {
     }
   }
 
+  const selection = useRecordSelection(configs?.map(row => row._id) ?? [], "taxConfigurations");
+
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -137,6 +143,7 @@ export default function GstConfigurationPage() {
         </Dialog>
       </div>
 
+      <BulkRecordActions selection={selection} table="taxConfigurations" />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Configured tax rates</CardTitle>
@@ -154,7 +161,7 @@ export default function GstConfigurationPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow><TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>CGST</TableHead>
                   <TableHead>SGST</TableHead>
@@ -165,7 +172,8 @@ export default function GstConfigurationPage() {
               </TableHeader>
               <TableBody>
                 {configs.map((c) => (
-                  <TableRow key={c._id}>
+                  <TableRow key={c._id} data-state={selection.has(c._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${c.name}`} checked={selection.has(c._id)} onCheckedChange={() => selection.toggle(c._id)} /></TableCell>
                     <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{c.name}</span><DeleteRecordButton table="taxConfigurations" id={c._id} name={c.name} /></div></TableCell>
                     <TableCell>{formatBasisPointsPercent(c.cgstBasisPoints)}</TableCell>
                     <TableCell>{formatBasisPointsPercent(c.sgstBasisPoints)}</TableCell>

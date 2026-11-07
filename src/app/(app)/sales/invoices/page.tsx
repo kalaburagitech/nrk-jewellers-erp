@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
@@ -116,6 +120,8 @@ export default function SalesInvoicesPage() {
     return map;
   }, [customers]);
 
+  const selection = useRecordSelection(sales?.map(row => row._id) ?? [], "sales");
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -126,9 +132,10 @@ export default function SalesInvoicesPage() {
         <div className="flex gap-2">
           {sales && (
             <ExportCsvButton
+              label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
               filename="sales-invoices"
               headers={["Invoice #", "Date", "Customer", "GST", "Total (₹)", "Paid (₹)", "Status"]}
-              rows={sales.map((s) => [
+              rows={(selection.count ? sales.filter(row => selection.has(row._id)) : sales).map((s) => [
                 s.invoiceNumber,
                 new Date(s.createdAt).toLocaleDateString("en-IN"),
                 customerName.get(s.customerId) ?? "—",
@@ -148,6 +155,8 @@ export default function SalesInvoicesPage() {
         </div>
       </div>
 
+      <BulkRecordActions selection={selection} table="sales" />
+
       <Card>
         <CardContent className="p-0">
           {sales === undefined ? (
@@ -162,6 +171,7 @@ export default function SalesInvoicesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Customer</TableHead>
@@ -173,7 +183,8 @@ export default function SalesInvoicesPage() {
                 </TableHeader>
                 <TableBody>
                   {sales.map((s) => (
-                    <TableRow key={s._id} className="cursor-pointer" onClick={() => setSelected(s._id)}>
+                    <TableRow key={s._id} data-state={selection.has(s._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(s._id)}>
+                      <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${s.invoiceNumber}`} checked={selection.has(s._id)} onCheckedChange={() => selection.toggle(s._id)} /></TableCell>
                       <TableCell className="font-medium">{s.invoiceNumber}</TableCell>
                       <TableCell>{new Date(s.createdAt).toLocaleDateString("en-IN")}</TableCell>
                       <TableCell>{customerName.get(s.customerId) ?? "—"}</TableCell>

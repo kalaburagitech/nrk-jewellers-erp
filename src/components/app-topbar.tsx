@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Bell, LogOut, Search } from "lucide-react";
@@ -11,6 +11,8 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { TextSizeToggle } from "@/components/text-size-toggle";
+import { NAV_SECTIONS } from "@/lib/nav-data";
 import { ThemeToggle } from "@/components/theme-toggle";
 import {
   DropdownMenu,
@@ -40,10 +42,16 @@ function GlobalSearch() {
     return () => clearTimeout(id);
   }, [term]);
 
-  const results = useQuery(api.search.globalSearch, debouncedTerm.trim().length >= 2 ? { term: debouncedTerm } : "skip");
+  const results = useQuery(
+    api.search.globalSearch,
+    debouncedTerm.trim().length >= 2 ? { term: debouncedTerm } : "skip",
+  );
 
   const hasResults =
-    results && (results.customers.length > 0 || results.products.length > 0 || results.sales.length > 0);
+    results &&
+    (results.customers.length > 0 ||
+      results.products.length > 0 ||
+      results.sales.length > 0);
 
   function go(path: string) {
     setTerm("");
@@ -52,7 +60,7 @@ function GlobalSearch() {
   }
 
   return (
-    <div className="relative hidden w-72 sm:block">
+    <div className="relative hidden w-full max-w-md md:block">
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={term}
@@ -60,10 +68,10 @@ function GlobalSearch() {
         onFocus={() => setFocused(true)}
         onBlur={() => setTimeout(() => setFocused(false), 150)}
         placeholder="Search customers, products, invoices…"
-        className="h-8 pl-8 text-sm"
+        className="h-11 rounded-xl border-border/70 bg-muted/40 pl-9 text-sm"
       />
       {focused && term.trim().length >= 2 && (
-        <div className="absolute left-0 right-0 top-9 z-50 overflow-hidden rounded-md border border-border bg-popover shadow-md">
+        <div className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-md border border-border bg-popover shadow-md">
           {!results ? (
             <p className="p-3 text-xs text-muted-foreground">Searching…</p>
           ) : !hasResults ? (
@@ -72,7 +80,9 @@ function GlobalSearch() {
             <div className="max-h-80 overflow-y-auto py-1 text-sm">
               {results.customers.length > 0 && (
                 <div>
-                  <p className="px-3 pt-1.5 text-[10px] font-medium uppercase text-muted-foreground">Customers</p>
+                  <p className="px-3 pt-1.5 text-xs font-medium uppercase text-muted-foreground">
+                    Customers
+                  </p>
                   {results.customers.map((c) => (
                     <button
                       key={c.id}
@@ -80,14 +90,20 @@ function GlobalSearch() {
                       onClick={() => go("/customers")}
                     >
                       <span>{c.label}</span>
-                      {c.sublabel && <span className="text-xs text-muted-foreground">{c.sublabel}</span>}
+                      {c.sublabel && (
+                        <span className="text-xs text-muted-foreground">
+                          {c.sublabel}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
               {results.products.length > 0 && (
                 <div>
-                  <p className="px-3 pt-1.5 text-[10px] font-medium uppercase text-muted-foreground">Products</p>
+                  <p className="px-3 pt-1.5 text-xs font-medium uppercase text-muted-foreground">
+                    Products
+                  </p>
                   {results.products.map((p) => (
                     <button
                       key={p.id}
@@ -95,14 +111,20 @@ function GlobalSearch() {
                       onClick={() => go("/inventory/products")}
                     >
                       <span>{p.label}</span>
-                      {p.sublabel && <span className="text-xs text-muted-foreground">{p.sublabel}</span>}
+                      {p.sublabel && (
+                        <span className="text-xs text-muted-foreground">
+                          {p.sublabel}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
               )}
               {results.sales.length > 0 && (
                 <div>
-                  <p className="px-3 pt-1.5 text-[10px] font-medium uppercase text-muted-foreground">Invoices</p>
+                  <p className="px-3 pt-1.5 text-xs font-medium uppercase text-muted-foreground">
+                    Invoices
+                  </p>
                   {results.sales.map((s) => (
                     <button
                       key={s.id}
@@ -126,12 +148,14 @@ function NotificationBell() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="outline-none">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
           <Bell className="h-4 w-4" />
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
-        <p className="px-2 py-3 text-center text-sm text-muted-foreground">No new notifications.</p>
+        <p className="px-2 py-3 text-center text-sm text-muted-foreground">
+          No new notifications.
+        </p>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -147,28 +171,42 @@ export function AppTopbar({
   role?: string;
 }) {
   const { signOut } = useAuthActions();
+  const pathname = usePathname();
+  const page = NAV_SECTIONS.flatMap((section) => [
+    ...(section.items ?? []),
+    section,
+  ]).find((item) => item.href === pathname);
+  const pageTitle = page?.title ?? "Workspace";
 
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border/70 bg-card/60 px-4 backdrop-blur supports-[backdrop-filter]:bg-card/40 print:hidden">
-      <div className="flex items-center gap-2">
+    <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-card/95 px-4 backdrop-blur-xl sm:gap-5 lg:px-8 print:hidden">
+      <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger />
         <Separator orientation="vertical" className="h-5" />
-        <span className="text-sm font-medium text-foreground/90">{organizationName}</span>
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold tracking-tight">
+            {pageTitle}
+          </p>
+          <p className="mt-0.5 hidden max-w-52 truncate text-xs text-muted-foreground sm:block">
+            {organizationName || "NRK Jewellers"}
+          </p>
+        </div>
       </div>
-      <div className="flex flex-1 justify-center">
+      <div className="hidden min-w-0 flex-1 justify-center md:flex">
         <GlobalSearch />
       </div>
       <div className="flex items-center gap-2">
         {role && (
-          <Badge variant="outline" className="hidden sm:inline-flex capitalize">
+          <Badge variant="outline" className="hidden xl:inline-flex capitalize">
             {role.replace("_", " ")}
           </Badge>
         )}
+        <TextSizeToggle />
         <ThemeToggle />
         <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
-            <Avatar className="h-8 w-8 border border-border">
+            <Avatar className="h-10 w-10 border border-border">
               <AvatarFallback className="bg-accent text-accent-foreground text-xs font-semibold">
                 {initials(userName)}
               </AvatarFallback>
@@ -176,9 +214,14 @@ export function AppTopbar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <div className="px-2 py-1.5 text-sm">
-              <p className="font-medium leading-none">{userName ?? "Account"}</p>
+              <p className="font-medium leading-none">
+                {userName ?? "Account"}
+              </p>
             </div>
-            <DropdownMenuItem onSelect={() => void signOut()} className="text-destructive">
+            <DropdownMenuItem
+              onSelect={() => void signOut()}
+              className="text-destructive"
+            >
               <LogOut className="h-4 w-4" />
               Sign out
             </DropdownMenuItem>

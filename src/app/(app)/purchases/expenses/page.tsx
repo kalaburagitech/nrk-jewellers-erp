@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -8,7 +12,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +38,14 @@ import {
 import { formatPaise, rupeesToPaise } from "@/lib/money";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-const COMMON_CATEGORIES = ["Rent", "Salary", "Electricity", "Transport", "Maintenance", "Other"];
+const COMMON_CATEGORIES = [
+  "Rent",
+  "Salary",
+  "Electricity",
+  "Transport",
+  "Maintenance",
+  "Other",
+];
 
 function todayDateInput(): string {
   return new Date().toISOString().slice(0, 10);
@@ -72,14 +90,18 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
       await createExpense({
         category,
         amountPaise,
-        paymentAccountId: paymentAccountId ? (paymentAccountId as Id<"bankAccounts">) : undefined,
+        paymentAccountId: paymentAccountId
+          ? (paymentAccountId as Id<"bankAccounts">)
+          : undefined,
         description: description || undefined,
         expenseDate: dateInputToTimestamp(expenseDate),
       });
       setOpen(false);
       reset();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not record this expense.");
+      setError(
+        e instanceof Error ? e.message : "Could not record this expense.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -121,13 +143,21 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
             </div>
             <div className="grid gap-2">
               <Label>Amount (₹)</Label>
-              <Input inputMode="decimal" placeholder="0.00" value={amountRupees} onChange={(e) => setAmountRupees(e.target.value)} />
+              <Input
+                inputMode="decimal"
+                placeholder="0.00"
+                value={amountRupees}
+                onChange={(e) => setAmountRupees(e.target.value)}
+              />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
               <Label>Paid from (optional)</Label>
-              <Select value={paymentAccountId} onValueChange={setPaymentAccountId}>
+              <Select
+                value={paymentAccountId}
+                onValueChange={setPaymentAccountId}
+              >
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Not tracked" />
                 </SelectTrigger>
@@ -142,12 +172,21 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
             </div>
             <div className="grid gap-2">
               <Label>Date</Label>
-              <Input type="date" value={expenseDate} max={todayDateInput()} onChange={(e) => setExpenseDate(e.target.value)} />
+              <Input
+                type="date"
+                value={expenseDate}
+                max={todayDateInput()}
+                onChange={(e) => setExpenseDate(e.target.value)}
+              />
             </div>
           </div>
           <div className="grid gap-2">
             <Label>Description</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="optional" />
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="optional"
+            />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
@@ -161,7 +200,13 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
   );
 }
 
-function DeleteExpenseDialog({ expense, onClose }: { expense: Doc<"expenses">; onClose: () => void }) {
+function DeleteExpenseDialog({
+  expense,
+  onClose,
+}: {
+  expense: Doc<"expenses">;
+  onClose: () => void;
+}) {
   const removeExpense = useMutation(api.expenses.remove);
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -178,7 +223,9 @@ function DeleteExpenseDialog({ expense, onClose }: { expense: Doc<"expenses">; o
       await removeExpense({ id: expense._id, reason });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not delete this expense.");
+      setError(
+        e instanceof Error ? e.message : "Could not delete this expense.",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -188,7 +235,9 @@ function DeleteExpenseDialog({ expense, onClose }: { expense: Doc<"expenses">; o
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete &quot;{expense.category}&quot; expense?</DialogTitle>
+          <DialogTitle>
+            Delete &quot;{expense.category}&quot; expense?
+          </DialogTitle>
         </DialogHeader>
         <p className="text-sm text-muted-foreground">
           {expense.paymentAccountId
@@ -197,14 +246,22 @@ function DeleteExpenseDialog({ expense, onClose }: { expense: Doc<"expenses">; o
         </p>
         <div className="grid gap-2">
           <Label>Reason</Label>
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. entered by mistake" />
+          <Input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. entered by mistake"
+          />
         </div>
         {error && <p className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={handleDelete} disabled={submitting}>
+          <Button
+            variant="destructive"
+            onClick={handleDelete}
+            disabled={submitting}
+          >
             {submitting ? "Deleting…" : "Delete expense"}
           </Button>
         </DialogFooter>
@@ -227,25 +284,40 @@ export default function ExpensesPage() {
   const totalPaise = expenses?.reduce((sum, e) => sum + e.amountPaise, 0) ?? 0;
   const byCategory = useMemo(() => {
     const map = new Map<string, number>();
-    expenses?.forEach((e) => map.set(e.category, (map.get(e.category) ?? 0) + e.amountPaise));
+    expenses?.forEach((e) =>
+      map.set(e.category, (map.get(e.category) ?? 0) + e.amountPaise),
+    );
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }, [expenses]);
+
+  const selection = useRecordSelection(
+    expenses?.map((row) => row._id) ?? [],
+    "expenses",
+  );
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Expenses</h1>
-          <p className="text-sm text-muted-foreground">Shop running costs — rent, salary, electricity — kept separate from supplier purchases.</p>
+          <p className="text-sm text-muted-foreground">
+            Shop running costs — rent, salary, electricity — kept separate from
+            supplier purchases.
+          </p>
         </div>
         {accounts !== undefined && <AddExpenseDialog accounts={accounts} />}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <BulkRecordActions selection={selection} table="expenses" />
         <Card>
           <CardContent className="py-4">
-            <p className="text-sm text-muted-foreground">Total expenses recorded</p>
-            <p className="text-2xl font-semibold tracking-tight">{formatPaise(totalPaise)}</p>
+            <p className="text-sm text-muted-foreground">
+              Total expenses recorded
+            </p>
+            <p className="text-2xl font-semibold tracking-tight">
+              {formatPaise(totalPaise)}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -274,13 +346,30 @@ export default function ExpensesPage() {
           ) : expenses.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center">
               <ReceiptIcon className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No expenses recorded yet.</p>
+              <p className="text-sm text-muted-foreground">
+                No expenses recorded yet.
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        aria-label="Select all visible records"
+                        checked={
+                          selection.all
+                            ? true
+                            : selection.partial
+                              ? "indeterminate"
+                              : false
+                        }
+                        onCheckedChange={(checked) =>
+                          selection.selectAll(checked === true)
+                        }
+                      />
+                    </TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Description</TableHead>
@@ -291,16 +380,40 @@ export default function ExpensesPage() {
                 </TableHeader>
                 <TableBody>
                   {expenses.map((e) => (
-                    <TableRow key={e._id}>
-                      <TableCell>{new Date(e.expenseDate).toLocaleDateString("en-IN")}</TableCell>
-                      <TableCell className="font-medium">{e.category}</TableCell>
-                      <TableCell className="text-muted-foreground">{e.description ?? "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {e.paymentAccountId ? accountNameById.get(e.paymentAccountId) ?? "—" : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">{formatPaise(e.amountPaise)}</TableCell>
+                    <TableRow
+                      key={e._id}
+                      data-state={selection.has(e._id) ? "selected" : undefined}
+                    >
                       <TableCell>
-                        <Button variant="ghost" size="icon" onClick={() => setDeleting(e)}>
+                        <Checkbox
+                          aria-label={`Select ${e.category}`}
+                          checked={selection.has(e._id)}
+                          onCheckedChange={() => selection.toggle(e._id)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {new Date(e.expenseDate).toLocaleDateString("en-IN")}
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {e.category}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {e.description ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {e.paymentAccountId
+                          ? (accountNameById.get(e.paymentAccountId) ?? "—")
+                          : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatPaise(e.amountPaise)}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => setDeleting(e)}
+                        >
                           <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </TableCell>
@@ -313,7 +426,12 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
 
-      {deleting && <DeleteExpenseDialog expense={deleting} onClose={() => setDeleting(null)} />}
+      {deleting && (
+        <DeleteExpenseDialog
+          expense={deleting}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </div>
   );
 }

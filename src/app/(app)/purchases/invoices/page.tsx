@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
@@ -133,6 +137,8 @@ export default function PurchaseInvoicesPage() {
     return map;
   }, [suppliers]);
 
+  const selection = useRecordSelection(purchases?.map(row => row._id) ?? [], "purchases");
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -143,9 +149,10 @@ export default function PurchaseInvoicesPage() {
         <div className="flex gap-2">
           {purchases && (
             <ExportCsvButton
+              label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
               filename="purchase-invoices"
               headers={["Invoice #", "Date", "Supplier", "Total (₹)", "Paid (₹)", "Status"]}
-              rows={purchases.map((p) => [
+              rows={(selection.count ? purchases.filter(row => selection.has(row._id)) : purchases).map((p) => [
                 p.invoiceNumber,
                 new Date(p.createdAt).toLocaleDateString("en-IN"),
                 supplierName.get(p.supplierId) ?? "—",
@@ -164,6 +171,8 @@ export default function PurchaseInvoicesPage() {
         </div>
       </div>
 
+      <BulkRecordActions selection={selection} table="purchases" />
+
       <Card>
         <CardContent className="p-0">
           {purchases === undefined ? (
@@ -178,6 +187,7 @@ export default function PurchaseInvoicesPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                     <TableHead>Invoice #</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Supplier</TableHead>
@@ -188,7 +198,8 @@ export default function PurchaseInvoicesPage() {
                 </TableHeader>
                 <TableBody>
                   {purchases.map((p) => (
-                    <TableRow key={p._id} className="cursor-pointer" onClick={() => setSelected(p)}>
+                    <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(p)}>
+                      <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.invoiceNumber}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
                       <TableCell className="font-medium">{p.invoiceNumber}</TableCell>
                       <TableCell>{new Date(p.createdAt).toLocaleDateString("en-IN")}</TableCell>
                       <TableCell>{supplierName.get(p.supplierId) ?? "—"}</TableCell>

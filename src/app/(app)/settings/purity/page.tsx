@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useState } from "react";
@@ -70,6 +74,8 @@ export default function MetalPurityPage() {
     }
   }
 
+  const selection = useRecordSelection(purities?.map(row => row._id) ?? [], "metalPurities");
+
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -127,6 +133,7 @@ export default function MetalPurityPage() {
         </Dialog>
       </div>
 
+      <BulkRecordActions selection={selection} table="metalPurities" />
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Configured purities</CardTitle>
@@ -144,7 +151,7 @@ export default function MetalPurityPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow><TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Label</TableHead>
                   <TableHead>Metal</TableHead>
                   <TableHead>Purity</TableHead>
@@ -153,7 +160,8 @@ export default function MetalPurityPage() {
               </TableHeader>
               <TableBody>
                 {purities.map((p) => (
-                  <TableRow key={p._id}>
+                  <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${p.label}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
                     <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{p.label}</span><DeleteRecordButton table="metalPurities" id={p._id} name={p.label} /></div></TableCell>
                     <TableCell>
                       <Badge variant="outline" className="capitalize">

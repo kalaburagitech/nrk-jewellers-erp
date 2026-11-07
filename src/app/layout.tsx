@@ -30,6 +30,7 @@ const THEME_INIT_SCRIPT = `
   try {
     var stored = localStorage.getItem("nrk-theme");
     document.documentElement.classList.toggle("dark", stored === "dark");
+    document.documentElement.dataset.readingSize = localStorage.getItem("nrk-reading-size") || "standard";
   } catch (e) {}
 `;
 

@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useMemo, useState } from "react";
@@ -260,6 +264,8 @@ export default function ProductsPage() {
     );
   }, [products, search]);
 
+  const selection = useRecordSelection(filtered?.map(row => row._id) ?? [], `products:${search}`);
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -283,6 +289,8 @@ export default function ProductsPage() {
         />
       </div>
 
+      <BulkRecordActions selection={selection} table="products" />
+
       <Card>
         <CardContent className="p-0">
           {filtered === undefined ? (
@@ -299,6 +307,7 @@ export default function ProductsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Unit</TableHead>
@@ -307,7 +316,8 @@ export default function ProductsPage() {
                 </TableHeader>
                 <TableBody>
                   {filtered.map((p) => (
-                    <TableRow key={p._id}>
+                    <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined}>
+                      <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.name}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
                       <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{p.name}</span><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
                       <TableCell className="text-muted-foreground">{p.sku ?? "—"}</TableCell>
                       <TableCell>

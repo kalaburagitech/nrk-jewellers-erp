@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useMemo, useState } from "react";
@@ -302,6 +306,8 @@ export default function CustomersPage() {
     );
   }, [customers, search]);
 
+  const selection = useRecordSelection(filtered?.map(row => row._id) ?? [], `customers:${search}`);
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -325,6 +331,8 @@ export default function CustomersPage() {
         />
       </div>
 
+      <BulkRecordActions selection={selection} table="customers" />
+
       <Card>
         <CardContent className="p-0">
           {filtered === undefined ? (
@@ -341,6 +349,7 @@ export default function CustomersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>Phone</TableHead>
                     <TableHead>Type</TableHead>
@@ -350,10 +359,11 @@ export default function CustomersPage() {
                 <TableBody>
                   {filtered.map((c) => (
                     <TableRow
-                      key={c._id}
+                      key={c._id} data-state={selection.has(c._id) ? "selected" : undefined}
                       className="cursor-pointer"
                       onClick={() => router.push(`/customers/ledgers?customerId=${c._id}`)}
                     >
+                      <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${c.name}`} checked={selection.has(c._id)} onCheckedChange={() => selection.toggle(c._id)} /></TableCell>
                       <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{c.name}</span><DeleteRecordButton table="customers" id={c._id} name={c.name} /></div></TableCell>
                       <TableCell>{c.phone ?? "—"}</TableCell>
                       <TableCell>

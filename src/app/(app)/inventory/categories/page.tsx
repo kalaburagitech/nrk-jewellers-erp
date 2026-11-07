@@ -1,5 +1,9 @@
 "use client";
 
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
+
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
 import { useState } from "react";
@@ -46,6 +50,8 @@ export default function StockCategoriesPage() {
     }
   }
 
+  const selection = useRecordSelection(categories?.map(row => row._id) ?? [], "stockCategories");
+
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -78,6 +84,7 @@ export default function StockCategoriesPage() {
         </Dialog>
       </div>
 
+      <BulkRecordActions selection={selection} table="stockCategories" />
       <Card>
         <CardContent className="p-0">
           {categories === undefined ? (
@@ -90,13 +97,14 @@ export default function StockCategoriesPage() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow><TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                   <TableHead>Name</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {categories.map((c) => (
-                  <TableRow key={c._id}>
+                  <TableRow key={c._id} data-state={selection.has(c._id) ? "selected" : undefined}>
+                    <TableCell><Checkbox aria-label={`Select ${c.name}`} checked={selection.has(c._id)} onCheckedChange={() => selection.toggle(c._id)} /></TableCell>
                     <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{c.name}</span><DeleteRecordButton table="stockCategories" id={c._id} name={c.name} /></div></TableCell>
                   </TableRow>
                 ))}

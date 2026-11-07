@@ -1,4 +1,7 @@
 "use client";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
@@ -38,6 +41,13 @@ export default function ManageDataPage() {
   const records = showDeleted ? deleted : active;
   const remove = useMutation(api.dataManagement.remove);
   const restoreRecord = useMutation(api.dataManagement.restoreRecord);
+  const filtered = records?.filter((r) =>
+    r.name.toLowerCase().includes(search.toLowerCase()),
+  );
+  const selection = useRecordSelection(
+    filtered?.map((r) => r.id) ?? [],
+    `${table}:${showDeleted}:${search}`,
+  );
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
@@ -94,6 +104,11 @@ export default function ManageDataPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+          <BulkRecordActions
+            selection={selection}
+            table={table}
+            restore={showDeleted}
+          />
           {message && (
             <p role="alert" className="text-sm">
               {message}
@@ -103,53 +118,56 @@ export default function ManageDataPage() {
             {records === undefined ? (
               <p className="p-5">Loading…</p>
             ) : (
-              records
-                .filter((r) =>
-                  r.name.toLowerCase().includes(search.toLowerCase()),
-                )
-                .map((record) => (
-                  <div
-                    key={record.id}
-                    className="flex items-center justify-between gap-3 p-4"
-                  >
+              filtered?.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex items-center justify-between gap-3 p-4"
+                >
+                  <label className="flex flex-1 cursor-pointer items-center gap-3">
+                    <Checkbox
+                      aria-label={`Select ${record.name}`}
+                      checked={selection.has(record.id)}
+                      onCheckedChange={() => selection.toggle(record.id)}
+                    />
                     <span>{record.name}</span>
-                    <Button
-                      size="sm"
-                      variant={showDeleted ? "outline" : "destructive"}
-                      disabled={busy}
-                      onClick={async () => {
-                        if (
-                          !window.confirm(
-                            `${showDeleted ? "Restore" : "Soft delete"} ${record.name}?`,
-                          )
+                  </label>
+                  <Button
+                    size="sm"
+                    variant={showDeleted ? "outline" : "destructive"}
+                    disabled={busy}
+                    onClick={async () => {
+                      if (
+                        !window.confirm(
+                          `${showDeleted ? "Restore" : "Soft delete"} ${record.name}?`,
                         )
-                          return;
-                        setBusy(true);
-                        try {
-                          if (showDeleted)
-                            await restoreRecord({ table, id: record.id });
-                          else await remove({ table, id: record.id });
-                          setMessage(
-                            showDeleted
-                              ? "Record restored."
-                              : "Record soft deleted.",
-                          );
-                        } catch (e) {
-                          setMessage(
-                            e instanceof Error ? e.message : "Delete failed",
-                          );
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    >
-                      {showDeleted ? "Restore" : "Delete"}
-                    </Button>
-                  </div>
-                ))
+                      )
+                        return;
+                      setBusy(true);
+                      try {
+                        if (showDeleted)
+                          await restoreRecord({ table, id: record.id });
+                        else await remove({ table, id: record.id });
+                        setMessage(
+                          showDeleted
+                            ? "Record restored."
+                            : "Record soft deleted.",
+                        );
+                      } catch (e) {
+                        setMessage(
+                          e instanceof Error ? e.message : "Delete failed",
+                        );
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    {showDeleted ? "Restore" : "Delete"}
+                  </Button>
+                </div>
+              ))
             )}
-            {records?.length === 0 && (
-              <p className="p-5 text-muted-foreground">No records.</p>
+            {filtered?.length === 0 && (
+              <p className="p-5 text-muted-foreground">No matching records.</p>
             )}
           </div>
         </>

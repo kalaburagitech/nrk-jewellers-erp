@@ -8,7 +8,9 @@ export function ExportCsvButton({
   filename,
   headers,
   rows,
+  label = "Export CSV",
 }: {
+  label?: string;
   filename: string;
   headers: string[];
   rows: (string | number)[][];
@@ -22,7 +24,7 @@ export function ExportCsvButton({
       onClick={() => downloadCsv(filename, headers, rows)}
     >
       <Download className="h-4 w-4" />
-      Export CSV
+      {label}
     </Button>
   );
 }
