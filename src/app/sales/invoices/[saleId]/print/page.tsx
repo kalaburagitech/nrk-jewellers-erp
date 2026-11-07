@@ -16,6 +16,7 @@ import {
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { amountInWordsFromPaise } from "@/lib/amount-in-words";
+import { BUSINESS_PROFILE_DEFAULTS } from "@/lib/business-profile-defaults";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
 const PAYMENT_MODE_LABEL: Record<string, string> = {
@@ -69,7 +70,7 @@ async function renderInvoicePdf(
     import("@/lib/invoice-pdf"),
   ]);
   const widthMm =
-    template === "full-a4" ? 277 : template === "half-a4" ? 128 : 76;
+    template === "full-a4" ? 289 : template === "half-a4" ? 128 : 76;
   const widthPx = (widthMm * 96) / 25.4;
   const protectedRanges: Array<{ start: number; end: number }> = [];
   await document.fonts.ready;
@@ -228,7 +229,7 @@ export default function PrintInvoicePage({
       ? "w-[76mm] text-xs"
       : template === "half-a4"
         ? "w-[128mm] text-sm"
-        : "w-[277mm] min-h-[185mm] text-sm";
+        : "w-[289mm] min-h-[202mm] text-base";
 
   return (
     <div className="min-h-screen bg-muted/40 py-8 print:min-h-0 print:bg-white print:py-0">
@@ -239,7 +240,7 @@ export default function PrintInvoicePage({
           [data-invoice-sheet] thead { display: table-header-group; }
           [data-pdf-keep-together] { break-inside: avoid; }
         }
-        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : "10mm"}; }
+        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "10mm" : "4mm"}; }
       `}</style>
 
       <div className="mx-auto flex max-w-[297mm] items-center justify-between px-4 pb-4 print:hidden">
@@ -281,7 +282,7 @@ export default function PrintInvoicePage({
           <div
             ref={invoiceRef}
             data-invoice-sheet
-            className={`mx-auto flex flex-col gap-3 bg-white p-6 text-[#13253f] ${widthClass}`}
+            className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-white p-4 text-[#13253f] ${widthClass}`}
           >
             {sale.status === "cancelled" && (
               <p className="text-center font-bold text-red-700">
@@ -289,8 +290,7 @@ export default function PrintInvoicePage({
               </p>
             )}
             <h1 className="text-center text-3xl font-bold text-[#13406e]">
-              {DOCUMENT_TITLE[sale.documentType] ??
-                (sale.isGst ? "Tax Invoice" : "Invoice")}
+              {DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}
             </h1>
 
             <div className="flex items-center justify-between gap-4 border-2 border-[#13406e] p-4">
@@ -305,34 +305,33 @@ export default function PrintInvoicePage({
                 }
                 <div>
                   <h2 className="text-xl font-bold">
-                    {organization?.name ?? "NR Karakalli Jewellers"}
+                    {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
                   <p className="text-lg font-semibold">
-                    {organization?.tagline || "Gold and Silver Merchants"}
+                    {organization?.tagline || BUSINESS_PROFILE_DEFAULTS.tagline}
                   </p>
                   <p className="my-1 border-y border-[#bd974f]/50 py-1 text-center font-serif text-xl italic">
-                    {organization?.motto || "The Name of Purity"}
+                    {organization?.motto || BUSINESS_PROFILE_DEFAULTS.motto}
                   </p>
                   {
                     <p className="flex items-center gap-1 text-sm text-gray-600">
                       <MapPin className="h-3.5 w-3.5 shrink-0" />
                       <span className="whitespace-pre-line">
-                        {organization?.address ||
-                          "Near Maruti Temple, Basaveshwara Chowk road, Shahapur"}
+                        {organization?.address || BUSINESS_PROFILE_DEFAULTS.address}
                       </span>
                     </p>
                   }
                   {
                     <p className="flex items-center gap-1 text-sm text-gray-600">
                       <Phone className="h-3.5 w-3.5 shrink-0" />
-                      {organization?.phone || "+91 9972786818 / +91 7760000717"}
+                      {organization?.phone || BUSINESS_PROFILE_DEFAULTS.phone}
                     </p>
                   }
                 </div>
               </div>
               {
                 <p className="shrink-0 self-start font-semibold">
-                  State: {organization?.state || "Karnataka"}
+                  State: {organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
                 </p>
               }
             </div>
@@ -532,7 +531,7 @@ export default function PrintInvoicePage({
             </div>
 
             <p className="mt-auto pt-6 text-right font-semibold">
-              For {organization?.name ?? "NR Karakalli Jewellers"}
+              For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
             </p>
           </div>
         ) : (
@@ -544,7 +543,7 @@ export default function PrintInvoicePage({
             <div className="flex items-start justify-between border-b border-gray-200 pb-3">
               <div>
                 <h1 className="text-lg font-semibold">
-                  {organization?.name ?? "NR Karakalli Jewellers"}
+                  {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                 </h1>
                 {organization?.address && (
                   <p className="whitespace-pre-line text-gray-500">
@@ -558,8 +557,7 @@ export default function PrintInvoicePage({
               </div>
               <div className="text-right">
                 <p className="font-semibold">
-                  {DOCUMENT_TITLE[sale.documentType] ??
-                    (sale.isGst ? "Tax Invoice" : "Invoice")}
+                  {DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}
                 </p>
                 <p className="text-gray-500">{sale.invoiceNumber}</p>
                 <p className="text-gray-500">

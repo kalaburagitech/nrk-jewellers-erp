@@ -19,7 +19,7 @@ export function invoicePaper(
       margin: 2,
     };
   if (template === "half-a4") return { width: 148, height: 210, margin: 10 };
-  return { width: 297, height: 210, margin: 10 };
+  return { width: 297, height: 210, margin: 4 };
 }
 /** Page slices are contiguous; short rows and the totals block stay together. */
 export function invoicePageSlices(

@@ -58,7 +58,12 @@ export const ensureBootstrapped = mutation({
 
     const now = Date.now();
     const organizationId = await ctx.db.insert("organizations", {
-      name: args.organizationName ?? "NRK Jewellers",
+      name: args.organizationName ?? "NR Karakalli Jewellers",
+      tagline: "Gold and Silver Merchants",
+      motto: "The Name of Purity",
+      address: "Near Maruti Temple, Basaveshwara Chowk road, Shahapur",
+      phone: "+91 9972786818 / +91 7760000717",
+      state: "Karnataka",
       createdAt: now,
     });
     const branchId = await ctx.db.insert("branches", {
