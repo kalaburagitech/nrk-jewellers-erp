@@ -37,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { supplierFormSchema, type SupplierFormValues } from "@/lib/schemas/party";
 import { formatPaise } from "@/lib/money";
+import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
 
 const SUPPLIER_IMPORT_HEADERS = ["Name", "Phone", "Email", "Address", "GSTIN"];
 
@@ -66,6 +67,7 @@ function ImportSuppliersDialog() {
 
 function CreateSupplierDialog() {
   const createSupplier = useMutation(api.suppliers.create);
+  const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -83,9 +85,11 @@ function CreateSupplierDialog() {
         email: values.email || undefined,
         address: values.address || undefined,
         gstin: values.gstin || undefined,
+        customFields,
       });
       setOpen(false);
       form.reset();
+      setCustomFields({});
     } catch {
       setServerError("Could not save supplier. Please try again.");
     }
@@ -96,7 +100,7 @@ function CreateSupplierDialog() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) form.reset();
+        if (!next) { form.reset(); setCustomFields({}); }
       }}
     >
       <DialogTrigger asChild>
@@ -178,6 +182,7 @@ function CreateSupplierDialog() {
                 </FormItem>
               )}
             />
+            <CustomFieldInputs entity="supplier" values={customFields} onChange={setCustomFields} />
             {serverError && <p className="text-sm text-destructive">{serverError}</p>}
             <DialogFooter>
               <Button type="submit" disabled={form.formState.isSubmitting}>
@@ -194,6 +199,7 @@ function CreateSupplierDialog() {
 export default function SuppliersPage() {
   const router = useRouter();
   const suppliers = useQuery(api.suppliers.listWithOutstanding);
+  const customFieldDefinitions = useQuery(api.customFields.getDefinitions);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -263,7 +269,7 @@ export default function SuppliersPage() {
                       onClick={() => router.push(`/suppliers/history?supplierId=${s._id}`)}
                     >
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${s.name}`} checked={selection.has(s._id)} onCheckedChange={() => selection.toggle(s._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{s.name}</span><DeleteRecordButton table="suppliers" id={s._id} name={s.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{s.name}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "supplier")} values={s.customFields} /></div><DeleteRecordButton table="suppliers" id={s._id} name={s.name} /></div></TableCell>
                       <TableCell>{s.phone ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{s.gstin ?? "—"}</TableCell>
                       <TableCell className="text-right">{formatPaise(s.outstandingPaise)}</TableCell>

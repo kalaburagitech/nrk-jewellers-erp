@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/select";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
 
 const UNITS = [
   { value: "gram", label: "Gram" },
@@ -94,6 +95,7 @@ function CreateProductDialog() {
   const [hsnCode, setHsnCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState<Record<string, string>>({});
 
   function reset() {
     setName("");
@@ -104,6 +106,7 @@ function CreateProductDialog() {
     setMetalPurityId(NONE);
     setHsnCode("");
     setError(null);
+    setCustomFields({});
   }
 
   async function handleCreate() {
@@ -122,6 +125,7 @@ function CreateProductDialog() {
         stockCategoryId: stockCategoryId === NONE ? undefined : (stockCategoryId as Id<"stockCategories">),
         metalPurityId: metalPurityId === NONE ? undefined : (metalPurityId as Id<"metalPurities">),
         hsnCode: hsnCode || undefined,
+        customFields,
       });
       reset();
       setOpen(false);
@@ -232,6 +236,7 @@ function CreateProductDialog() {
               <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="optional" />
             </div>
           </div>
+          <CustomFieldInputs entity="product" values={customFields} onChange={setCustomFields} />
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
@@ -247,6 +252,7 @@ function CreateProductDialog() {
 export default function ProductsPage() {
   const products = useQuery(api.products.list);
   const purities = useQuery(api.metalPurities.list);
+  const customFieldDefinitions = useQuery(api.customFields.getDefinitions);
   const [search, setSearch] = useState("");
 
   const purityLabel = useMemo(() => {
@@ -318,7 +324,7 @@ export default function ProductsPage() {
                   {filtered.map((p) => (
                     <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined}>
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.name}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{p.name}</span><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{p.name}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "product")} values={p.customFields} /></div><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
                       <TableCell className="text-muted-foreground">{p.sku ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="capitalize">

@@ -105,24 +105,68 @@ function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () =>
 
 export default function StockAdjustmentsPage() {
   const boxes = useQuery(api.boxes.list);
+  const overview = useQuery(api.boxes.getInventoryOverview);
+  const adjustBox = useMutation(api.stockAdjustments.adjustBox);
   const recent = useQuery(api.stockAdjustments.listRecent);
   const [boxNumberInput, setBoxNumberInput] = useState("");
+  const [addWeight, setAddWeight] = useState("");
+  const [deductWeight, setDeductWeight] = useState("");
+  const [addPieces, setAddPieces] = useState("");
+  const [deductPieces, setDeductPieces] = useState("");
+  const [boxReason, setBoxReason] = useState("");
+  const [boxError, setBoxError] = useState("");
+  const [savingBox, setSavingBox] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Doc<"boxItems"> | null>(null);
 
-  const sourceBox = useMemo(
-    () => boxes?.find((b) => String(b.boxNumber) === boxNumberInput.trim()),
-    [boxes, boxNumberInput],
-  );
+  const sourceBox = useMemo(() => boxes?.find((b) => String(b._id) === boxNumberInput), [boxes, boxNumberInput]);
   const items = useQuery(api.boxes.getItems, sourceBox ? { boxId: sourceBox._id } : "skip");
 
+  async function submitBoxAdjustment() {
+    setBoxError("");
+    if (!sourceBox) { setBoxError("Choose a box first."); return; }
+    if (!boxReason.trim()) { setBoxError("A reason is required for the stock history."); return; }
+    setSavingBox(true);
+    try {
+      await adjustBox({ boxId: sourceBox._id, addWeightMg: Math.round(Number(addWeight || 0) * 1000), deductWeightMg: Math.round(Number(deductWeight || 0) * 1000), addPieces: Number(addPieces || 0), deductPieces: Number(deductPieces || 0), reason: boxReason });
+      setAddWeight(""); setDeductWeight(""); setAddPieces(""); setDeductPieces(""); setBoxReason("");
+    } catch (error) { setBoxError(error instanceof Error ? error.message : "Could not adjust stock."); }
+    finally { setSavingBox(false); }
+  }
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>
         <p className="text-sm text-muted-foreground">
           Correct a weight after a physical audit, or write off a lost/damaged item — both are logged with a reason.
         </p>
       </div>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Inventory overview</CardTitle></CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-3">
+          <div><p className="text-xs uppercase text-muted-foreground">Total boxes</p><p className="text-2xl font-semibold">{overview?.totalBoxes ?? "—"}</p></div>
+          <div><p className="text-xs uppercase text-muted-foreground">Total weight</p><p className="text-2xl font-semibold">{overview ? mgToGramsDisplay(overview.totalWeightMg) : "—"} g</p></div>
+          <div><p className="text-xs uppercase text-muted-foreground">Total quantity</p><p className="text-2xl font-semibold">{overview?.totalQuantity ?? "—"}</p></div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Adjust stock for a box</CardTitle></CardHeader>
+        <CardContent className="grid gap-4">
+          <div className="grid gap-2"><Label>Box</Label><select className="h-10 rounded-md border bg-background px-3 text-sm" value={boxNumberInput} onChange={e => setBoxNumberInput(e.target.value)}><option value="">Choose a box</option>{boxes?.map(box => <option key={box._id} value={box._id}>Box {box.boxNumber}{box.label ? ` — ${box.label}` : ""}</option>)}</select></div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-2"><Label>Add weight (grams)</Label><Input type="number" min="0" step="0.001" value={addWeight} onChange={e => setAddWeight(e.target.value)} placeholder="e.g. 50" /></div>
+            <div className="grid gap-2"><Label>Deduct weight (grams)</Label><Input type="number" min="0" step="0.001" value={deductWeight} onChange={e => setDeductWeight(e.target.value)} placeholder="e.g. 20" /></div>
+            <div className="grid gap-2"><Label>Add pieces</Label><Input type="number" min="0" step="1" value={addPieces} onChange={e => setAddPieces(e.target.value)} placeholder="e.g. 2" /></div>
+            <div className="grid gap-2"><Label>Deduct pieces</Label><Input type="number" min="0" step="1" value={deductPieces} onChange={e => setDeductPieces(e.target.value)} placeholder="e.g. 1" /></div>
+          </div>
+          <div className="grid gap-2"><Label>Reason</Label><Input value={boxReason} onChange={e => setBoxReason(e.target.value)} placeholder="Required for the stock audit trail" /></div>
+          <p className="text-xs text-muted-foreground">Use add and deduct values together for a combined correction. Piece additions use the item type already in the box.</p>
+          {boxError && <p role="alert" className="text-sm text-destructive">{boxError}</p>}
+          <div><Button onClick={submitBoxAdjustment} disabled={savingBox || !sourceBox}>{savingBox ? "Saving…" : "Adjust Stock"}</Button></div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -133,9 +177,9 @@ export default function StockAdjustmentsPage() {
             <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
-              placeholder="Enter box number"
+              placeholder="Choose a box above"
               value={boxNumberInput}
-              onChange={(e) => setBoxNumberInput(e.target.value)}
+              readOnly
             />
           </div>
           {boxNumberInput && !sourceBox && <p className="text-sm text-muted-foreground">No box with that number.</p>}

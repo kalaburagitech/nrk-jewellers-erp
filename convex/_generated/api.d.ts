@@ -11,6 +11,7 @@
 import type * as auth from "../auth.js";
 import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
+import type * as customFields from "../customFields.js";
 import type * as customers from "../customers.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dataManagement from "../dataManagement.js";
@@ -19,6 +20,7 @@ import type * as expenses from "../expenses.js";
 import type * as girvi from "../girvi.js";
 import type * as http from "../http.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_customFieldValues from "../lib/customFieldValues.js";
 import type * as lib_sequences from "../lib/sequences.js";
 import type * as memberships from "../memberships.js";
 import type * as metalPurities from "../metalPurities.js";
@@ -45,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   boxes: typeof boxes;
   cashBank: typeof cashBank;
+  customFields: typeof customFields;
   customers: typeof customers;
   dashboard: typeof dashboard;
   dataManagement: typeof dataManagement;
@@ -53,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   girvi: typeof girvi;
   http: typeof http;
   "lib/auth": typeof lib_auth;
+  "lib/customFieldValues": typeof lib_customFieldValues;
   "lib/sequences": typeof lib_sequences;
   memberships: typeof memberships;
   metalPurities: typeof metalPurities;

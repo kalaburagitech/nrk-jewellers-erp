@@ -132,6 +132,9 @@ export default function PurchaseInvoicesPage() {
   const suppliers = useQuery(api.suppliers.list);
   const access = useQuery(api.organizations.getMyAccess);
   const [selected, setSelected] = useState<Doc<"purchases"> | null>(null);
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const supplierName = useMemo(() => {
@@ -140,7 +143,14 @@ export default function PurchaseInvoicesPage() {
     return map;
   }, [suppliers]);
 
-  const selection = useRecordSelection(purchases?.map(row => row._id) ?? [], "purchases");
+  const filteredPurchases = useMemo(() => purchases?.filter(row => {
+    const q = search.trim().toLowerCase();
+    const supplier = supplierName.get(row.supplierId)?.toLowerCase() ?? "";
+    const day = new Date(row.createdAt).toISOString().slice(0, 10);
+    return (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
+  }), [purchases, search, dateFrom, dateTo, supplierName]);
+  const selection = useRecordSelection(filteredPurchases?.map(row => row._id) ?? [], `purchases:${search}:${dateFrom}:${dateTo}`);
+  const totals = filteredPurchases?.reduce((sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }), { total: 0, paid: 0 });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -155,7 +165,7 @@ export default function PurchaseInvoicesPage() {
               label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
               filename="purchase-invoices"
               headers={["Invoice #", "Date", "Supplier", "Total (₹)", "Paid (₹)", "Status"]}
-              rows={(selection.count ? purchases.filter(row => selection.has(row._id)) : purchases).map((p) => [
+              rows={(selection.count ? (filteredPurchases ?? []).filter(row => selection.has(row._id)) : (filteredPurchases ?? [])).map((p) => [
                 p.invoiceNumber,
                 new Date(p.createdAt).toLocaleDateString("en-IN"),
                 supplierName.get(p.supplierId) ?? "—",
@@ -174,13 +184,16 @@ export default function PurchaseInvoicesPage() {
         </div>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-3"><Input placeholder="Search invoice or supplier" value={search} onChange={e => setSearch(e.target.value)} /><Input aria-label="From date" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /><Input aria-label="To date" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
+      <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Paid</p><p className="text-xl font-semibold">{formatPaise(totals?.paid ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Unpaid</p><p className="text-xl font-semibold">{formatPaise((totals?.total ?? 0) - (totals?.paid ?? 0))}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-semibold">{formatPaise(totals?.total ?? 0)}</p></CardContent></Card></div>
+
       <BulkRecordActions selection={selection} table="purchases" />
 
       <Card>
         <CardContent className="p-0">
           {purchases === undefined ? (
             <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-          ) : purchases.length === 0 ? (
+          ) : filteredPurchases?.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center">
               <Receipt className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">No purchases recorded yet.</p>
@@ -201,7 +214,7 @@ export default function PurchaseInvoicesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {purchases.map((p) => (
+                  {filteredPurchases?.map((p) => (
                     <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(p)}>
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.invoiceNumber}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
                       <TableCell className="font-medium">{p.invoiceNumber}</TableCell>

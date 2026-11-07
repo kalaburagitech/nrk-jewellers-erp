@@ -116,6 +116,7 @@ export default defineSchema({
     // the Outstanding Balances page so staff know who to remind and when.
     dueDateMs: v.optional(v.number()),
     notes: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
     isActive: v.boolean(),
     createdAt: v.number(),
   })
@@ -130,6 +131,7 @@ export default defineSchema({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
     openingBalancePaise: v.number(),
     currentBalancePaise: v.optional(v.number()),
     isActive: v.boolean(),
@@ -169,6 +171,7 @@ export default defineSchema({
     metalPurityId: v.optional(v.id("metalPurities")),
     unit: v.union(v.literal("gram"), v.literal("kilogram"), v.literal("piece"), v.literal("carat")),
     hsnCode: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
     reorderLevelMg: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),

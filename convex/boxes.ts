@@ -30,6 +30,24 @@ export const getItems = query({
   },
 });
 
+export const getInventoryOverview = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const boxes = await ctx.db.query("boxes").withIndex("by_org", q => q.eq("organizationId", auth.organizationId))
+      .filter(q => q.eq(q.field("deletedAt"), undefined)).collect();
+    const summaries = await Promise.all(boxes.map(async box => {
+      const items = await ctx.db.query("boxItems").withIndex("by_box", q => q.eq("boxId", box._id))
+        .filter(q => q.eq(q.field("status"), "in_stock"))
+        .filter(q => q.eq(q.field("deletedAt"), undefined)).collect();
+      return { box, items, weightMg: items.reduce((sum, item) => sum + item.netWeightMg, 0), quantity: items.length };
+    }));
+    return { boxes: summaries, totalBoxes: boxes.length,
+      totalWeightMg: summaries.reduce((sum, row) => sum + row.weightMg, 0),
+      totalQuantity: summaries.reduce((sum, row) => sum + row.quantity, 0) };
+  },
+});
+
 /** Manually chosen number, with an automatic fallback for existing callers. */
 export const createNext = mutation({
   args: { label: v.optional(v.string()), boxNumber: v.optional(v.number()) },

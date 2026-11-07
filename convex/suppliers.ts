@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
+import { normalizeCustomFieldValues } from "./lib/customFieldValues";
 
 export const list = query({
   args: {},
@@ -60,11 +61,13 @@ export const create = mutation({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const name = args.name.trim();
     if (!name) throw new Error("Name is required");
+    const customFields = await normalizeCustomFieldValues(ctx, auth.organizationId, "supplier", args.customFields);
 
     return await ctx.db.insert("suppliers", {
       organizationId: auth.organizationId,
@@ -73,6 +76,7 @@ export const create = mutation({
       email: args.email?.trim() || undefined,
       address: args.address?.trim() || undefined,
       gstin: args.gstin?.trim() || undefined,
+      customFields,
       openingBalancePaise: 0,
       isActive: true,
       createdAt: Date.now(),
@@ -88,6 +92,7 @@ export const update = mutation({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
@@ -96,6 +101,7 @@ export const update = mutation({
     if (!existing || existing.deletedAt || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     const name = args.name.trim();
     if (!name) throw new Error("Name is required");
+    const customFields = await normalizeCustomFieldValues(ctx, auth.organizationId, "supplier", args.customFields);
 
     await ctx.db.patch(args.id, {
       name,
@@ -103,6 +109,7 @@ export const update = mutation({
       email: args.email?.trim() || undefined,
       address: args.address?.trim() || undefined,
       gstin: args.gstin?.trim() || undefined,
+      ...(customFields === undefined ? {} : { customFields }),
     });
   },
 });

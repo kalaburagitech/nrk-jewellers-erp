@@ -5,6 +5,7 @@ import { BulkRecordActions } from "@/components/bulk-record-actions";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -115,6 +116,9 @@ export default function SalesInvoicesPage() {
   const customers = useQuery(api.customers.list);
   const access = useQuery(api.organizations.getMyAccess);
   const [selected, setSelected] = useState<Id<"sales"> | null>(null);
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const customerName = useMemo(() => {
@@ -123,7 +127,14 @@ export default function SalesInvoicesPage() {
     return map;
   }, [customers]);
 
-  const selection = useRecordSelection(sales?.map(row => row._id) ?? [], "sales");
+  const filteredSales = useMemo(() => sales?.filter(row => {
+    const q = search.trim().toLowerCase();
+    const customer = customerName.get(row.customerId)?.toLowerCase() ?? "";
+    const day = new Date(row.createdAt).toISOString().slice(0, 10);
+    return (!q || row.invoiceNumber.toLowerCase().includes(q) || customer.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
+  }), [sales, search, dateFrom, dateTo, customerName]);
+  const selection = useRecordSelection(filteredSales?.map(row => row._id) ?? [], `sales:${search}:${dateFrom}:${dateTo}`);
+  const totals = filteredSales?.reduce((sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }), { total: 0, paid: 0 });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -138,7 +149,7 @@ export default function SalesInvoicesPage() {
               label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
               filename="sales-invoices"
               headers={["Invoice #", "Date", "Customer", "GST", "Total (₹)", "Paid (₹)", "Status"]}
-              rows={(selection.count ? sales.filter(row => selection.has(row._id)) : sales).map((s) => [
+              rows={(selection.count ? (filteredSales ?? []).filter(row => selection.has(row._id)) : (filteredSales ?? [])).map((s) => [
                 s.invoiceNumber,
                 new Date(s.createdAt).toLocaleDateString("en-IN"),
                 customerName.get(s.customerId) ?? "—",
@@ -158,13 +169,16 @@ export default function SalesInvoicesPage() {
         </div>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-3"><Input placeholder="Search invoice or customer" value={search} onChange={e => setSearch(e.target.value)} /><Input aria-label="From date" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /><Input aria-label="To date" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
+      <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total sales</p><p className="text-xl font-semibold">{formatPaise(totals?.total ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Paid</p><p className="text-xl font-semibold">{formatPaise(totals?.paid ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Balance due</p><p className="text-xl font-semibold">{formatPaise((totals?.total ?? 0) - (totals?.paid ?? 0))}</p></CardContent></Card></div>
+
       <BulkRecordActions selection={selection} table="sales" />
 
       <Card>
         <CardContent className="p-0">
           {sales === undefined ? (
             <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-          ) : sales.length === 0 ? (
+          ) : filteredSales?.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center">
               <Receipt className="h-8 w-8 text-muted-foreground" />
               <p className="text-sm text-muted-foreground">No bills recorded yet.</p>
@@ -186,7 +200,7 @@ export default function SalesInvoicesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sales.map((s) => (
+                  {filteredSales?.map((s) => (
                     <TableRow key={s._id} data-state={selection.has(s._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(s._id)}>
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${s.invoiceNumber}`} checked={selection.has(s._id)} onCheckedChange={() => selection.toggle(s._id)} /></TableCell>
                       <TableCell className="font-medium">{s.invoiceNumber}</TableCell>

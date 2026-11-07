@@ -45,6 +45,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { customerFormSchema, type CustomerFormValues } from "@/lib/schemas/party";
 import { rupeesToPaise } from "@/lib/money";
+import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
 
 const CUSTOMER_IMPORT_HEADERS = ["Name", "Phone", "Email", "Address", "GSTIN", "Type (cash/regular/credit)", "Credit Limit", "Notes"];
 
@@ -87,6 +88,7 @@ function CreateCustomerDialog() {
   const createCustomer = useMutation(api.customers.create);
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [customFields, setCustomFields] = useState<Record<string, string>>({});
 
   const form = useForm<CustomerFormValues>({
     resolver: zodResolver(customerFormSchema),
@@ -117,9 +119,11 @@ function CreateCustomerDialog() {
         creditLimitPaise: values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
         dueDateMs: values.dueDate ? new Date(values.dueDate).getTime() : undefined,
         notes: values.notes || undefined,
+        customFields,
       });
       setOpen(false);
       form.reset();
+      setCustomFields({});
     } catch {
       setServerError("Could not save customer. Please try again.");
     }
@@ -130,7 +134,7 @@ function CreateCustomerDialog() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) form.reset();
+        if (!next) { form.reset(); setCustomFields({}); }
       }}
     >
       <DialogTrigger asChild>
@@ -279,6 +283,7 @@ function CreateCustomerDialog() {
                 </FormItem>
               )}
             />
+            <CustomFieldInputs entity="customer" values={customFields} onChange={setCustomFields} />
             {serverError && <p className="text-sm text-destructive">{serverError}</p>}
             <DialogFooter>
               <Button type="submit" disabled={form.formState.isSubmitting}>
@@ -295,6 +300,7 @@ function CreateCustomerDialog() {
 export default function CustomersPage() {
   const router = useRouter();
   const customers = useQuery(api.customers.list);
+  const customFieldDefinitions = useQuery(api.customFields.getDefinitions);
   const [search, setSearch] = useState("");
 
   const filtered = useMemo(() => {
@@ -364,7 +370,7 @@ export default function CustomersPage() {
                       onClick={() => router.push(`/customers/ledgers?customerId=${c._id}`)}
                     >
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${c.name}`} checked={selection.has(c._id)} onCheckedChange={() => selection.toggle(c._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><span>{c.name}</span><DeleteRecordButton table="customers" id={c._id} name={c.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div><span>{c.name}</span><CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "customer")} values={c.customFields} /></div><DeleteRecordButton table="customers" id={c._id} name={c.name} /></div></TableCell>
                       <TableCell>{c.phone ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="secondary">{CUSTOMER_TYPE_LABEL[c.customerType]}</Badge>

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
+import { normalizeCustomFieldValues } from "./lib/customFieldValues";
 
 export const list = query({
   args: {},
@@ -64,11 +65,13 @@ export const create = mutation({
     creditLimitPaise: v.optional(v.number()),
     dueDateMs: v.optional(v.number()),
     notes: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const name = args.name.trim();
     if (!name) throw new Error("Name is required");
+    const customFields = await normalizeCustomFieldValues(ctx, auth.organizationId, "customer", args.customFields);
 
     return await ctx.db.insert("customers", {
       organizationId: auth.organizationId,
@@ -82,6 +85,7 @@ export const create = mutation({
       dueDateMs: args.dueDateMs,
       openingBalancePaise: 0,
       notes: args.notes?.trim() || undefined,
+      customFields,
       isActive: true,
       createdAt: Date.now(),
     });
@@ -100,6 +104,7 @@ export const update = mutation({
     creditLimitPaise: v.optional(v.number()),
     dueDateMs: v.optional(v.number()),
     notes: v.optional(v.string()),
+    customFields: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
@@ -108,6 +113,7 @@ export const update = mutation({
     if (!existing || existing.deletedAt || existing.organizationId !== auth.organizationId) throw new Error("Not found");
     const name = args.name.trim();
     if (!name) throw new Error("Name is required");
+    const customFields = await normalizeCustomFieldValues(ctx, auth.organizationId, "customer", args.customFields);
 
     await ctx.db.patch(args.id, {
       name,
@@ -119,6 +125,7 @@ export const update = mutation({
       creditLimitPaise: args.creditLimitPaise,
       dueDateMs: args.dueDateMs,
       notes: args.notes?.trim() || undefined,
+      ...(customFields === undefined ? {} : { customFields }),
     });
   },
 });
