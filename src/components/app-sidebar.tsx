@@ -59,7 +59,7 @@ export function AppSidebar() {
         >
           <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-sm group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:w-9">
             <Image
-              src="/nrk-logo.png"
+              src="/nrk-logo-gold.png"
               alt="NRK Jewellers"
               width={72}
               height={44}

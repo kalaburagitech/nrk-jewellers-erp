@@ -50,7 +50,7 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-5">
         <div className="flex items-center gap-5">
           <Image
-            src="/nrk-logo.png"
+            src="/nrk-logo-gold.png"
             width={116}
             height={72}
             alt="NRK Jewellers"
