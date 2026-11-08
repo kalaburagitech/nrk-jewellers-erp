@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -146,7 +147,7 @@ export function PurchaseOrderFormDialog({
         setOpen(false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save.");
+      setError(getUserErrorMessage(e, "Could not save."));
     } finally {
       setSubmitting(false);
     }

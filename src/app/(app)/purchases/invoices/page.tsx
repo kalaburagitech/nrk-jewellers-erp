@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -44,7 +45,7 @@ function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases"
       await cancelPurchase({ purchaseId: purchase._id, reason });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not delete this bill.");
+      setError(getUserErrorMessage(e, "Could not delete this bill."));
     } finally {
       setSubmitting(false);
     }

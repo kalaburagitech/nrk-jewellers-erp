@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -97,7 +98,7 @@ function RepayDialog({
                 });
                 close();
               } catch (e) {
-                setError(e instanceof Error ? e.message : "Repayment failed");
+                setError(getUserErrorMessage(e, "Repayment failed"));
               } finally {
                 setBusy(false);
               }
@@ -383,9 +384,7 @@ export default function GirviPage() {
                               await cancel({ id: loan._id, reason });
                             } catch (e) {
                               setError(
-                                e instanceof Error
-                                  ? e.message
-                                  : "Delete failed",
+                                getUserErrorMessage(e, "Delete failed"),
                               );
                             } finally {
                               setBusy(false);
@@ -450,7 +449,7 @@ export default function GirviPage() {
                 setOpen(false);
               } catch (e) {
                 setError(
-                  e instanceof Error ? e.message : "Could not create ticket",
+                  getUserErrorMessage(e, "Could not create ticket"),
                 );
               } finally {
                 setBusy(false);

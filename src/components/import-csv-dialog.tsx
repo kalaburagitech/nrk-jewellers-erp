@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
@@ -69,7 +70,7 @@ export function ImportCsvDialog({
         await onImportRow(record);
         succeeded++;
       } catch (e) {
-        failed.push({ label: rowLabel(record) || "(unnamed row)", error: e instanceof Error ? e.message : "Could not import this row." });
+        failed.push({ label: rowLabel(record) || "(unnamed row)", error: getUserErrorMessage(e, "Could not import this row.") });
       }
     }
     setResults({ succeeded, failed });

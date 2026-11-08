@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -67,7 +68,7 @@ export function BulkRecordActions({
         else await remove({ table, id });
       } catch (error) {
         failed.push(id);
-        const msg = error instanceof Error ? error.message : "Operation failed";
+        const msg = getUserErrorMessage(error, "Operation failed");
         if (!errors.includes(msg)) errors.push(msg);
       }
     }

@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -41,7 +42,7 @@ export function DeleteDocumentButton({
             await sales({ saleId: id as Id<"sales">, reason });
           else await purchases({ purchaseId: id as Id<"purchases">, reason });
         } catch (e) {
-          window.alert(e instanceof Error ? e.message : "Unable to delete");
+          window.alert(getUserErrorMessage(e, "Unable to delete"));
         } finally {
           setBusy(false);
         }

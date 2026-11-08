@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -48,7 +49,7 @@ function DefinitionEditor({ initial }: { initial: CustomFieldDefinition[] }) {
       await save({ definitions });
       setMessage("Custom fields saved. They now appear in the matching add and edit forms.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save custom fields.");
+      setError(getUserErrorMessage(e, "Could not save custom fields."));
     } finally {
       setBusy(false);
     }

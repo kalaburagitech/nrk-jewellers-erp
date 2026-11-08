@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -429,9 +430,7 @@ export default function NewBillPage() {
       }
     } catch (e) {
       setServerError(
-        e instanceof Error
-          ? e.message
-          : "Could not save the bill. You may need Billing Operator access, or an item may already be sold.",
+        getUserErrorMessage(e, "Could not save the bill. You may need Billing Operator access, or an item may already be sold."),
       );
     } finally {
       setSubmitting(false);

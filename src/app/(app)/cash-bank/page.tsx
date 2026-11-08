@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { DeleteRecordButton } from "@/components/delete-record-button";
 
@@ -58,7 +59,7 @@ function AddAccountDialog({ onClose }: { onClose: () => void }) {
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create account.");
+      setError(getUserErrorMessage(e, "Could not create account."));
     } finally {
       setSubmitting(false);
     }
@@ -144,7 +145,7 @@ function TransactionDialog({ account, onClose }: { account: Account; onClose: ()
       await recordTransaction({ accountId: account._id, direction, amountPaise, description });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not record this transaction.");
+      setError(getUserErrorMessage(e, "Could not record this transaction."));
     } finally {
       setSubmitting(false);
     }
@@ -223,7 +224,7 @@ function TransferDialog({ accounts, onClose }: { accounts: Account[]; onClose: (
       });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not record this transfer.");
+      setError(getUserErrorMessage(e, "Could not record this transfer."));
     } finally {
       setSubmitting(false);
     }

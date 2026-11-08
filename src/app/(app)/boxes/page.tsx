@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -97,7 +98,7 @@ export default function BoxOverviewPage() {
       setBoxNumber("");
       setLabel("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to create box");
+      setError(getUserErrorMessage(e, "Unable to create box"));
     } finally {
       setCreating(false);
     }

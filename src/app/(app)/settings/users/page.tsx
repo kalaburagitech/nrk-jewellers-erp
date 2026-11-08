@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
@@ -65,7 +66,7 @@ function CreateStaffDialog() {
       reset();
       setOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create the login.");
+      setError(getUserErrorMessage(e, "Could not create the login."));
     } finally {
       setSubmitting(false);
     }
@@ -145,7 +146,7 @@ function ResetPasswordDialog({ membershipId, name }: { membershipId: Id<"members
       setDone(true);
       setPassword("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reset password.");
+      setError(getUserErrorMessage(e, "Could not reset password."));
     } finally {
       setSubmitting(false);
     }
@@ -212,7 +213,7 @@ export default function UsersAndRolesPage() {
     try {
       await removeMember({ membershipId });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not remove member.");
+      setError(getUserErrorMessage(e, "Could not remove member."));
     }
   }
 

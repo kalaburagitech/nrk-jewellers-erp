@@ -66,7 +66,7 @@ export const createNext = mutation({
     if (!Number.isSafeInteger(boxNumber) || boxNumber < 1) throw new Error("Enter a positive whole box number");
     const duplicate = await ctx.db.query("boxes").withIndex("by_org_and_number", q => q.eq("organizationId", auth.organizationId).eq("boxNumber", boxNumber))
       .first();
-    if (duplicate) throw new Error("This box number already exists");
+    if (duplicate) throw new Error("That box number is already in use. Please choose a different number.");
     return await ctx.db.insert("boxes", {
       organizationId: auth.organizationId,
       boxNumber,

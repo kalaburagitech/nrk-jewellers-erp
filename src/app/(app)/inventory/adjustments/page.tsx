@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -44,7 +45,7 @@ function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () =>
       await correctWeight({ boxItemId: item._id, newNetWeightMg, reason });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save.");
+      setError(getUserErrorMessage(e, "Could not save."));
     } finally {
       setSubmitting(false);
     }
@@ -61,7 +62,7 @@ function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () =>
       await writeOff({ boxItemId: item._id, reason });
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save.");
+      setError(getUserErrorMessage(e, "Could not save."));
     } finally {
       setSubmitting(false);
     }
@@ -129,7 +130,7 @@ export default function StockAdjustmentsPage() {
     try {
       await adjustBox({ boxId: sourceBox._id, addWeightMg: Math.round(Number(addWeight || 0) * 1000), deductWeightMg: Math.round(Number(deductWeight || 0) * 1000), addPieces: Number(addPieces || 0), deductPieces: Number(deductPieces || 0), reason: boxReason });
       setAddWeight(""); setDeductWeight(""); setAddPieces(""); setDeductPieces(""); setBoxReason("");
-    } catch (error) { setBoxError(error instanceof Error ? error.message : "Could not adjust stock."); }
+    } catch (error) { setBoxError(getUserErrorMessage(error, "Could not adjust stock.")); }
     finally { setSavingBox(false); }
   }
 

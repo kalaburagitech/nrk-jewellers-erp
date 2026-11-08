@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 import { useState } from "react";
 import { useConvex, useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
@@ -36,7 +37,7 @@ export default function BackupPage() {
     try {
       await action();
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Operation failed");
+      setMessage(getUserErrorMessage(e, "Operation failed"));
     } finally {
       setBusy(false);
     }

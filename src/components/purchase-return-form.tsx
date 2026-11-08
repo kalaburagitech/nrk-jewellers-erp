@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { RecordSelectionToolbar } from "@/components/record-selection-toolbar";
 import { useRecordSelection } from "@/hooks/use-record-selection";
@@ -77,7 +78,7 @@ export function PurchaseReturnFormDialog() {
       reset();
       setOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save.");
+      setError(getUserErrorMessage(e, "Could not save."));
     } finally {
       setSubmitting(false);
     }

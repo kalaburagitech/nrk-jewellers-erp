@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -185,9 +186,7 @@ export default function NewPurchasePage() {
       }
     } catch (e) {
       setServerError(
-        e instanceof Error
-          ? e.message
-          : "Could not save purchase. You may need Purchase Manager access, or check item details.",
+        getUserErrorMessage(e, "Could not save purchase. You may need Purchase Manager access, or check item details."),
       );
     }
   }

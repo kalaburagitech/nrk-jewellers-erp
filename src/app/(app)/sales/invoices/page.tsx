@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -40,7 +41,7 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
               const reason = window.prompt("Delete invoice and reverse its stock and payments. Enter a reason:");
               if (!reason?.trim()) return;
               setDeleting(true);
-              try { await cancel({ saleId, reason }); onClose(); } catch (e) { setError(e instanceof Error ? e.message : "Delete failed"); } finally { setDeleting(false); }
+              try { await cancel({ saleId, reason }); onClose(); } catch (e) { setError(getUserErrorMessage(e, "Delete failed")); } finally { setDeleting(false); }
             }}>Delete</Button>}
             {canEdit && (
               <Button variant="outline" size="sm" asChild>

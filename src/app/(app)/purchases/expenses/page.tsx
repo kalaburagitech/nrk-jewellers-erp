@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -100,7 +101,7 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
       reset();
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Could not record this expense.",
+        getUserErrorMessage(e, "Could not record this expense."),
       );
     } finally {
       setSubmitting(false);
@@ -224,7 +225,7 @@ function DeleteExpenseDialog({
       onClose();
     } catch (e) {
       setError(
-        e instanceof Error ? e.message : "Could not delete this expense.",
+        getUserErrorMessage(e, "Could not delete this expense."),
       );
     } finally {
       setSubmitting(false);

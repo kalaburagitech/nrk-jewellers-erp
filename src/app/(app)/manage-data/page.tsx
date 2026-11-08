@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -154,7 +155,7 @@ export default function ManageDataPage() {
                         );
                       } catch (e) {
                         setMessage(
-                          e instanceof Error ? e.message : "Delete failed",
+                          getUserErrorMessage(e, "Delete failed"),
                         );
                       } finally {
                         setBusy(false);
