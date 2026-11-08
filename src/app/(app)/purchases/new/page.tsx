@@ -261,7 +261,16 @@ export default function NewPurchasePage() {
               </CardContent>
             </Card>
 
-            <div className="flex flex-col gap-4">
+            <section className="flex flex-col gap-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
+                <div>
+                  <h2 className="font-semibold">Items in this bill <span className="text-muted-foreground">({fields.length})</span></h2>
+                  <p className="mt-1 text-sm text-muted-foreground">Add one line for each product or ornament received.</p>
+                </div>
+                <Button type="button" variant="outline" onClick={() => append(emptyLine())}>
+                  <Plus className="h-4 w-4" /> Add Item
+                </Button>
+              </div>
               {fields.map((field, index) => {
                 const line = totals.lines[index];
                 return (
@@ -446,11 +455,7 @@ export default function NewPurchasePage() {
                   </Card>
                 );
               })}
-              <Button type="button" variant="outline" onClick={() => append(emptyLine())} className="self-start">
-                <Plus className="h-4 w-4" />
-                Add Item
-              </Button>
-            </div>
+            </section>
 
             <Card>
               <CardHeader>

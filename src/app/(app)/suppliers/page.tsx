@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -90,8 +91,8 @@ function CreateSupplierDialog() {
       setOpen(false);
       form.reset();
       setCustomFields({});
-    } catch {
-      setServerError("Could not save supplier. Please try again.");
+    } catch (e) {
+      setServerError(getUserErrorMessage(e, "Could not save this supplier. Please try again."));
     }
   }
 

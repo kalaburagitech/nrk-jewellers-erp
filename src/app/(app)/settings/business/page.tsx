@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -43,8 +44,8 @@ function ImageUploadCard({
       });
       const { storageId } = await result.json();
       await setImage({ storageId });
-    } catch {
-      setError("Could not upload image.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not upload this image. Please try a smaller image or try again."));
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -147,8 +148,8 @@ function ProfileForm({ profile }: { profile: Doc<"organizations"> }) {
         motto: motto || undefined,
       });
       setSaved(true);
-    } catch {
-      setError("Could not save. You may need Owner/Admin access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not save these settings. Check your access and try again."));
     } finally {
       setSubmitting(false);
     }

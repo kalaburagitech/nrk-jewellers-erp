@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
@@ -42,8 +43,8 @@ export default function BoxTransfersPage() {
     setTransferringId(boxItem._id);
     try {
       await transferItem({ boxItemId: boxItem._id, toBoxId: toBoxId as Id<"boxes"> });
-    } catch {
-      setError("Could not transfer. You may need Inventory Manager access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not move this item. Check your access and try again."));
     } finally {
       setTransferringId(null);
     }

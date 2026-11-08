@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -124,8 +125,8 @@ function CreateCustomerDialog() {
       setOpen(false);
       form.reset();
       setCustomFields({});
-    } catch {
-      setServerError("Could not save customer. Please try again.");
+    } catch (e) {
+      setServerError(getUserErrorMessage(e, "Could not save this customer. Please try again."));
     }
   }
 

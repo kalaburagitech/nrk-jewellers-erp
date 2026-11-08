@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -73,8 +74,8 @@ export default function GstConfigurationPage() {
       });
       reset();
       setOpen(false);
-    } catch {
-      setError("Could not save. You may need Owner/Admin access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not save these settings. Check your access and try again."));
     } finally {
       setSubmitting(false);
     }

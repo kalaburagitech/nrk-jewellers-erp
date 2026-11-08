@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -67,8 +68,8 @@ export default function MetalPurityPage() {
       setLabel("");
       setPercent("");
       setMetal("gold");
-    } catch {
-      setError("Could not create purity. You may need Owner/Admin access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not add this purity. Check your access and try again."));
     } finally {
       setSubmitting(false);
     }

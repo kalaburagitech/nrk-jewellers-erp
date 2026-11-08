@@ -203,8 +203,8 @@ export default function UsersAndRolesPage() {
     setError(null);
     try {
       await addMember({ userId, role });
-    } catch {
-      setError("Could not add member. You may need Owner/Admin access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not add this team member. Check your access and try again."));
     }
   }
 

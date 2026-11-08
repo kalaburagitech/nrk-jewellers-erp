@@ -1,7 +1,7 @@
 "use client";
 import { getUserErrorMessage } from "@/lib/user-error";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -88,7 +88,7 @@ function BoxItemPicker({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Add item from box</CardTitle>
+        <CardTitle className="text-base">Add items to this bill</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <div className="relative max-w-xs">
@@ -157,6 +157,7 @@ export default function NewBillPage() {
   const updateSale = useMutation(api.sales.update);
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const boxPickerRef = useRef<HTMLDivElement>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
@@ -524,14 +525,25 @@ export default function NewBillPage() {
             </CardContent>
           </Card>
 
-          <BoxItemPicker
-            boxes={boxes}
-            products={products}
-            onAdd={addLine}
-            alreadyAddedIds={new Set(lines.map((l) => l.boxItemId))}
-          />
+          <div ref={boxPickerRef}>
+            <BoxItemPicker
+              boxes={boxes}
+              products={products}
+              onAdd={addLine}
+              alreadyAddedIds={new Set(lines.map((l) => l.boxItemId))}
+            />
+          </div>
 
           <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
+              <div>
+                <h2 className="font-semibold">Items in this bill <span className="text-muted-foreground">({lines.length})</span></h2>
+                <p className="mt-1 text-sm text-muted-foreground">No item-count limit is set. Each sale item must be a unique in-stock piece from a box.</p>
+              </div>
+              <Button type="button" variant="outline" onClick={() => boxPickerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}>
+                <Plus className="h-4 w-4" /> Add Item
+              </Button>
+            </div>
             {lines.map((line, index) => {
               const computed = computedLines[index];
               return (

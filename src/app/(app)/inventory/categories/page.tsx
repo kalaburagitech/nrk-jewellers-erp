@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
@@ -43,8 +44,8 @@ export default function StockCategoriesPage() {
       await createCategory({ name });
       setName("");
       setOpen(false);
-    } catch {
-      setError("Could not save. You may need Inventory Manager access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not save these changes. Check your access and try again."));
     } finally {
       setSubmitting(false);
     }

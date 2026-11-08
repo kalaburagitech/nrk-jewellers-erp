@@ -1,4 +1,5 @@
 "use client";
+import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -29,8 +30,8 @@ export default function MetalRatesPage() {
     try {
       await setRate({ metalPurityId, ratePerGramPaise: paise });
       setDrafts((prev) => ({ ...prev, [metalPurityId]: "" }));
-    } catch {
-      setError("Could not update rate. You may need Owner/Admin access.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not update the metal rate. Check your access and try again."));
     } finally {
       setSavingId(null);
     }

@@ -300,7 +300,7 @@ export default function PrintInvoicePage({
                   <img
                     src={logoUrl || "/nrk-logo-gold.png"}
                     alt="NRK Jewellers logo"
-                    className="h-28 w-44 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-2 object-contain"
+                    className="h-32 w-40 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-1.5 object-contain"
                   />
                 }
                 <div className="min-w-0">
