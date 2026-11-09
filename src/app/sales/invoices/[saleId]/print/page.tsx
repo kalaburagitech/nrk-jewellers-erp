@@ -321,8 +321,8 @@ export default function PrintInvoicePage({
               {DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}
             </h1>
 
-            <div className="flex items-center justify-between gap-4 border-2 border-[#78613a] border-l-[7px] bg-[#faf7ef] px-4 py-3">
-              <div className="flex min-w-0 items-center gap-4">
+            <div className="flex items-center justify-between gap-5 border-2 border-[#78613a] border-l-[7px] bg-[#faf7ef] px-5 py-4">
+              <div className="flex min-w-0 items-center gap-5">
                 {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -334,11 +334,11 @@ export default function PrintInvoicePage({
                       }
                     }}
                     onError={() => setUseHighResolutionLogo(true)}
-                    className="h-36 w-44 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-1 object-contain print:rounded-none print:border-0 print:p-0"
+                    className="h-32 w-40 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-1.5 object-contain"
                   />
                 }
-                <div className="-mt-1 min-w-0">
-                  <h2 className="inline-block max-w-full border-l-[5px] border-[#bd974f] py-0.5 pl-3 text-4xl font-extrabold leading-[1.02] tracking-[-0.035em] text-[#28231b]">
+                <div className="min-w-0">
+                  <h2 className="text-3xl font-extrabold tracking-tight text-[#28231b]">
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
                   <p className="text-lg font-semibold text-[#494033]">
@@ -575,7 +575,7 @@ export default function PrintInvoicePage({
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
               </p>
-              <p className="shrink-0 font-semibold">
+              <p className="mb-2 shrink-0 rounded-sm border-b-2 border-[#bd974f] bg-[#faf7ef] px-4 py-2 text-lg font-extrabold tracking-tight text-[#28231b]">
                 For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
               </p>
             </div>
