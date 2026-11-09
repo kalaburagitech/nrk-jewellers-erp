@@ -25,6 +25,7 @@ import type * as lib_sequences from "../lib/sequences.js";
 import type * as memberships from "../memberships.js";
 import type * as metalPurities from "../metalPurities.js";
 import type * as metalRates from "../metalRates.js";
+import type * as organizationBootstrap from "../organizationBootstrap.js";
 import type * as organizations from "../organizations.js";
 import type * as products from "../products.js";
 import type * as purchases from "../purchases.js";
@@ -61,6 +62,7 @@ declare const fullApi: ApiFromModules<{
   memberships: typeof memberships;
   metalPurities: typeof metalPurities;
   metalRates: typeof metalRates;
+  organizationBootstrap: typeof organizationBootstrap;
   organizations: typeof organizations;
   products: typeof products;
   purchases: typeof purchases;

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { action, internalAction, internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal, api } from "./_generated/api";
 import { createAccount, modifyAccountCredentials } from "@convex-dev/auth/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
@@ -174,61 +174,6 @@ export const createStaffAccount = action({
     });
 
     return { userId: user._id };
-  },
-});
-
-export const getFirstOrgAndBranchInternal = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const organization = await ctx.db.query("organizations").filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-    if (!organization) return null;
-    const branch = await ctx.db
-      .query("branches")
-      .withIndex("by_org", (q) => q.eq("organizationId", organization._id))
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-    return { organizationId: organization._id, branchId: branch?._id };
-  },
-});
-
-/**
- * One-off dev/demo seed: creates the two demo logins (admin@gmail.com /
- * admin123 as Administrator, staff@gmail.com / staff123 as Billing
- * Operator) against the first organization. Not reachable by any client —
- * run once via `npx convex run memberships:seedDemoAccounts`.
- */
-export const seedDemoAccounts = internalAction({
-  args: {},
-  handler: async (ctx) => {
-    const org = await ctx.runQuery(internal.memberships.getFirstOrgAndBranchInternal);
-    if (!org) throw new Error("No organization exists yet — sign up once first to bootstrap one");
-
-    const demoAccounts: Array<{ email: string; password: string; name: string; role: "admin" | "billing_operator" }> = [
-      { email: "admin@gmail.com", password: "admin123", name: "Admin", role: "admin" },
-      { email: "staff@gmail.com", password: "staff123", name: "Staff", role: "billing_operator" },
-    ];
-
-    const results = [];
-    for (const demo of demoAccounts) {
-      try {
-        const { user } = await createAccount(ctx, {
-          provider: "password",
-          account: { id: demo.email, secret: demo.password },
-          profile: { email: demo.email, name: demo.name },
-        });
-        await ctx.runMutation(internal.memberships.insertMembershipInternal, {
-          userId: user._id,
-          organizationId: org.organizationId,
-          branchId: org.branchId,
-          role: demo.role,
-        });
-        results.push(`${demo.email}: created`);
-      } catch (e) {
-        results.push(`${demo.email}: skipped (${e instanceof Error ? e.message : "already exists"})`);
-      }
-    }
-    return results;
   },
 });
 

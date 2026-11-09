@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
+import { internal } from "./_generated/api";
 
 /**
  * Returns the signed-in user's membership + organization, or null if they
@@ -38,61 +39,14 @@ export const ensureBootstrapped = mutation({
   args: {
     organizationName: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ created: boolean; pending?: boolean }> => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const existingMembership = await ctx.db
-      .query("memberships")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-    if (existingMembership) return { created: false };
-
-    const anyOrganization = await ctx.db.query("organizations").filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-    if (anyOrganization) {
-      // An org already exists; this user needs to be invited explicitly.
-      return { created: false, pending: true };
-    }
-
-    const now = Date.now();
-    const organizationId = await ctx.db.insert("organizations", {
-      name: args.organizationName ?? "NR Karakalli Jewellers",
-      tagline: "Gold and Silver Merchants",
-      motto: "The Name of Purity",
-      address: "Near Maruti Temple, Basaveshwara Chowk road, Shahapur",
-      phone: "+91 9972786818 / +91 7760000717",
-      state: "Karnataka",
-      createdAt: now,
-    });
-    const branchId = await ctx.db.insert("branches", {
-      organizationId,
-      name: "Main Branch",
-      isDefault: true,
-      createdAt: now,
-    });
-    await ctx.db.insert("memberships", {
+    return await ctx.runMutation(internal.organizationBootstrap.bootstrapFirstOwnerInternal, {
       userId,
-      organizationId,
-      branchId,
-      role: "owner",
-      status: "active",
-      createdAt: now,
+      organizationName: args.organizationName,
     });
-
-    // Seed boxes 101-200 per SRS §6.
-    for (let boxNumber = 101; boxNumber <= 200; boxNumber++) {
-      await ctx.db.insert("boxes", {
-        organizationId,
-        boxNumber,
-        itemCount: 0,
-        isActive: true,
-        createdAt: now,
-      });
-    }
-
-    return { created: true };
   },
 });
 
