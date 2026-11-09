@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
@@ -130,6 +130,10 @@ export default function PrintInvoicePage({
   const [sharing, setSharing] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
+  // A4 landscape's printable height at the 4mm page margin used below (210mm - 2*4mm = 202mm),
+  // matching the sheet's own min-h-[202mm] below.
+  const PAGE_HEIGHT_MM = 202;
+  const [fitZoom, setFitZoom] = useState(1);
 
   // Browsers only allow opening a share sheet / popup from a real user gesture, so coming here
   // from the "WhatsApp Share [F4]" shortcut can't fire the share itself — it focuses the button
@@ -137,6 +141,24 @@ export default function PrintInvoicePage({
   useEffect(() => {
     if (autoShare && data) shareButtonRef.current?.focus();
   }, [autoShare, data]);
+
+  // Keep the whole invoice on one printed page regardless of item count: measure the
+  // sheet's natural (unscaled) height and shrink it to fit the A4-landscape page height
+  // instead of letting a few extra rows spill onto a second page.
+  useLayoutEffect(() => {
+    if (template !== "full-a4" || !data) return;
+    const node = invoiceRef.current;
+    if (!node) return;
+    const previousZoom = node.style.zoom;
+    node.style.zoom = "1";
+    const naturalHeightMm = node.scrollHeight / (96 / 25.4);
+    node.style.zoom = previousZoom;
+    setFitZoom(
+      naturalHeightMm > PAGE_HEIGHT_MM
+        ? Math.max(0.75, PAGE_HEIGHT_MM / naturalHeightMm)
+        : 1,
+    );
+  }, [template, data]);
 
   if (data === undefined) {
     return <p className="p-8 text-sm text-gray-500">Loading…</p>;
@@ -236,6 +258,7 @@ export default function PrintInvoicePage({
       <style>{`
         @media print {
           html, body { height: auto !important; min-height: 0 !important; overflow: visible !important; }
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
           [data-invoice-sheet] { margin: 0 auto; box-shadow: none; }
           [data-invoice-sheet] thead { display: table-header-group; }
           [data-pdf-keep-together] { break-inside: avoid; }
@@ -282,6 +305,7 @@ export default function PrintInvoicePage({
           <div
             ref={invoiceRef}
             data-invoice-sheet
+            style={{ zoom: fitZoom }}
             className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-white p-4 text-[#13253f] ${widthClass}`}
           >
             {sale.status === "cancelled" && (
@@ -289,7 +313,7 @@ export default function PrintInvoicePage({
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <h1 className="text-center text-3xl font-extrabold tracking-[0.16em] text-[#191919]">
+            <h1 className="text-center text-xl font-extrabold tracking-[0.16em] text-[#191919]">
               {DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}
             </h1>
 
@@ -304,7 +328,7 @@ export default function PrintInvoicePage({
                   />
                 }
                 <div className="min-w-0">
-                  <h2 className="text-2xl font-extrabold tracking-tight text-[#28231b]">
+                  <h2 className="text-3xl font-extrabold tracking-tight text-[#28231b]">
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
                   <p className="text-lg font-semibold text-[#494033]">
@@ -530,9 +554,15 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <p className="mt-auto pt-6 text-right font-semibold">
-              For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
-            </p>
+            <div className="mt-auto flex items-end justify-between gap-4 pt-6">
+              <p className="text-xs italic text-gray-600">
+                Note: If item was damaged no exchange and replacement
+                allowed. Ensure your item before leaving shop.
+              </p>
+              <p className="shrink-0 font-semibold">
+                For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
+              </p>
+            </div>
           </div>
         ) : (
           <div
