@@ -119,11 +119,7 @@ export default function SignInPage() {
         {flow === "signIn" && (
           <div className="flex w-full max-w-sm items-start gap-2 rounded-md border border-gold/30 bg-gold/10 p-3 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" />
-            <p>
-              Demo accounts — <span className="font-medium text-foreground">admin@gmail.com</span> /
-              admin123 (Owner) and <span className="font-medium text-foreground">staff@gmail.com</span>{" "}
-              / staff123 (Billing Operator).
-            </p>
+            <p>Use the owner or staff login created for your NRK Jewellers workspace.</p>
           </div>
         )}
       </div>
