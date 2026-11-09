@@ -128,6 +128,7 @@ export default function PrintInvoicePage({
   });
   const [template, setTemplate] = useState<Template>("full-a4");
   const [sharing, setSharing] = useState(false);
+  const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   // A4 landscape's printable height at the 4mm page margin used below (210mm - 2*4mm = 202mm),
@@ -141,6 +142,10 @@ export default function PrintInvoicePage({
   useEffect(() => {
     if (autoShare && data) shareButtonRef.current?.focus();
   }, [autoShare, data]);
+
+  useEffect(() => {
+    setUseHighResolutionLogo(false);
+  }, [data?.logoUrl]);
 
   // Keep the entire full-A4 invoice on one landscape page. The whole layout
   // scales together when more rows are added so the totals and footer stay with it.
@@ -316,18 +321,24 @@ export default function PrintInvoicePage({
               {DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}
             </h1>
 
-            <div className="flex items-center justify-between gap-5 border-2 border-[#78613a] border-l-[7px] bg-[#faf7ef] px-5 py-4">
-              <div className="flex min-w-0 items-center gap-5">
+            <div className="flex items-center justify-between gap-4 border-2 border-[#78613a] border-l-[7px] bg-[#faf7ef] px-4 py-3">
+              <div className="flex min-w-0 items-center gap-4">
                 {
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={logoUrl || "/nrk-logo-gold.png"}
+                    src={useHighResolutionLogo ? "/nrk-logo-gold.png" : logoUrl || "/nrk-logo-gold.png"}
                     alt="NRK Jewellers logo"
-                    className="h-32 w-40 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-1.5 object-contain"
+                    onLoad={(event) => {
+                      if (event.currentTarget.naturalWidth < 1200 && logoUrl && !useHighResolutionLogo) {
+                        setUseHighResolutionLogo(true);
+                      }
+                    }}
+                    onError={() => setUseHighResolutionLogo(true)}
+                    className="h-36 w-44 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-1 object-contain print:rounded-none print:border-0 print:p-0"
                   />
                 }
-                <div className="min-w-0">
-                  <h2 className="text-3xl font-extrabold tracking-tight text-[#28231b]">
+                <div className="-mt-1 min-w-0">
+                  <h2 className="inline-block max-w-full border-l-[5px] border-[#bd974f] py-0.5 pl-3 text-4xl font-extrabold leading-[1.02] tracking-[-0.035em] text-[#28231b]">
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
                   <p className="text-lg font-semibold text-[#494033]">
@@ -381,7 +392,13 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <table className="w-full border-collapse border border-[#78613a] text-sm">
+            <table className="w-full table-fixed border-collapse border border-[#78613a] text-sm leading-tight">
+              <colgroup>
+                {(sale.isGst
+                  ? ["4%", "25%", "10%", "5%", "8%", "8%", "11%", "11%", "7%", "11%"]
+                  : ["4%", "29%", "11%", "6%", "9%", "9%", "12%", "12%", "8%"]
+                ).map((width, index) => <col key={index} style={{ width }} />)}
+              </colgroup>
               <thead>
                 <tr className="bg-[#f1e6cd] text-left text-[#28231b]">
                   <th className="border border-[#78613a] px-2 py-1">Sl.No</th>
