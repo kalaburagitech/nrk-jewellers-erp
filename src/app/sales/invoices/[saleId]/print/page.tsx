@@ -93,6 +93,7 @@ async function renderInvoicePdf(
     onclone: (_document, clonedNode) => {
       clonedNode.style.width = `${widthPx}px`;
       clonedNode.style.maxWidth = "none";
+      clonedNode.style.zoom = "1";
       const bounds = clonedNode.getBoundingClientRect();
       clonedNode
         .querySelectorAll("tr, [data-pdf-keep-together]")
@@ -157,15 +158,26 @@ export default function PrintInvoicePage({
     if (template !== "full-a4" || !data) return;
     const node = invoiceRef.current;
     if (!node) return;
-    const previousZoom = node.style.zoom;
-    node.style.zoom = "1";
-    const naturalHeightMm = node.scrollHeight / (96 / 25.4);
-    node.style.zoom = previousZoom;
-    setFitZoom(
-      naturalHeightMm > PAGE_HEIGHT_MM
-        ? PAGE_HEIGHT_MM / naturalHeightMm
-        : 1,
+    // Measure an unconstrained copy so min-height/flex sizing cannot hide
+    // overflow from the item rows being added to the invoice.
+    const measureNode = node.cloneNode(true) as HTMLDivElement;
+    measureNode.style.position = "fixed";
+    measureNode.style.left = "-10000px";
+    measureNode.style.top = "0";
+    measureNode.style.visibility = "hidden";
+    measureNode.style.zoom = "1";
+    measureNode.style.minHeight = "0";
+    measureNode.style.height = "auto";
+    measureNode.style.maxHeight = "none";
+    measureNode.style.justifyContent = "flex-start";
+    document.body.appendChild(measureNode);
+    const naturalHeightPx = Math.max(
+      measureNode.scrollHeight,
+      measureNode.getBoundingClientRect().height,
     );
+    measureNode.remove();
+    const printableHeightPx = PAGE_HEIGHT_MM * (96 / 25.4);
+    setFitZoom(Math.min(1, printableHeightPx / naturalHeightPx));
   }, [template, data]);
 
   if (data === undefined) {
@@ -472,13 +484,6 @@ export default function PrintInvoicePage({
                     </td>
                   </tr>
                 ))}
-                {items.length < 5 && (
-                  <tr aria-hidden="true">
-                    {Array.from({ length: sale.isGst ? 10 : 9 }, (_, i) => (
-                      <td key={i} className="h-12 border border-[#78613a]" />
-                    ))}
-                  </tr>
-                )}
                 <tr className="bg-[#f1e6cd] font-bold">
                   <td className="border border-[#78613a] px-1 py-1" colSpan={3}>
                     Sub Total
