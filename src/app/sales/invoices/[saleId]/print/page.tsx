@@ -326,57 +326,51 @@ export default function PrintInvoicePage({
             ref={invoiceRef}
             data-invoice-sheet
             style={{ zoom: fitZoom }}
-            className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-white p-4 text-[#13253f] ${widthClass}`}
+            className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-[#fffaf0] p-4 text-[#13253f] ${widthClass}`}
           >
             {sale.status === "cancelled" && (
               <p className="text-center font-bold text-red-700">
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <h1 className="text-center text-xl font-extrabold tracking-[0.16em] text-[#191919]">
-              {DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}
-            </h1>
-
-            <div className="flex items-center justify-between gap-5 border-2 border-[#78613a] border-l-[7px] bg-[#faf7ef] px-5 py-4">
-              <div className="flex min-w-0 items-center gap-5">
-                {
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={useHighResolutionLogo ? "/nrk-logo-gold.png" : logoUrl || "/nrk-logo-gold.png"}
-                    alt="NRK Jewellers logo"
-                    onLoad={(event) => {
-                      if (event.currentTarget.naturalWidth < 1200 && logoUrl && !useHighResolutionLogo) {
-                        setUseHighResolutionLogo(true);
-                      }
-                    }}
-                    onError={() => setUseHighResolutionLogo(true)}
-                    className="h-32 w-40 shrink-0 rounded-md border border-[#f1e6cd] bg-white p-1.5 object-contain"
-                  />
-                }
-                <div className="min-w-0">
-                  <h2 className="text-3xl font-extrabold tracking-tight text-[#28231b]">
+            <div className="flex items-center justify-between gap-5 border-2 border-[#bd862e] bg-[#fffaf0] px-4 py-3">
+              <div className="flex min-w-0 flex-1 items-center gap-5">
+                <div className="flex w-[50mm] shrink-0 flex-col items-center justify-center border-r border-[#bd974f] pr-4">
+                  {
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={useHighResolutionLogo ? "/nrk-logo-gold.png" : logoUrl || "/nrk-logo-gold.png"}
+                      alt="NRK Jewellers logo"
+                      onLoad={(event) => {
+                        if (event.currentTarget.naturalWidth < 1200 && logoUrl && !useHighResolutionLogo) {
+                          setUseHighResolutionLogo(true);
+                        }
+                      }}
+                      onError={() => setUseHighResolutionLogo(true)}
+                      className="h-[30mm] w-[42mm] shrink-0 object-contain"
+                    />
+                  }
+                  <p className="mt-1 text-center font-serif text-base italic text-[#8a6726]">
+                    {organization?.motto || BUSINESS_PROFILE_DEFAULTS.motto}
+                  </p>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-3xl font-extrabold tracking-tight text-[#17265c]">
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
                   <p className="text-lg font-semibold text-[#494033]">
                     {organization?.tagline || BUSINESS_PROFILE_DEFAULTS.tagline}
                   </p>
-                  <p className="my-1 inline-block border-y border-[#bd974f]/60 py-1 font-serif text-xl italic text-[#8a6726]">
-                    {organization?.motto || BUSINESS_PROFILE_DEFAULTS.motto}
+                  <p className="flex items-center gap-1 text-sm text-gray-600">
+                    <MapPin className="h-3.5 w-3.5 shrink-0" />
+                    <span className="whitespace-pre-line">
+                      {organization?.address || BUSINESS_PROFILE_DEFAULTS.address}
+                    </span>
                   </p>
-                  {
-                    <p className="flex items-center gap-1 text-sm text-gray-600">
-                      <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      <span className="whitespace-pre-line">
-                        {organization?.address || BUSINESS_PROFILE_DEFAULTS.address}
-                      </span>
-                    </p>
-                  }
-                  {
-                    <p className="flex items-center gap-1 text-sm text-gray-600">
-                      <Phone className="h-3.5 w-3.5 shrink-0" />
-                      {organization?.phone || BUSINESS_PROFILE_DEFAULTS.phone}
-                    </p>
-                  }
+                  <p className="flex items-center gap-1 text-sm text-gray-600">
+                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                    {organization?.phone || BUSINESS_PROFILE_DEFAULTS.phone}
+                  </p>
                 </div>
               </div>
               {
@@ -387,7 +381,7 @@ export default function PrintInvoicePage({
             </div>
 
             <div className="grid grid-cols-[3fr_1fr] gap-3">
-              <div className="border border-[#78613a] border-l-4 border-l-[#bd974f] bg-[#fcfaf5] p-3">
+              <div className="border border-[#bd862e] border-l-4 border-l-[#bd974f] bg-[#fffaf0] p-3">
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Bill To</p>
                 <p className="text-lg font-bold text-[#28231b]">{customer?.name}</p>
                 {customer?.phone && (
@@ -399,7 +393,7 @@ export default function PrintInvoicePage({
                   </p>
                 )}
               </div>
-              <div className="border border-[#78613a] bg-[#fcfaf5] p-3">
+              <div className="border border-[#bd862e] bg-[#fffaf0] p-3">
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Invoice Details</p>
                 <p className="font-bold text-[#28231b]">No.: {sale.invoiceNumber}</p>
                 <p>
@@ -408,41 +402,41 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <table className="w-full table-fixed border-collapse border border-[#78613a] text-sm leading-tight">
+            <table className="w-full table-fixed border-collapse border border-[#bd862e] text-sm leading-tight">
               <colgroup>
                 {(sale.isGst
-                  ? ["4%", "23%", "8%", "5%", "9%", "9%", "9%", "9%", "10%", "14%"]
-                  : ["4%", "28%", "10%", "5%", "9%", "9%", "10%", "10%", "15%"]
+                  ? ["5%", "20%", "10%", "6%", "9%", "9%", "10%", "11%", "10%", "10%"]
+                  : ["5%", "24%", "12%", "6%", "10%", "10%", "11%", "11%", "11%"]
                 ).map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>
               <thead>
-                <tr className="bg-[#f1e6cd] text-left text-[#28231b]">
-                  <th className="border border-[#78613a] px-1 py-1">Sl.No</th>
-                  <th className="border border-[#78613a] px-1 py-1">
+                <tr className="bg-[#f6e6c2] text-center text-[#17265c]">
+                  <th className="border border-[#bd862e] px-1 py-2">Sl.No</th>
+                  <th className="border border-[#bd862e] px-1 py-2 text-left">
                     Description
                   </th>
-                  <th className="border border-[#78613a] px-1 py-1">Purity</th>
-                  <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#bd862e] px-1 py-2">Purity</th>
+                  <th className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Qty
                   </th>
-                  <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Gross Wt
                   </th>
-                  <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Net Wt
                   </th>
-                  <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     Rate(₹)
                   </th>
-                  <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     Making(₹)
                   </th>
                   {sale.isGst && (
-                    <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       Tax(₹)
                     </th>
                   )}
-                  <th className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     Total(₹)
                   </th>
                 </tr>
@@ -450,119 +444,111 @@ export default function PrintInvoicePage({
               <tbody>
                 {items.map((item, i) => (
                   <tr key={item._id}>
-                    <td className="border border-[#78613a] px-1 py-1">
+                    <td className="border border-[#bd862e] px-1 py-2">
                       {i + 1}
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1">
+                    <td className="border border-[#bd862e] px-1 py-2">
                       {item.label}
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1">
+                    <td className="border border-[#bd862e] px-1 py-2">
                       {item.purityLabel ?? "—"}
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       1
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.grossWeightMg)}
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.ratePerGramPaise)}
                     </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.makingChargePaise)}
                     </td>
                     {sale.isGst && (
-                      <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                      <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                         {formatPaise(item.lineTaxPaise)}
                       </td>
                     )}
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.lineTotalPaise)}
                     </td>
                   </tr>
                 ))}
                 <tr className="bg-[#f1e6cd] font-bold">
-                  <td className="border border-[#78613a] px-1 py-1" colSpan={3}>
+                  <td className="border border-[#bd862e] px-1 py-2" colSpan={3}>
                     Sub Total
                   </td>
-                  <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {items.length}
                   </td>
-                  <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
                       items.reduce((sum, i) => sum + i.grossWeightMg, 0),
                     )}
                   </td>
-                  <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
                       items.reduce((sum, i) => sum + i.netWeightMg, 0),
                     )}
                   </td>
-                  <td className="border border-[#78613a] px-1 py-1" />
-                  <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#bd862e] px-1 py-2" />
+                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     {formatPaise(
                       items.reduce((sum, i) => sum + i.makingChargePaise, 0),
                     )}
                   </td>
                   {sale.isGst && (
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(
                         items.reduce((sum, i) => sum + i.lineTaxPaise, 0),
                       )}
                     </td>
                   )}
-                  <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     {formatPaise(
                       items.reduce((sum, i) => sum + i.lineTotalPaise, 0),
                     )}
                   </td>
                 </tr>
-                {sale.discountPaise > 0 && (
-                  <tr>
-                    <td
-                      className="border border-[#78613a] px-1 py-1 bg-[#f1e6cd] font-semibold"
-                      colSpan={sale.isGst ? 9 : 8}
-                    >
-                      Discount
-                    </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
-                      -{formatPaise(sale.discountPaise)}
-                    </td>
-                  </tr>
-                )}
-                {oldGoldExchange && (
-                  <tr>
-                    <td
-                      className="border border-[#78613a] px-1 py-1 bg-[#f1e6cd] font-semibold"
-                      colSpan={sale.isGst ? 9 : 8}
-                    >
-                      Old Item Deduction
-                    </td>
-                    <td className="border border-[#78613a] px-1 py-1 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
-                      -{formatPaise(oldGoldExchange.exchangeValuePaise)}
-                    </td>
-                  </tr>
-                )}
+                <tr>
+                  <td className="border border-[#bd862e] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right font-semibold" colSpan={2}>
+                    Discount
+                  </td>
+                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                    -{formatPaise(sale.discountPaise)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="border border-[#bd862e] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right font-semibold" colSpan={2}>
+                    Old Item Deduction
+                  </td>
+                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                    -{formatPaise(oldGoldExchange?.exchangeValuePaise ?? 0)}
+                  </td>
+                </tr>
               </tbody>
             </table>
 
             <div
               data-pdf-keep-together
-              className="grid grid-cols-[2fr_1fr_1fr] gap-4"
+              className="grid grid-cols-[1.9fr_1fr_1fr] gap-3"
             >
-              <div className="border border-[#78613a] p-3">
+              <div className="border border-[#bd862e] p-3">
                 <p className="font-bold">Amount in words</p>
                 <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
               </div>
-              <div className="border border-[#78613a] p-3">
+              <div className="border border-[#bd862e] p-3">
                 <p className="font-bold">Payment type</p>
                 <p>{paymentTypeLabel}</p>
               </div>
-              <div className="flex flex-col gap-1 border border-[#78613a] bg-[#f1e6cd] p-3">
-                <div className="flex justify-between border-b border-[#78613a]/20 pb-1 text-lg font-extrabold">
+              <div className="flex flex-col gap-1 border border-[#bd862e] bg-[#f1e6cd] p-3">
+                <div className="flex justify-between border-b border-[#bd862e]/20 pb-1 text-lg font-extrabold">
                   <span>Grand Total</span>
                   <span className="text-[#191919]">
                     {formatPaise(grandTotalNetPaise)}
