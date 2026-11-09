@@ -182,7 +182,7 @@ export default function BoxOverviewPage() {
                   className="flex w-full flex-col items-center gap-2 rounded-lg py-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   aria-label={`View Box ${box.boxNumber}`}
                 >
-                  <Package className="h-5 w-5 text-gold" />
+                  <Package className="h-5 w-5 text-primary" />
                   <p className="text-lg font-semibold">{box.boxNumber}</p>
                   {box.label && (
                     <p className="truncate text-xs text-muted-foreground">

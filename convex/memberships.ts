@@ -210,3 +210,19 @@ export const resetMemberPassword = action({
     });
   },
 });
+
+/** Allows an authenticated Owner to change only their own password. */
+export const changeOwnerPassword = action({
+  args: { newPassword: v.string() },
+  handler: async (ctx, args) => {
+    const access = await ctx.runQuery(api.organizations.getMyAccess);
+    if (access?.membership?.role !== "owner" || !access.user?.email) {
+      throw new Error("Only the signed-in Owner can change this password.");
+    }
+    if (args.newPassword.length < 8) throw new Error("Use at least 8 characters for the new password.");
+    await modifyAccountCredentials(ctx, {
+      provider: "password",
+      account: { id: access.user.email, secret: args.newPassword },
+    });
+  },
+});

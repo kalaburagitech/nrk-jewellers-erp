@@ -30,6 +30,8 @@ const THEME_INIT_SCRIPT = `
   try {
     var stored = localStorage.getItem("nrk-theme");
     document.documentElement.classList.toggle("dark", stored === "dark");
+    var colorTheme = localStorage.getItem("nrk-color-theme");
+    document.documentElement.dataset.colorTheme = ["gold", "rose", "green", "plum"].includes(colorTheme) ? colorTheme : "gold";
     document.documentElement.dataset.readingSize = localStorage.getItem("nrk-reading-size") || "standard";
   } catch (e) {}
 `;

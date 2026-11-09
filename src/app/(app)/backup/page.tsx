@@ -45,7 +45,7 @@ export default function BackupPage() {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div>
-        <DatabaseBackup className="mb-3 h-9 w-9 text-blue-700" />
+        <DatabaseBackup className="mb-3 h-9 w-9 text-primary" />
         <h1 className="text-3xl font-semibold">Backup & Restore</h1>
         <p className="mt-2 text-muted-foreground">
           Keep a copy of your business records in a safe place.

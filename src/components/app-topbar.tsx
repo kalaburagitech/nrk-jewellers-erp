@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useQuery } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Bell, LogOut, Search } from "lucide-react";
+import { Bell, KeyRound, LogOut, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -14,6 +14,17 @@ import { Input } from "@/components/ui/input";
 import { TextSizeToggle } from "@/components/text-size-toggle";
 import { NAV_SECTIONS } from "@/lib/nav-data";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { ColorThemePicker } from "@/components/color-theme-picker";
+import { getUserErrorMessage } from "@/lib/user-error";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -171,6 +182,13 @@ export function AppTopbar({
   role?: string;
 }) {
   const { signOut } = useAuthActions();
+  const changeOwnerPassword = useAction(api.memberships.changeOwnerPassword);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
   const pathname = usePathname();
   const page = NAV_SECTIONS.flatMap((section) => [
     ...(section.items ?? []),
@@ -203,6 +221,7 @@ export function AppTopbar({
         )}
         <TextSizeToggle />
         <ThemeToggle />
+        <ColorThemePicker />
         <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
@@ -218,6 +237,18 @@ export function AppTopbar({
                 {userName ?? "Account"}
               </p>
             </div>
+            {role === "owner" && (
+              <DropdownMenuItem onSelect={() => {
+                setNewPassword("");
+                setConfirmPassword("");
+                setPasswordError(null);
+                setPasswordSaved(false);
+                setPasswordDialogOpen(true);
+              }}>
+                <KeyRound className="h-4 w-4" />
+                Change password
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               onSelect={() => void signOut()}
               className="text-destructive"
@@ -228,6 +259,47 @@ export function AppTopbar({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change owner password</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4">
+            <p className="text-sm text-muted-foreground">Choose a new password with at least 8 characters.</p>
+            <div className="grid gap-2">
+              <Label htmlFor="owner-new-password">New password</Label>
+              <Input id="owner-new-password" type="password" autoComplete="new-password" minLength={8}
+                value={newPassword} onChange={(event) => setNewPassword(event.target.value)} />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="owner-confirm-password">Confirm new password</Label>
+              <Input id="owner-confirm-password" type="password" autoComplete="new-password" minLength={8}
+                value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+            </div>
+            {passwordError && <p role="alert" className="text-sm text-destructive">{passwordError}</p>}
+            {passwordSaved && <p role="status" className="text-sm text-success">Password updated. Use your new password next time you sign in.</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>Close</Button>
+            <Button disabled={savingPassword || passwordSaved} onClick={async () => {
+              setPasswordError(null);
+              if (newPassword.length < 8) { setPasswordError("Use at least 8 characters."); return; }
+              if (newPassword !== confirmPassword) { setPasswordError("The passwords do not match."); return; }
+              setSavingPassword(true);
+              try {
+                await changeOwnerPassword({ newPassword });
+                setPasswordSaved(true);
+                setNewPassword("");
+                setConfirmPassword("");
+              } catch (error) {
+                setPasswordError(getUserErrorMessage(error, "Could not update the password. Please try again."));
+              } finally {
+                setSavingPassword(false);
+              }
+            }}>{savingPassword ? "Updating…" : passwordSaved ? "Updated" : "Update password"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

@@ -58,13 +58,13 @@ export default function DashboardPage() {
             priority
           />
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-gold">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-primary">
               The Name of Purity
             </p>
             <h1 className="text-xl font-bold sm:text-2xl">
               {access?.organization?.name || "NR Karakalli Jewellers"}
             </h1>
-            <p className="mt-1 text-sm font-medium text-[#13406e]">
+            <p className="mt-1 text-sm font-medium text-primary">
               {greeting}{firstName ? `, ${firstName}` : ""} · Your daily counter overview
             </p>
           </div>
@@ -105,7 +105,7 @@ export default function DashboardPage() {
             ].map(([label, value], i) => (
               <div
                 key={label}
-                className={`rounded-lg border p-4 ${i === 0 ? "border-blue-200 bg-blue-50 text-blue-950" : "bg-muted/30"}`}
+                className={`rounded-lg border p-4 ${i === 0 ? "border-primary/30 bg-accent text-accent-foreground" : "bg-muted/30"}`}
               >
                 <p className="text-xs text-muted-foreground">{label}</p>
                 <p className="mt-2 text-xl font-bold tabular-nums">{value}</p>
@@ -193,9 +193,9 @@ export default function DashboardPage() {
                 <Link
                   href="/boxes"
                   key={box._id}
-                  className="group flex items-center gap-2 rounded-lg border bg-muted/25 p-3 transition hover:border-blue-400 hover:bg-blue-50"
+                  className="group flex items-center gap-2 rounded-lg border bg-muted/25 p-3 transition hover:border-primary/50 hover:bg-accent"
                 >
-                  <Boxes className="h-7 w-7 shrink-0 text-gold" />
+                  <Boxes className="h-7 w-7 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">Box {box.boxNumber}</p>
                     <p className="text-xs text-muted-foreground">
@@ -308,8 +308,8 @@ export default function DashboardPage() {
                   <Area
                     dataKey="sales"
                     type="monotone"
-                    stroke="#2664a5"
-                    fill="#dbeafe"
+                    stroke="var(--chart-1)"
+                    fill="var(--chart-3)"
                     strokeWidth={2}
                   />
                 </AreaChart>

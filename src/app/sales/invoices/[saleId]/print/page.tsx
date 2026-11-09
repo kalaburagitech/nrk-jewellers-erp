@@ -142,9 +142,8 @@ export default function PrintInvoicePage({
     if (autoShare && data) shareButtonRef.current?.focus();
   }, [autoShare, data]);
 
-  // Keep the whole invoice on one printed page regardless of item count: measure the
-  // sheet's natural (unscaled) height and shrink it to fit the A4-landscape page height
-  // instead of letting a few extra rows spill onto a second page.
+  // Keep the entire full-A4 invoice on one landscape page. The whole layout
+  // scales together when more rows are added so the totals and footer stay with it.
   useLayoutEffect(() => {
     if (template !== "full-a4" || !data) return;
     const node = invoiceRef.current;
@@ -155,7 +154,7 @@ export default function PrintInvoicePage({
     node.style.zoom = previousZoom;
     setFitZoom(
       naturalHeightMm > PAGE_HEIGHT_MM
-        ? Math.max(0.75, PAGE_HEIGHT_MM / naturalHeightMm)
+        ? PAGE_HEIGHT_MM / naturalHeightMm
         : 1,
     );
   }, [template, data]);
@@ -259,7 +258,7 @@ export default function PrintInvoicePage({
         @media print {
           html, body { height: auto !important; min-height: 0 !important; overflow: visible !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          [data-invoice-sheet] { margin: 0 auto; box-shadow: none; }
+          [data-invoice-sheet] { margin: 0 auto; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
           [data-invoice-sheet] thead { display: table-header-group; }
           [data-pdf-keep-together] { break-inside: avoid; }
         }

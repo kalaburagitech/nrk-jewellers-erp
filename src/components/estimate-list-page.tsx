@@ -76,7 +76,7 @@ export function EstimateListPage({
                     <TableCell>{new Date(r.createdAt).toLocaleDateString("en-IN")}</TableCell>
                     <TableCell className="text-right">{formatPaise(r.totalPaise)}</TableCell>
                     <TableCell className="text-right">
-                      <Link href={`/sales/invoices/${r._id}/print`} className="text-sm text-gold underline">
+                      <Link href={`/sales/invoices/${r._id}/print`} className="text-sm text-primary underline">
                         View
                       </Link>
                     </TableCell>

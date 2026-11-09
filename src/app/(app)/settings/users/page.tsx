@@ -231,10 +231,10 @@ export default function UsersAndRolesPage() {
       </div>
 
       {pendingUsers && pendingUsers.length > 0 && (
-        <Card className="border-gold/40">
+        <Card className="border-primary/40">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
-              <UserPlus className="h-4 w-4 text-gold" />
+              <UserPlus className="h-4 w-4 text-primary" />
               Awaiting access
             </CardTitle>
           </CardHeader>

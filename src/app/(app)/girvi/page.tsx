@@ -197,7 +197,7 @@ export default function GirviPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-3 text-3xl font-semibold">
-            <Landmark className="text-blue-700" />
+            <Landmark className="text-primary" />
             Girvi · Metal loans
           </h1>
           <p className="mt-2 text-muted-foreground">
@@ -278,7 +278,7 @@ export default function GirviPage() {
       <BulkRecordActions selection={selection} table="girviLoans" />
       <div className="overflow-x-auto rounded-xl border bg-card">
         <table className="w-full text-left text-sm">
-          <thead className="bg-blue-50 text-blue-950">
+          <thead className="bg-secondary text-secondary-foreground">
             <tr>
               <th className="w-12 p-4">
                 <Checkbox
@@ -345,7 +345,7 @@ export default function GirviPage() {
                   </td>
                   <td className="p-4">
                     {formatPaise(loan.principalPaise)}
-                    <p className="font-semibold text-blue-800">
+                    <p className="font-semibold text-primary">
                       {formatPaise(
                         loan.principalPaise - loan.principalRepaidPaise,
                       )}

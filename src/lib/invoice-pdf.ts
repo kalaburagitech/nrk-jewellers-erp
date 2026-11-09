@@ -57,6 +57,24 @@ export function createInvoicePdf(
   });
   const width = pdf.internal.pageSize.getWidth() - paper.margin * 2;
   const availableHeight = pdf.internal.pageSize.getHeight() - paper.margin * 2;
+  if (template === "full-a4") {
+    // Full A4 invoices are a single-page document. Scale the entire invoice
+    // uniformly to the printable area instead of slicing long bills across pages.
+    const scale = Math.min(width / image.width, availableHeight / image.height);
+    const renderedWidth = image.width * scale;
+    const renderedHeight = image.height * scale;
+    pdf.addImage(
+      image.dataUrl,
+      "JPEG",
+      paper.margin + (width - renderedWidth) / 2,
+      paper.margin + (availableHeight - renderedHeight) / 2,
+      renderedWidth,
+      renderedHeight,
+      "invoice",
+      "FAST",
+    );
+    return pdf;
+  }
   const mmPerPixel = width / image.width;
   const slices = invoicePageSlices(
     image.height,

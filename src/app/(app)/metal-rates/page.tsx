@@ -76,7 +76,7 @@ export default function MetalRatesPage() {
             <Card key={purity._id}>
               <CardHeader className="flex flex-row items-center justify-between pb-0">
                 <CardTitle className="text-sm font-medium">{purity.label}</CardTitle>
-                <Coins className="h-4 w-4 text-gold" />
+                <Coins className="h-4 w-4 text-primary" />
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 <div>

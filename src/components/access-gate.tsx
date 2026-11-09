@@ -44,7 +44,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
   if (access.membership === null) {
     return (
       <CenteredState>
-        <Gem className="h-8 w-8 text-gold" />
+        <Gem className="h-8 w-8 text-primary" />
         <h1 className="text-lg font-semibold">Setting up your workspace…</h1>
         <p className="max-w-sm text-sm text-muted-foreground">
           If this takes more than a moment, your account may be waiting for an administrator to
