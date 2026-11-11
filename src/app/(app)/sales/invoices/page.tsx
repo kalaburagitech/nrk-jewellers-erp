@@ -16,7 +16,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ExportCsvButton } from "@/components/export-csv-button";
+import { TransactionReportDialog } from "@/components/transaction-report-dialog";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
@@ -146,19 +146,22 @@ export default function SalesInvoicesPage() {
         </div>
         <div className="flex gap-2">
           {sales && (
-            <ExportCsvButton
+            <TransactionReportDialog
               label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
               filename="sales-invoices"
-              headers={["Invoice #", "Date", "Customer", "GST", "Total (₹)", "Paid (₹)", "Status"]}
-              rows={(selection.count ? (filteredSales ?? []).filter(row => selection.has(row._id)) : (filteredSales ?? [])).map((s) => [
-                s.invoiceNumber,
-                new Date(s.createdAt).toLocaleDateString("en-IN"),
-                customerName.get(s.customerId) ?? "—",
-                s.isGst ? "GST" : "Non-GST",
-                s.totalPaise / 100,
-                s.amountPaidPaise / 100,
-                s.status,
-              ])}
+              rows={(selection.count ? (filteredSales ?? []).filter(row => selection.has(row._id)) : (filteredSales ?? []))}
+              fields={[
+                { id: "date", label: "Date", value: (s) => new Date(s.createdAt).toLocaleDateString("en-IN") },
+                { id: "invoice", label: "Invoice No.", value: (s) => s.invoiceNumber },
+                { id: "party", label: "Party Name", value: (s) => customerName.get(s.customerId) ?? "—" },
+                { id: "total", label: "Total", value: (s) => formatPaise(s.totalPaise) },
+                { id: "paid", label: "Received / Paid", value: (s) => formatPaise(s.amountPaidPaise) },
+                { id: "balance", label: "Balance Due", value: (s) => formatPaise(Math.max(0, s.totalPaise - s.amountPaidPaise)) },
+                { id: "gst", label: "GST Type", value: (s) => s.isGst ? "GST" : "Non-GST" },
+                { id: "payment", label: "Payment Status", value: (s) => s.amountPaidPaise >= s.totalPaise ? "Paid" : s.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
+                { id: "phone", label: "Party's Phone No.", value: (s) => customers?.find((party) => party._id === s.customerId)?.phone ?? "—" },
+                { id: "gstin", label: "Party's GSTIN", value: (s) => customers?.find((party) => party._id === s.customerId)?.gstin ?? "—" },
+              ]}
             />
           )}
           <Button asChild>

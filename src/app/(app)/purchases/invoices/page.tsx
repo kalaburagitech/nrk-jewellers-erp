@@ -17,7 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ExportCsvButton } from "@/components/export-csv-button";
+import { TransactionReportDialog } from "@/components/transaction-report-dialog";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
@@ -162,18 +162,21 @@ export default function PurchaseInvoicesPage() {
         </div>
         <div className="flex gap-2">
           {purchases && (
-            <ExportCsvButton
+            <TransactionReportDialog
               label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
               filename="purchase-invoices"
-              headers={["Invoice #", "Date", "Supplier", "Total (₹)", "Paid (₹)", "Status"]}
-              rows={(selection.count ? (filteredPurchases ?? []).filter(row => selection.has(row._id)) : (filteredPurchases ?? [])).map((p) => [
-                p.invoiceNumber,
-                new Date(p.createdAt).toLocaleDateString("en-IN"),
-                supplierName.get(p.supplierId) ?? "—",
-                p.totalPaise / 100,
-                p.amountPaidPaise / 100,
-                p.status,
-              ])}
+              rows={(selection.count ? (filteredPurchases ?? []).filter(row => selection.has(row._id)) : (filteredPurchases ?? []))}
+              fields={[
+                { id: "date", label: "Date", value: (p) => new Date(p.createdAt).toLocaleDateString("en-IN") },
+                { id: "invoice", label: "Invoice No.", value: (p) => p.invoiceNumber },
+                { id: "party", label: "Party Name", value: (p) => supplierName.get(p.supplierId) ?? "—" },
+                { id: "total", label: "Total", value: (p) => formatPaise(p.totalPaise) },
+                { id: "paid", label: "Paid", value: (p) => formatPaise(p.amountPaidPaise) },
+                { id: "balance", label: "Balance Due", value: (p) => formatPaise(Math.max(0, p.totalPaise - p.amountPaidPaise)) },
+                { id: "status", label: "Payment Status", value: (p) => p.amountPaidPaise >= p.totalPaise ? "Paid" : p.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
+                { id: "phone", label: "Party's Phone No.", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.phone ?? "—" },
+                { id: "gstin", label: "Party's GSTIN", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.gstin ?? "—" },
+              ]}
             />
           )}
           <Button asChild>
