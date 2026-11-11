@@ -267,7 +267,12 @@ export default function ProductsPage() {
     const q = search.trim().toLowerCase();
     if (!q) return products;
     return products.filter(
-      (p) => p.name.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q),
+      (p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q) ||
+        Object.values(p.customFields ?? {}).some((value) =>
+          value.toLowerCase().includes(q),
+        ),
     );
   }, [products, search]);
 

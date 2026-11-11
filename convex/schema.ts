@@ -225,6 +225,7 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_org", ["organizationId"])
+    .index("by_product", ["productId"])
     .index("by_box", ["boxId"])
     .index("by_org_and_barcode", ["organizationId", "barcode"]),
 
@@ -333,7 +334,7 @@ export default defineSchema({
     makingChargePaise: v.number(),
     stoneChargePaise: v.number(),
     lineTotalPaise: v.number(),
-  }).index("by_purchase", ["purchaseId"]),
+  }).index("by_purchase", ["purchaseId"]).index("by_product", ["productId"]),
 
   // ---------- Sales ----------
   sales: defineTable({
@@ -387,7 +388,7 @@ export default defineSchema({
     taxConfigurationId: v.optional(v.id("taxConfigurations")),
     lineTaxPaise: v.number(),
     lineTotalPaise: v.number(),
-  }).index("by_sale", ["saleId"]),
+  }).index("by_sale", ["saleId"]).index("by_product", ["productId"]),
 
   // ---------- Payments & ledgers ----------
   payments: defineTable({

@@ -38,7 +38,7 @@ const DOCUMENT_TITLE: Record<string, string> = {
 
 const TEMPLATES = [
   { value: "full-a4", label: "A4 Landscape · Reference Layout" },
-  { value: "half-a4", label: "Half A4" },
+  { value: "half-a4", label: "A5 Landscape" },
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
 
@@ -74,7 +74,7 @@ async function renderInvoicePdf(
     import("@/lib/invoice-pdf"),
   ]);
   const widthMm =
-    template === "full-a4" ? 289 : template === "half-a4" ? 128 : 76;
+    template === "full-a4" ? 289 : template === "half-a4" ? 200 : 76;
   const widthPx = (widthMm * 96) / 25.4;
   const protectedRanges: Array<{ start: number; end: number }> = [];
   await document.fonts.ready;
@@ -136,8 +136,7 @@ export default function PrintInvoicePage({
   const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
-  // A4 landscape's printable height at the 4mm page margin used below (210mm - 2*4mm = 202mm),
-  // matching the sheet's own min-h-[202mm] below.
+  // Fit the layout to the selected paper's printable height to avoid splitting a bill.
   const PAGE_HEIGHT_MM = 202;
   const [fitZoom, setFitZoom] = useState(1);
 
@@ -155,7 +154,7 @@ export default function PrintInvoicePage({
   // Keep the entire full-A4 invoice on one landscape page. The whole layout
   // scales together when more rows are added so the totals and footer stay with it.
   useLayoutEffect(() => {
-    if (template !== "full-a4" || !data) return;
+    if (template === "thermal" || !data) return;
     const node = invoiceRef.current;
     if (!node) return;
     // Measure an unconstrained copy so min-height/flex sizing cannot hide
@@ -176,7 +175,7 @@ export default function PrintInvoicePage({
       measureNode.getBoundingClientRect().height,
     );
     measureNode.remove();
-    const printableHeightPx = PAGE_HEIGHT_MM * (96 / 25.4);
+    const printableHeightPx = (template === "half-a4" ? 138 : PAGE_HEIGHT_MM) * (96 / 25.4);
     setFitZoom(Math.min(1, printableHeightPx / naturalHeightPx));
   }, [template, data]);
 
@@ -270,7 +269,7 @@ export default function PrintInvoicePage({
     template === "thermal"
       ? "w-[76mm] text-xs"
       : template === "half-a4"
-        ? "w-[128mm] text-sm"
+        ? "w-[200mm] text-sm"
         : "w-[289mm] min-h-[202mm] text-base";
 
   return (
@@ -279,11 +278,11 @@ export default function PrintInvoicePage({
         @media print {
           html, body { height: auto !important; min-height: 0 !important; overflow: visible !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          [data-invoice-sheet] { margin: 0 auto; box-shadow: none; break-inside: avoid; page-break-inside: avoid; }
+          [data-invoice-sheet] { margin: 0 auto; box-shadow: none; break-inside: avoid; page-break-inside: avoid; background: #fff !important; }
           [data-invoice-sheet] thead { display: table-header-group; }
           [data-pdf-keep-together] { break-inside: avoid; }
         }
-        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "10mm" : "4mm"}; }
+        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5 landscape" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
       `}</style>
 
       <div className="mx-auto flex max-w-[297mm] items-center justify-between px-4 pb-4 print:hidden">
@@ -326,16 +325,17 @@ export default function PrintInvoicePage({
             ref={invoiceRef}
             data-invoice-sheet
             style={{ zoom: fitZoom }}
-            className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-[#fffaf0] p-4 text-[#13253f] ${widthClass}`}
+            className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-white p-4 text-[#13253f] ${widthClass}`}
           >
+            <h1 className="-mb-2 text-center text-2xl font-bold tracking-tight text-[#17265c]">{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
               <p className="text-center font-bold text-red-700">
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <div className="flex items-center justify-between gap-5 border-2 border-[#bd862e] bg-[#fffaf0] px-4 py-3">
+            <div className="flex items-center justify-between gap-5 border-2 border-[#17265c] bg-white px-4 py-3">
               <div className="flex min-w-0 flex-1 items-center gap-5">
-                <div className="flex w-[50mm] shrink-0 flex-col items-center justify-center border-r border-[#bd974f] pr-4">
+                <div className="flex w-[43mm] shrink-0 flex-col items-center justify-center border-r border-[#17265c]/40 pr-4">
                   {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -347,10 +347,10 @@ export default function PrintInvoicePage({
                         }
                       }}
                       onError={() => setUseHighResolutionLogo(true)}
-                      className="h-[30mm] w-[42mm] shrink-0 object-contain"
+                      className="h-[23mm] w-[38mm] shrink-0 object-contain"
                     />
                   }
-                  <p className="mt-1 text-center font-serif text-base italic text-[#8a6726]">
+                <p className="mt-1 text-center font-serif text-base italic text-[#17265c]">
                     {organization?.motto || BUSINESS_PROFILE_DEFAULTS.motto}
                   </p>
                 </div>
@@ -374,14 +374,14 @@ export default function PrintInvoicePage({
                 </div>
               </div>
               {
-                <p className="shrink-0 self-start rounded-full border border-[#ddcfad] bg-white px-3 py-1.5 text-sm font-semibold text-[#494033]">
+                <p className="shrink-0 self-start rounded-full border border-[#17265c]/40 bg-white px-3 py-1.5 text-sm font-semibold text-[#17265c]">
                   State: {organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
                 </p>
               }
             </div>
 
             <div className="grid grid-cols-[3fr_1fr] gap-3">
-              <div className="border border-[#bd862e] border-l-4 border-l-[#bd974f] bg-[#fffaf0] p-3">
+              <div className="border border-[#17265c] border-l-4 border-l-[#17265c] bg-white p-3">
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Bill To</p>
                 <p className="text-lg font-bold text-[#28231b]">{customer?.name}</p>
                 {customer?.phone && (
@@ -393,7 +393,7 @@ export default function PrintInvoicePage({
                   </p>
                 )}
               </div>
-              <div className="border border-[#bd862e] bg-[#fffaf0] p-3">
+              <div className="border border-[#17265c] bg-white p-3">
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Invoice Details</p>
                 <p className="font-bold text-[#28231b]">No.: {sale.invoiceNumber}</p>
                 <p>
@@ -402,7 +402,7 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <table className="w-full table-fixed border-collapse border border-[#bd862e] text-sm leading-tight">
+            <table className="w-full table-fixed border-collapse border border-[#17265c] text-sm leading-tight">
               <colgroup>
                 {(sale.isGst
                   ? ["5%", "20%", "10%", "6%", "9%", "9%", "10%", "11%", "10%", "10%"]
@@ -410,33 +410,33 @@ export default function PrintInvoicePage({
                 ).map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>
               <thead>
-                <tr className="bg-[#f6e6c2] text-center text-[#17265c]">
-                  <th className="border border-[#bd862e] px-1 py-2">Sl.No</th>
-                  <th className="border border-[#bd862e] px-1 py-2 text-left">
+                <tr className="bg-[#e5eef8] text-center text-[#17265c]">
+                  <th className="border border-[#17265c] px-1 py-2">Sl.No</th>
+                  <th className="border border-[#17265c] px-1 py-2 text-left">
                     Description
                   </th>
-                  <th className="border border-[#bd862e] px-1 py-2">Purity</th>
-                  <th className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <th className="border border-[#17265c] px-1 py-2">Purity</th>
+                  <th className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Qty
                   </th>
-                  <th className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <th className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Gross Wt
                   </th>
-                  <th className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <th className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Net Wt
                   </th>
-                  <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     Rate(₹)
                   </th>
-                  <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     Making(₹)
                   </th>
                   {sale.isGst && (
-                    <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <th className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       Tax(₹)
                     </th>
                   )}
-                  <th className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     Total(₹)
                   </th>
                 </tr>
@@ -444,91 +444,91 @@ export default function PrintInvoicePage({
               <tbody>
                 {items.map((item, i) => (
                   <tr key={item._id}>
-                    <td className="border border-[#bd862e] px-1 py-2">
+                    <td className="border border-[#17265c] px-1 py-2">
                       {i + 1}
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2">
+                    <td className="border border-[#17265c] px-1 py-2">
                       {item.label}
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2">
+                    <td className="border border-[#17265c] px-1 py-2">
                       {item.purityLabel ?? "—"}
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       1
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.grossWeightMg)}
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.ratePerGramPaise)}
                     </td>
-                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.makingChargePaise)}
                     </td>
                     {sale.isGst && (
-                      <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                      <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                         {formatPaise(item.lineTaxPaise)}
                       </td>
                     )}
-                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.lineTotalPaise)}
                     </td>
                   </tr>
                 ))}
-                <tr className="bg-[#f1e6cd] font-bold">
-                  <td className="border border-[#bd862e] px-1 py-2" colSpan={3}>
+                <tr className="bg-[#e5eef8] font-bold">
+                  <td className="border border-[#17265c] px-1 py-2" colSpan={3}>
                     Sub Total
                   </td>
-                  <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <td className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {items.length}
                   </td>
-                  <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <td className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
                       items.reduce((sum, i) => sum + i.grossWeightMg, 0),
                     )}
                   </td>
-                  <td className="border border-[#bd862e] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <td className="border border-[#17265c] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
                       items.reduce((sum, i) => sum + i.netWeightMg, 0),
                     )}
                   </td>
-                  <td className="border border-[#bd862e] px-1 py-2" />
-                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#17265c] px-1 py-2" />
+                  <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     {formatPaise(
                       items.reduce((sum, i) => sum + i.makingChargePaise, 0),
                     )}
                   </td>
                   {sale.isGst && (
-                    <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(
                         items.reduce((sum, i) => sum + i.lineTaxPaise, 0),
                       )}
                     </td>
                   )}
-                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                     {formatPaise(
                       items.reduce((sum, i) => sum + i.lineTotalPaise, 0),
                     )}
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-[#bd862e] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="whitespace-nowrap border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                  <td className="border border-[#17265c] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="whitespace-nowrap border border-[#17265c] bg-[#e5eef8] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Discount
                   </td>
-                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                  <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                     -{formatPaise(sale.discountPaise)}
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-[#bd862e] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="whitespace-nowrap border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                  <td className="border border-[#17265c] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="whitespace-nowrap border border-[#17265c] bg-[#e5eef8] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Old Item Deduction
                   </td>
-                  <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                  <td className="border border-[#17265c] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                     -{formatPaise(oldGoldExchange?.exchangeValuePaise ?? 0)}
                   </td>
                 </tr>
@@ -539,16 +539,16 @@ export default function PrintInvoicePage({
               data-pdf-keep-together
               className="grid grid-cols-[1.9fr_1fr_1fr] gap-3"
             >
-              <div className="border border-[#bd862e] p-3">
+              <div className="border border-[#17265c] p-3">
                 <p className="font-bold">Amount in words</p>
                 <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
               </div>
-              <div className="border border-[#bd862e] p-3">
+              <div className="border border-[#17265c] p-3">
                 <p className="font-bold">Payment type</p>
                 <p>{paymentTypeLabel}</p>
               </div>
-              <div className="flex flex-col gap-1 border border-[#bd862e] bg-[#f1e6cd] p-3">
-                <div className="flex justify-between border-b border-[#bd862e]/20 pb-1 text-lg font-extrabold">
+              <div className="flex flex-col gap-1 border border-[#17265c] bg-[#e5eef8] p-3">
+                <div className="flex justify-between border-b border-[#17265c]/20 pb-1 text-lg font-extrabold">
                   <span>Grand Total</span>
                   <span className="text-[#191919]">
                     {formatPaise(grandTotalNetPaise)}
@@ -570,7 +570,7 @@ export default function PrintInvoicePage({
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
               </p>
-              <p className="mb-2 shrink-0 rounded-sm border-b-2 border-[#bd974f] bg-[#faf7ef] px-4 py-2 text-lg font-extrabold tracking-tight text-[#28231b]">
+              <p className="mb-2 shrink-0 rounded-sm border-b-2 border-[#17265c] bg-[#ffffff] px-4 py-2 text-lg font-extrabold tracking-tight text-[#28231b]">
                 For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
               </p>
             </div>
@@ -579,6 +579,7 @@ export default function PrintInvoicePage({
           <div
             ref={invoiceRef}
             data-invoice-sheet
+            style={{ zoom: template === "thermal" ? 1 : fitZoom }}
             className={`mx-auto flex flex-col gap-4 bg-white p-6 text-gray-900 shadow-sm print:shadow-none ${widthClass}`}
           >
             <div className="flex items-start justify-between border-b border-gray-200 pb-3">

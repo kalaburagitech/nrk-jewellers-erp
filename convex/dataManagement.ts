@@ -241,21 +241,34 @@ export const remove = mutation({
     const row: any = await ctx.db.get(id);
     if (!row || row.organizationId !== auth.organizationId)
       throw new Error("Record not found");
-    const tables = await readRows(ctx, auth.organizationId);
-    for (const rows of Object.values(tables))
-      for (const related of rows) {
-        if (
-          !related.deletedAt &&
-          related._id !== id &&
-          Object.entries(related).some(
-            ([key, value]) =>
-              key !== "organizationId" && key !== "_id" && value === id,
+    if (args.table === "products") {
+      // Product references are indexed, so deleting one item stays quick even
+      // when the business has a long transaction history.
+      const [boxItems, stockMovements, purchaseItems, saleItems] = await Promise.all([
+        ctx.db.query("boxItems").withIndex("by_product", (q) => q.eq("productId", id as any)).collect(),
+        ctx.db.query("stockMovements").withIndex("by_product", (q) => q.eq("productId", id as any)).collect(),
+        ctx.db.query("purchaseItems").withIndex("by_product", (q) => q.eq("productId", id as any)).collect(),
+        ctx.db.query("saleItems").withIndex("by_product", (q) => q.eq("productId", id as any)).collect(),
+      ]);
+      if ([...boxItems, ...stockMovements, ...purchaseItems, ...saleItems].some((related) => !related.deletedAt))
+        throw new Error("This item is linked to stock or a bill, so it cannot be deleted. You can mark it inactive from the item settings instead.");
+    } else {
+      const tables = await readRows(ctx, auth.organizationId);
+      for (const rows of Object.values(tables))
+        for (const related of rows) {
+          if (
+            !related.deletedAt &&
+            related._id !== id &&
+            Object.entries(related).some(
+              ([key, value]) =>
+                key !== "organizationId" && key !== "_id" && value === id,
+            )
           )
-        )
-          throw new Error(
-            "This record is used by other records. Delete or reverse the related records first.",
-          );
-      }
+            throw new Error(
+              "This record is used by other records. Delete or reverse the related records first.",
+            );
+        }
+    }
     if ((row.currentBalancePaise ?? row.openingBalancePaise ?? 0) !== 0)
       throw new Error("Settle the outstanding balance before deletion");
     await ctx.db.patch(id, {

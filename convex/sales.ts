@@ -16,8 +16,8 @@ export const list = query({
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(500);
-    return rows.filter((r) => r.documentType === "sales_invoice").slice(0, 200);
+      .collect();
+    return rows.filter((r) => r.documentType === "sales_invoice");
   },
 });
 

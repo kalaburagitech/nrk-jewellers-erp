@@ -12,7 +12,7 @@ export const list = query({
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(500);
+      .collect();
   },
 });
 
