@@ -516,7 +516,7 @@ export default function PrintInvoicePage({
                 </tr>
                 <tr>
                   <td className="border border-[#bd862e] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right font-semibold" colSpan={2}>
+                  <td className="whitespace-nowrap border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Discount
                   </td>
                   <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
@@ -525,7 +525,7 @@ export default function PrintInvoicePage({
                 </tr>
                 <tr>
                   <td className="border border-[#bd862e] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right font-semibold" colSpan={2}>
+                  <td className="whitespace-nowrap border border-[#bd862e] bg-[#f1e6cd] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Old Item Deduction
                   </td>
                   <td className="border border-[#bd862e] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
