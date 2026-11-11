@@ -18,7 +18,32 @@ export const list = query({
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
-    return rows.filter((r) => (r.documentType ?? "purchase_invoice") === "purchase_invoice");
+    const purchases = rows.filter((r) => (r.documentType ?? "purchase_invoice") === "purchase_invoice");
+    const [items, products, payments] = await Promise.all([
+      ctx.db.query("purchaseItems").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("payments").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+    ]);
+    const productById = new Map(products.map((product) => [String(product._id), product]));
+    return purchases.map((purchase) => {
+      const purchaseItems = items.filter((item) => item.purchaseId === purchase._id);
+      const billPayments = payments.filter((payment) => payment.sourceTable === "purchases" && payment.sourceId === purchase._id);
+      const modes = [...new Set(billPayments.map((payment) => payment.mode.replaceAll("_", " ")))];
+      const breakup = new Map<string, number>();
+      for (const payment of billPayments) breakup.set(payment.mode, (breakup.get(payment.mode) ?? 0) + payment.amountPaise);
+      const descriptions = purchaseItems.map((item) => productById.get(String(item.productId))?.customFields?.description?.trim())
+        .filter((value): value is string => Boolean(value));
+      return {
+        ...purchase,
+        reportItemDetails: purchaseItems.map((item) => `${item.label} · ${(item.netWeightMg / 1000).toFixed(3)} g`).join("; ") || "—",
+        reportDescription: [...new Set(descriptions)].join("; ") || "—",
+        reportPaymentType: modes.join(", ") || "—",
+        reportPaymentBreakup: [...breakup.entries()].map(([mode, amount]) => `${mode.replaceAll("_", " ")}: ₹${(amount / 100).toFixed(2)}`).join("; ") || "—",
+      };
+    });
   },
 });
 

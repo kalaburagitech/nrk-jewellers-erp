@@ -40,6 +40,7 @@ export const create = mutation({
     metal: v.union(v.literal("gold"), v.literal("silver")),
     description: v.string(),
     weightMg: v.number(),
+    pieceCount: v.optional(v.number()),
     principalPaise: v.number(),
     monthlyInterestBasisPoints: v.number(),
     issuedAt: v.number(),
@@ -67,6 +68,7 @@ export const create = mutation({
         args.dueAt,
       ].every(Number.isSafeInteger) ||
       args.weightMg <= 0 ||
+      (args.pieceCount !== undefined && (!Number.isSafeInteger(args.pieceCount) || args.pieceCount < 1)) ||
       args.principalPaise <= 0 ||
       args.monthlyInterestBasisPoints < 0 ||
       args.monthlyInterestBasisPoints > 10000 ||

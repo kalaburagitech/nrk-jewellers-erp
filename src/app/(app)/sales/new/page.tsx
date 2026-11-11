@@ -512,7 +512,7 @@ export default function NewBillPage() {
                 </div>
                 <div>
                   <Label className="mb-2 block">Invoice serial number</Label>
-                  <Input aria-label="Invoice serial number" maxLength={60} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} placeholder="Enter number / leave blank for auto" className="mb-3 w-64" />
+                  <Input aria-label="Invoice serial number" inputMode="numeric" pattern="[0-9]*" maxLength={18} value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value.replace(/\D/g, ""))} placeholder="Numbers only / blank for auto" className="mb-3 w-64" />
                   <Label className="mb-2 block">Bill date</Label>
                   <Input
                     type="date"

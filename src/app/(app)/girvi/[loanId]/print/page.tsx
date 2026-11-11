@@ -28,7 +28,7 @@ export default function GirviPrintPage({ params }: { params: Promise<{ loanId: s
       </header>
       <section className="my-3 grid grid-cols-2 gap-3">
         <div className="border border-[#8c7b47] p-3"><p className="font-bold">Customer</p><p className="text-base font-semibold">{loan.customerName}</p><p>{loan.phone}</p></div>
-        <div className="border border-[#8c7b47] p-3"><p className="font-bold">Pledged metal</p><p className="capitalize">{loan.metal} · {loan.description}</p><p>Weight: {mgToGramsDisplay(loan.weightMg)} g</p><p>Storage: {loan.storageLocation}</p></div>
+        <div className="border border-[#8c7b47] p-3"><p className="font-bold">Pledged metal</p><p className="capitalize">{loan.metal} · {loan.description}</p><p>Weight: {mgToGramsDisplay(loan.weightMg)} g</p>{loan.pieceCount !== undefined && <p>Pieces: {loan.pieceCount} pcs</p>}<p>Storage: {loan.storageLocation}</p></div>
       </section>
       <section className="grid grid-cols-3 gap-3">
         <div className="border border-[#8c7b47] p-3"><p className="font-semibold">Loan principal</p><p className="text-lg font-bold">{formatPaise(loan.principalPaise)}</p></div>

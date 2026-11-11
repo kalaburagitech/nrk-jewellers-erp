@@ -89,6 +89,59 @@ export const createCompany = mutation({
   },
 });
 
+/** Owner-only company rename. Company records and membership remain unchanged. */
+export const renameCompany = mutation({
+  args: { organizationId: v.id("organizations"), name: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Sign in to rename a company.");
+    const membership = await ctx.db.query("memberships")
+      .withIndex("by_user_and_org", (q) => q.eq("userId", userId).eq("organizationId", args.organizationId))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined)).first();
+    if (membership?.role !== "owner") throw new Error("Only this company's owner can rename it.");
+    const organization = await ctx.db.get(args.organizationId);
+    if (!organization || organization.deletedAt) throw new Error("This company is no longer available.");
+    const name = args.name.trim();
+    if (!name) throw new Error("Enter a company name.");
+    const duplicate = await ctx.db.query("organizations")
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .filter((q) => q.eq(q.field("name"), name)).first();
+    if (duplicate && duplicate._id !== args.organizationId) throw new Error("A company with this name already exists.");
+    await ctx.db.patch(args.organizationId, { name });
+  },
+});
+
+/** Soft-delete an owned company; prevent removing the active or final owner workspace. */
+export const deleteCompany = mutation({
+  args: { organizationId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Sign in to delete a company.");
+    const membership = await ctx.db.query("memberships")
+      .withIndex("by_user_and_org", (q) => q.eq("userId", userId).eq("organizationId", args.organizationId))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined)).first();
+    if (membership?.role !== "owner") throw new Error("Only this company's owner can delete it.");
+    const organization = await ctx.db.get(args.organizationId);
+    if (!organization || organization.deletedAt) throw new Error("This company is already unavailable.");
+    const current = await ctx.db.query("currentOrganizations").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+    if (current?.organizationId === args.organizationId) throw new Error("Switch to another company before deleting this one.");
+    const otherOwned = await ctx.db.query("memberships")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect();
+    const ownerElsewhere = await Promise.all(otherOwned.filter((row) => row.organizationId !== args.organizationId && row.role === "owner")
+      .map((row) => ctx.db.get(row.organizationId)));
+    if (!ownerElsewhere.some((row) => row && !row.deletedAt)) throw new Error("Keep at least one owned company active before deleting this one.");
+    const members = await ctx.db.query("memberships").withIndex("by_org", (q) => q.eq("organizationId", args.organizationId)).collect();
+    const now = Date.now();
+    await ctx.db.patch(args.organizationId, { deletedAt: now });
+    for (const row of members) if (!row.deletedAt) await ctx.db.patch(row._id, { deletedAt: now, status: "disabled" });
+    return { deleted: true };
+  },
+});
+
 /**
  * Idempotent first-run bootstrap: the very first person to sign in becomes
  * the Owner of a freshly created organization. Anyone who signs in after

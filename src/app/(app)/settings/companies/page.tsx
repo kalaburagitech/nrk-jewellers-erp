@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 const TYPES = [
   { value: "daily_sales", label: "Daily sales company" },
@@ -30,6 +31,9 @@ export default function CompaniesPage() {
   const access = useQuery(api.organizations.getMyAccess);
   const createCompany = useMutation(api.organizations.createCompany);
   const selectCompany = useMutation(api.organizations.selectCompany);
+  const renameCompany = useMutation(api.organizations.renameCompany);
+  const deleteCompany = useMutation(api.organizations.deleteCompany);
+  const companies = access?.companies ?? [];
   const [name, setName] = useState("");
   const [companyType, setCompanyType] = useState<(typeof TYPES)[number]["value"]>("daily_sales");
   const [scope, setScope] = useState<CompanyScope>("all");
@@ -39,8 +43,8 @@ export default function CompaniesPage() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [detailsCompany, setDetailsCompany] = useState<(typeof companies)[number] | null>(null);
 
-  const companies = access?.companies ?? [];
   const currentId = access?.organization?._id;
   const isOwner = access?.membership?.role === "owner";
   const filteredCompanies = useMemo(() => {
@@ -84,6 +88,29 @@ export default function CompaniesPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function rename(company: (typeof companies)[number]) {
+    const nextName = window.prompt("Enter the new company name", company.name)?.trim();
+    if (!nextName || nextName === company.name) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await renameCompany({ organizationId: company.organizationId, name: nextName });
+      setMessage(`Company renamed to ${nextName}.`);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not rename this company."));
+    } finally { setBusy(false); }
+  }
+
+  async function removeCompany(company: (typeof companies)[number]) {
+    if (!window.confirm(`Delete ${company.name}? Its records will be retained as a soft-deleted company and will no longer appear in the workspace list.`)) return;
+    setBusy(true); setError(""); setMessage("");
+    try {
+      await deleteCompany({ organizationId: company.organizationId });
+      setMessage(`${company.name} was deleted. Its records were retained.`);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not delete this company."));
+    } finally { setBusy(false); }
   }
 
   if (access === undefined || access === null || access.membership === null) {
@@ -169,7 +196,10 @@ export default function CompaniesPage() {
                     <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" aria-label={`More options for ${company.name}`} title="More company options"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem disabled={busy || current} onSelect={() => void openCompany(company)}>{current ? "Current workspace" : "Open workspace"}</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setDetailsCompany(company)}>View all details</DropdownMenuItem>
+                      {company.role === "owner" && <DropdownMenuItem disabled={busy} onSelect={() => void rename(company)}>Rename company</DropdownMenuItem>}
                       <DropdownMenuItem asChild><Link href="/backup">Backup and restore</Link></DropdownMenuItem>
+                      {company.role === "owner" && <DropdownMenuItem disabled={busy || current} className="text-destructive focus:text-destructive" onSelect={() => void removeCompany(company)}>Delete company</DropdownMenuItem>}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -189,6 +219,17 @@ export default function CompaniesPage() {
       {!isOwner && <p className="flex items-center gap-2 text-sm text-muted-foreground"><ShieldCheck className="h-4 w-4" />Only the owner can create another company workspace.</p>}
       {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
       {message && <p role="status" className="rounded-lg border border-primary/20 bg-accent/30 p-3 text-sm">{message}</p>}
+      <Dialog open={detailsCompany !== null} onOpenChange={(open) => !open && setDetailsCompany(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{detailsCompany?.name ?? "Company details"}</DialogTitle></DialogHeader>
+          {detailsCompany && <dl className="grid gap-3 text-sm sm:grid-cols-[140px_1fr]">
+            <dt className="text-muted-foreground">Purpose</dt><dd>{companyTypeName(detailsCompany.companyType)}</dd>
+            <dt className="text-muted-foreground">Access</dt><dd>{detailsCompany.role === "owner" ? "Owner" : detailsCompany.role.replaceAll("_", " ")}</dd>
+            <dt className="text-muted-foreground">Created</dt><dd>{detailsCompany.createdAt ? new Date(detailsCompany.createdAt).toLocaleString("en-IN") : "—"}</dd>
+            <dt className="text-muted-foreground">Workspace</dt><dd>{detailsCompany.organizationId === currentId ? "Current company" : "Available company"}</dd>
+          </dl>}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

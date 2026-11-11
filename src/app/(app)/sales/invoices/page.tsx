@@ -161,6 +161,10 @@ export default function SalesInvoicesPage() {
                 { id: "payment", label: "Payment Status", value: (s) => s.amountPaidPaise >= s.totalPaise ? "Paid" : s.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
                 { id: "phone", label: "Party's Phone No.", value: (s) => customers?.find((party) => party._id === s.customerId)?.phone ?? "—" },
                 { id: "gstin", label: "Party's GSTIN", value: (s) => customers?.find((party) => party._id === s.customerId)?.gstin ?? "—" },
+                { id: "items", label: "Item Details", value: (s) => s.reportItemDetails },
+                { id: "description", label: "Description", value: (s) => s.reportDescription },
+                { id: "paymentType", label: "Payment Type", value: (s) => s.reportPaymentType },
+                { id: "paymentBreakup", label: "Show Payment Breakup", value: (s) => s.reportPaymentBreakup },
               ]}
             />
           )}

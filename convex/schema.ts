@@ -24,7 +24,7 @@ export default defineSchema({
   girviLoans: defineTable({
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"), ticketNumber: v.string(), customerName: v.string(), phone: v.string(),
-    metal: v.union(v.literal("gold"), v.literal("silver")), description: v.string(), weightMg: v.number(), storageLocation: v.string(),
+    metal: v.union(v.literal("gold"), v.literal("silver")), description: v.string(), weightMg: v.number(), pieceCount: v.optional(v.number()), storageLocation: v.string(),
     accountId: v.id("bankAccounts"), principalPaise: v.number(), monthlyInterestBasisPoints: v.number(), principalRepaidPaise: v.number(), interestReceivedPaise: v.number(),
     issuedAt: v.number(), dueAt: v.number(), status: v.union(v.literal("active"), v.literal("released"), v.literal("cancelled")),
     releasedAt: v.optional(v.number()), createdByUserId: v.id("users"), createdAt: v.number(),
@@ -351,7 +351,7 @@ export default defineSchema({
     makingChargePaise: v.number(),
     stoneChargePaise: v.number(),
     lineTotalPaise: v.number(),
-  }).index("by_purchase", ["purchaseId"]).index("by_product", ["productId"]),
+  }).index("by_purchase", ["purchaseId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Sales ----------
   sales: defineTable({
@@ -405,7 +405,7 @@ export default defineSchema({
     taxConfigurationId: v.optional(v.id("taxConfigurations")),
     lineTaxPaise: v.number(),
     lineTotalPaise: v.number(),
-  }).index("by_sale", ["saleId"]).index("by_product", ["productId"]),
+  }).index("by_sale", ["saleId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Payments & ledgers ----------
   payments: defineTable({

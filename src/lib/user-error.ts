@@ -17,6 +17,9 @@ export function getUserErrorMessage(error: unknown, fallback: string): string {
   if (/invoice number/.test(lower) && /(already exists|already in use|duplicate)/.test(lower)) {
     return "That invoice number is already in use. Please enter a different number.";
   }
+  if (/invoice number/.test(lower) && /digits only/.test(lower)) {
+    return "Use numbers only for the invoice serial number.";
+  }
   if (/ticket number/.test(lower) && /(already exists|already in use|duplicate)/.test(lower)) {
     return "That ticket number is already in use. Please enter a different number.";
   }

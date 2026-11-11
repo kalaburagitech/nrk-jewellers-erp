@@ -18,7 +18,38 @@ export const list = query({
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
-    return rows.filter((r) => r.documentType === "sales_invoice");
+    const sales = rows.filter((r) => r.documentType === "sales_invoice");
+    const [items, products, payments] = await Promise.all([
+      ctx.db.query("saleItems").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("payments").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+    ]);
+    const productById = new Map(products.map((product) => [String(product._id), product]));
+    return sales.map((sale) => {
+      const saleItems = items.filter((item) => item.saleId === sale._id);
+      const salePayments = payments.filter((payment) => payment.sourceTable === "sales" && payment.sourceId === sale._id);
+      const paymentTypes = [...new Set(salePayments.map((payment) => payment.mode.replaceAll("_", " ")))];
+      const breakup = new Map<string, number>();
+      for (const payment of salePayments) breakup.set(payment.mode, (breakup.get(payment.mode) ?? 0) + payment.amountPaise);
+      const itemDetails = saleItems.map((item) => {
+        const product = productById.get(String(item.productId));
+        return `${product?.name ?? "Item"} · ${item.netWeightMg ? (item.netWeightMg / 1000).toFixed(3) + " g" : ""}`.trim();
+      });
+      const descriptions = saleItems.map((item) => {
+        const fields = productById.get(String(item.productId))?.customFields;
+        return fields?.description?.trim();
+      }).filter((value): value is string => Boolean(value));
+      return {
+        ...sale,
+        reportItemDetails: itemDetails.join("; ") || "—",
+        reportDescription: [...new Set(descriptions)].join("; ") || "—",
+        reportPaymentType: paymentTypes.join(", ") || "—",
+        reportPaymentBreakup: [...breakup.entries()].map(([mode, amount]) => `${mode.replaceAll("_", " ")}: ₹${(amount / 100).toFixed(2)}`).join("; ") || "—",
+      };
+    });
   },
 });
 
@@ -548,9 +579,18 @@ export const create = mutation({
 
     const branchId = await resolveBranchId(ctx, auth.organizationId, auth.branchId);
     let invoiceNumber = args.invoiceNumber?.trim();
+    if (invoiceNumber && !/^\d+$/.test(invoiceNumber)) throw new Error("Invoice number must contain digits only.");
     if (!invoiceNumber) {
-      const existingNumbers = new Set((await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).collect()).map(row => row.invoiceNumber.toLowerCase()));
-      do { invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "sales_invoice", "INV-"); } while (existingNumbers.has(invoiceNumber.toLowerCase()));
+      const existingNumbers = (await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).collect()).map(row => row.invoiceNumber);
+      const usedNumbers = new Set(existingNumbers.map((number) => number.toLowerCase()));
+      const highestSerial = existingNumbers.reduce((highest, number) => {
+        if (!/^\d+$/.test(number)) return highest;
+        const serial = Number(number);
+        return Number.isSafeInteger(serial) ? Math.max(highest, serial) : highest;
+      }, 0);
+      do {
+        invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "sales_invoice", "");
+      } while (usedNumbers.has(invoiceNumber.toLowerCase()) || Number(invoiceNumber) <= highestSerial);
     }
     await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber);
     const billDate = args.billDate ?? Date.now();
@@ -626,6 +666,7 @@ export const update = mutation({
     if (args.invoiceNumber !== undefined) {
       const invoiceNumber = args.invoiceNumber.trim();
       if (!invoiceNumber) throw new Error("Invoice number is required");
+      if (invoiceNumber !== sale.invoiceNumber && !/^\d+$/.test(invoiceNumber)) throw new Error("New invoice numbers must contain digits only.");
       await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber, sale._id);
       await ctx.db.patch(sale._id, { invoiceNumber });
     }

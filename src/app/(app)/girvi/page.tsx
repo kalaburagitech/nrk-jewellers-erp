@@ -57,7 +57,7 @@ function RepayDialog({
           <div className="flex items-center justify-between gap-3"><DialogTitle>Ticket {loan.ticketNumber} · {loan.customerName}</DialogTitle><Button variant="outline" size="sm" asChild><Link href={`/girvi/${loan._id}/print`} target="_blank"><Printer className="h-4 w-4" />Print ticket</Link></Button></div>
         </DialogHeader>
         <p className="text-sm">
-          {loan.description} · {(loan.weightMg / 1000).toFixed(3)} g ·{" "}
+          {loan.description} · {(loan.weightMg / 1000).toFixed(3)} g{loan.pieceCount ? ` · ${loan.pieceCount} pcs` : ""} ·{" "}
           {loan.storageLocation}
         </p>
         <p>
@@ -336,7 +336,7 @@ export default function GirviPage() {
                   <td className="p-4">
                     {loan.description}
                     <p className="text-muted-foreground">
-                      {loan.metal} · {(loan.weightMg / 1000).toFixed(3)}g
+                      {loan.metal} · {(loan.weightMg / 1000).toFixed(3)}g{loan.pieceCount ? ` · ${loan.pieceCount} pcs` : ""}
                     </p>
                     <p>{loan.storageLocation}</p>
                   </td>
@@ -434,6 +434,7 @@ export default function GirviPage() {
                   description: val("description"),
                   storageLocation: val("storageLocation"),
                   weightMg: Math.round(Number(val("weight")) * 1000),
+                  pieceCount: val("pieceCount") ? Math.round(Number(val("pieceCount"))) : undefined,
                   principalPaise: rupeesToPaise(val("principal")) ?? -1,
                   monthlyInterestBasisPoints: Math.round(
                     Number(val("rate")) * 100,
@@ -460,6 +461,7 @@ export default function GirviPage() {
               ["description", "Item description / purity", "text"],
               ["storageLocation", "Packet / locker location", "text"],
               ["weight", "Net metal weight (g)", "number"],
+              ["pieceCount", "Piece count (pcs, optional)", "number"],
               ["principal", "Loan issued (₹)", "number"],
               ["rate", "Monthly interest (%)", "number"],
               ["issuedAt", "Issued on", "date"],

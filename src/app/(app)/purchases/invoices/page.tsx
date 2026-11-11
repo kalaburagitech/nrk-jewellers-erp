@@ -177,6 +177,10 @@ export default function PurchaseInvoicesPage() {
                 { id: "status", label: "Payment Status", value: (p) => p.amountPaidPaise >= p.totalPaise ? "Paid" : p.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
                 { id: "phone", label: "Party's Phone No.", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.phone ?? "—" },
                 { id: "gstin", label: "Party's GSTIN", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.gstin ?? "—" },
+                { id: "items", label: "Item Details", value: (p) => p.reportItemDetails },
+                { id: "description", label: "Description", value: (p) => p.reportDescription },
+                { id: "paymentType", label: "Payment Type", value: (p) => p.reportPaymentType },
+                { id: "paymentBreakup", label: "Show Payment Breakup", value: (p) => p.reportPaymentBreakup },
               ]}
             />
           )}
