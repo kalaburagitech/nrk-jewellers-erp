@@ -186,7 +186,7 @@ export default function BackupPage() {
               disabled={busy || !allowed}
               onClick={() => run(async () => {
                 await download();
-                setMessage("Safety backup downloaded. Confirm the company name and enter your MPIN to continue.");
+                setMessage("Safety backup downloaded. Confirm the company name and enter your passcode to continue.");
               })}
             >
               <Download />
@@ -204,7 +204,7 @@ export default function BackupPage() {
                 />
               </label>
               <label className="space-y-1 text-sm font-medium">
-                Owner app MPIN
+                Owner passcode
                 <input
                   type="password"
                   inputMode="numeric"

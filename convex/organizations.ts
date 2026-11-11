@@ -30,7 +30,7 @@ export const getMyAccess = query({
     const activeMemberships = await Promise.all([...uniqueMemberships.values()].map(async (item) => {
       const organization = await ctx.db.get(item.organizationId);
       if (!organization || organization.deletedAt) return null;
-      return { membershipId: item._id, organizationId: item.organizationId, role: item.role, name: organization.name, companyType: organization.companyType };
+      return { membershipId: item._id, organizationId: item.organizationId, role: item.role, name: organization.name, companyType: organization.companyType, createdAt: organization.createdAt };
     }));
     const organization = await ctx.db.get(membership.organizationId);
     const user = await ctx.db.get(userId);

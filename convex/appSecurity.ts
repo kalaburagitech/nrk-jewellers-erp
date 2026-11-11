@@ -60,14 +60,14 @@ export const getMyAppPinStatus = query({
 export const setMyAppPin = action({
   args: { pin: v.string() },
   handler: async (ctx, args) => {
-    if (!PIN_PATTERN.test(args.pin)) throw new Error("Choose a 4 to 6 digit MPIN.");
+    if (!PIN_PATTERN.test(args.pin)) throw new Error("Choose a 4 to 6 digit passcode.");
     const access = await ctx.runQuery(api.organizations.getMyAccess, {});
-    if (!access?.user || !access.membership) throw new Error("Sign in to set an app MPIN.");
+    if (!access?.user || !access.membership) throw new Error("Sign in to set an app passcode.");
 
     const existing = await ctx.runQuery(internal.appSecurityInternal.getPinRecord, {
       userId: access.user._id,
     });
-    if (existing) throw new Error("An app MPIN is already set for this account.");
+    if (existing) throw new Error("A passcode is already set for this account.");
 
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const pinSalt = bytesToHex(salt);
@@ -100,9 +100,9 @@ export const verifyMyAppPin = action({
 export const resetMyAppPinWithPassword = action({
   args: { accountPassword: v.string(), pin: v.string() },
   handler: async (ctx, args) => {
-    if (!PIN_PATTERN.test(args.pin)) throw new Error("Choose a 4 to 6 digit MPIN.");
+    if (!PIN_PATTERN.test(args.pin)) throw new Error("Choose a 4 to 6 digit passcode.");
     const access = await ctx.runQuery(api.organizations.getMyAccess, {});
-    if (!access?.user?.email || !access.membership) throw new Error("Sign in again to reset your app MPIN.");
+    if (!access?.user?.email || !access.membership) throw new Error("Sign in again to reset your app passcode.");
     const verified = await retrieveAccount(ctx, {
       provider: "password",
       account: { id: access.user.email.toLowerCase(), secret: args.accountPassword },

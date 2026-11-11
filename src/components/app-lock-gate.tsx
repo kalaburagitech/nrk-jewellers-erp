@@ -18,6 +18,50 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+function PasscodeBoxes({
+  id,
+  label,
+  value,
+  onChange,
+  autoFocus = false,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="relative w-fit max-w-full rounded-xl focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+      <div aria-hidden="true" className="grid grid-cols-6 gap-2">
+        {Array.from({ length: 6 }, (_, index) => (
+          <span
+            key={index}
+            className={`flex h-11 w-8 items-center justify-center rounded-lg border bg-background sm:h-14 sm:w-12 ${index === Math.min(value.length, 5) ? "border-primary" : "border-input"}`}
+          >
+            {value[index] ? <span className="h-2.5 w-2.5 rounded-full bg-foreground" /> : null}
+          </span>
+        ))}
+      </div>
+      <input
+        id={id}
+        aria-label={label}
+        type="password"
+        inputMode="numeric"
+        autoComplete="off"
+        pattern="[0-9]{4,6}"
+        minLength={4}
+        maxLength={6}
+        required
+        autoFocus={autoFocus}
+        value={value}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 6))}
+        className="absolute inset-0 z-10 h-full w-full cursor-text opacity-0"
+      />
+    </div>
+  );
+}
+
 type AppLockControls = { lock: () => void; clear: () => void };
 const AppLockContext = createContext<AppLockControls>({ lock: () => {}, clear: () => {} });
 
@@ -79,11 +123,11 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
     event.preventDefault();
     setError(null);
     if (!/^\d{4,6}$/.test(pin)) {
-      setError("Enter a 4 to 6 digit MPIN.");
+      setError("Enter your 4 to 6 digit passcode.");
       return;
     }
     if (!pinStatus?.configured && pin !== confirmPin) {
-      setError("The MPIN entries don’t match. Please try again.");
+      setError("The passcodes don’t match. Please try again.");
       return;
     }
 
@@ -92,7 +136,7 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
       if (pinStatus?.configured) {
         const result = await verifyPin({ pin });
         if (!result.valid) {
-          setError("That MPIN doesn’t match. Please try again.");
+          setError("That passcode doesn’t match. Please try again.");
           return;
         }
       } else {
@@ -100,7 +144,7 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
       }
       finishUnlock();
     } catch {
-      setError("We couldn’t verify the MPIN. Please try again.");
+      setError("We couldn’t verify the passcode. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -115,8 +159,8 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
     event.preventDefault();
     setError(null);
     setRecoveryMessage("");
-    if (!/^\d{4,6}$/.test(recoveryPin)) { setError("Choose a 4 to 6 digit MPIN."); return; }
-    if (recoveryPin !== recoveryConfirmPin) { setError("The new MPIN entries don’t match."); return; }
+    if (!/^\d{4,6}$/.test(recoveryPin)) { setError("Choose a 4 to 6 digit passcode."); return; }
+    if (recoveryPin !== recoveryConfirmPin) { setError("The new passcodes don’t match."); return; }
     setBusy(true);
     try {
       await resetPin({ accountPassword, pin: recoveryPin });
@@ -126,10 +170,10 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
       setRecoveryPin("");
       setRecoveryConfirmPin("");
       setError(null);
-      setRecoveryMessage("MPIN updated. Unlocking your workspace…");
+      setRecoveryMessage("Passcode updated. Unlocking your workspace…");
       setUnlocked(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not reset your MPIN. Please try again.");
+      setError(e instanceof Error ? e.message.replaceAll("MPIN", "passcode") : "Could not reset your passcode. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -156,65 +200,44 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
           <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
             {settingUp ? <ShieldCheck className="h-6 w-6" /> : <KeyRound className="h-6 w-6" />}
           </div>
-          <CardTitle>{settingUp ? "Set your app MPIN" : "Unlock NRK Jewellers ERP"}</CardTitle>
+          <CardTitle>{settingUp ? "Create your passcode" : "Unlock NRK Jewellers ERP"}</CardTitle>
           <CardDescription>
             {settingUp
-              ? "Create a 4 to 6 digit MPIN for quickly unlocking this software."
-              : "Enter your MPIN to continue to your workspace."}
+              ? "Choose a 4 to 6 digit passcode to unlock your workspace."
+              : "Enter your passcode to continue to your workspace."}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form className="grid gap-4" onSubmit={handleSubmit}>
             <div className="grid gap-2">
-              <Label htmlFor="app-mpin">{settingUp ? "New MPIN" : "MPIN"}</Label>
-              <Input
-                autoFocus
-                id="app-mpin"
-                type="password"
-                inputMode="numeric"
-                autoComplete="new-password"
-                pattern="[0-9]{4,6}"
-                maxLength={6}
-                value={pin}
-                onChange={(event) => setPinValue(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                required
-              />
+              <Label htmlFor="app-passcode">{settingUp ? "New passcode" : "Passcode"}</Label>
+              <PasscodeBoxes id="app-passcode" label={settingUp ? "New passcode" : "Passcode"} value={pin} onChange={setPinValue} autoFocus />
             </div>
             {settingUp && (
               <div className="grid gap-2">
-                <Label htmlFor="app-mpin-confirm">Confirm MPIN</Label>
-                <Input
-                  id="app-mpin-confirm"
-                  type="password"
-                  inputMode="numeric"
-                  autoComplete="new-password"
-                  pattern="[0-9]{4,6}"
-                  maxLength={6}
-                  value={confirmPin}
-                  onChange={(event) => setConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                  required
-                />
+                <Label htmlFor="app-passcode-confirm">Confirm passcode</Label>
+                <PasscodeBoxes id="app-passcode-confirm" label="Confirm passcode" value={confirmPin} onChange={setConfirmPin} />
               </div>
             )}
             {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <p className="text-xs text-muted-foreground">
-              Your account stays signed in. The MPIN only locks and unlocks this app; it does not sign you out.
+              Your account stays signed in. The passcode only locks and unlocks this app; it does not sign you out.
             </p>
             <Button type="submit" disabled={busy}>
-              {busy ? "Please wait…" : settingUp ? "Save MPIN and continue" : "Unlock app"}
+              {busy ? "Please wait…" : settingUp ? "Save passcode and continue" : "Unlock app"}
             </Button>
           </form>
           {!settingUp && (
             <div className="mt-3 grid gap-2">
               <Button variant="ghost" className="w-full" onClick={() => { setShowRecovery((shown) => !shown); setError(null); setRecoveryMessage(""); }}>
-                {showRecovery ? "Back to MPIN" : "Forgot MPIN? Reset with account password"}
+                {showRecovery ? "Back to passcode" : "Forgot passcode? Reset with account password"}
               </Button>
               {showRecovery && <form className="grid gap-3 rounded-lg border p-3" onSubmit={handlePinRecovery}>
-                <p className="text-sm text-muted-foreground">Verify your account password to choose a new MPIN. You’ll stay signed in.</p>
+                <p className="text-sm text-muted-foreground">Verify your account password to choose a new passcode. You’ll stay signed in.</p>
                 <div className="grid gap-2"><Label htmlFor="mpin-account-password">Account password</Label><Input id="mpin-account-password" type="password" autoComplete="current-password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} required /></div>
-                <div className="grid gap-2"><Label htmlFor="mpin-recovery-new">New MPIN</Label><Input id="mpin-recovery-new" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={recoveryPin} onChange={(event) => setRecoveryPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required /></div>
-                <div className="grid gap-2"><Label htmlFor="mpin-recovery-confirm">Confirm new MPIN</Label><Input id="mpin-recovery-confirm" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={recoveryConfirmPin} onChange={(event) => setRecoveryConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required /></div>
-                <Button type="submit" disabled={busy}>{busy ? "Verifying…" : "Verify and reset MPIN"}</Button>
+                <div className="grid gap-2"><Label htmlFor="mpin-recovery-new">New passcode</Label><PasscodeBoxes id="mpin-recovery-new" label="New passcode" value={recoveryPin} onChange={setRecoveryPin} /></div>
+                <div className="grid gap-2"><Label htmlFor="mpin-recovery-confirm">Confirm new passcode</Label><PasscodeBoxes id="mpin-recovery-confirm" label="Confirm new passcode" value={recoveryConfirmPin} onChange={setRecoveryConfirmPin} /></div>
+                <Button type="submit" disabled={busy}>{busy ? "Verifying…" : "Verify and reset passcode"}</Button>
               </form>}
               {recoveryMessage && <p role="status" className="text-sm text-success">{recoveryMessage}</p>}
               <Button variant="ghost" className="w-full" onClick={() => void handleSignOut()}>

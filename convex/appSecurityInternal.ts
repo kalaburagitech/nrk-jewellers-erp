@@ -25,7 +25,7 @@ export const savePin = internalMutation({
       .query("appSecurity")
       .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .unique();
-    if (existing) throw new Error("An app MPIN is already set for this account.");
+    if (existing) throw new Error("A passcode is already set for this account.");
     const now = Date.now();
     await ctx.db.insert("appSecurity", { ...args, createdAt: now, updatedAt: now });
   },

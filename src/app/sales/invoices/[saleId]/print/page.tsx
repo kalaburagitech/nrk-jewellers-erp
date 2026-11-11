@@ -37,8 +37,8 @@ const DOCUMENT_TITLE: Record<string, string> = {
 };
 
 const TEMPLATES = [
-  { value: "full-a4", label: "A4 Landscape · Reference Layout" },
-  { value: "half-a4", label: "A5 Landscape" },
+  { value: "half-a4", label: "A5 Landscape · NRK Invoice" },
+  { value: "full-a4", label: "A4 Landscape" },
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
 
@@ -131,7 +131,7 @@ export default function PrintInvoicePage({
   const data = useQuery(api.sales.getInvoiceData, {
     saleId: saleId as Id<"sales">,
   });
-  const [template, setTemplate] = useState<Template>("full-a4");
+  const [template, setTemplate] = useState<Template>("half-a4");
   const [sharing, setSharing] = useState(false);
   const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
@@ -282,6 +282,14 @@ export default function PrintInvoicePage({
           [data-invoice-sheet] thead { display: table-header-group; }
           [data-pdf-keep-together] { break-inside: avoid; }
         }
+        [data-invoice-compact="true"] [data-invoice-items-table] th,
+        [data-invoice-compact="true"] [data-invoice-items-table] td {
+          padding: 1mm 0.7mm !important;
+          font-size: 7pt !important;
+        }
+        [data-invoice-compact="true"] [data-pdf-keep-together] > div {
+          padding: 1.2mm !important;
+        }
         @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5 landscape" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
       `}</style>
 
@@ -320,22 +328,23 @@ export default function PrintInvoicePage({
       </div>
 
       <div className="overflow-x-auto print:overflow-visible">
-        {template === "full-a4" ? (
+        {template !== "thermal" ? (
           <div
             ref={invoiceRef}
             data-invoice-sheet
+            data-invoice-compact={template === "half-a4" ? "true" : undefined}
             style={{ zoom: fitZoom }}
-            className={`mx-auto flex min-h-[202mm] flex-col justify-between gap-3 bg-white p-4 text-[#13253f] ${widthClass}`}
+            className={`mx-auto flex flex-col justify-between bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
-            <h1 className="-mb-2 text-center text-2xl font-bold tracking-tight text-[#655c36]">{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
+            <h1 className={`-mb-1 text-center font-bold tracking-tight text-[#655c36] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
               <p className="text-center font-bold text-red-700">
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <div className="flex items-center justify-between gap-5 border-2 border-[#655c36] bg-white px-4 py-3">
-              <div className="flex min-w-0 flex-1 items-center gap-5">
-                <div className="flex w-[43mm] shrink-0 flex-col items-center justify-center border-r border-[#655c36]/40 pr-4">
+            <div className={`flex items-center justify-between border-2 border-[#655c36] bg-white ${template === "half-a4" ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
+              <div className={`flex min-w-0 flex-1 ${template === "half-a4" ? "items-center gap-2" : "items-center gap-5"}`}>
+                <div className={`flex shrink-0 flex-col items-center justify-center border-r border-[#655c36]/40 bg-[#f4f0df] px-2 py-1 ${template === "half-a4" ? "w-[32mm]" : "w-[43mm] pr-4"}`}>
                   {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -347,53 +356,53 @@ export default function PrintInvoicePage({
                         }
                       }}
                       onError={() => setUseHighResolutionLogo(true)}
-                      className="h-[23mm] w-[38mm] shrink-0 object-contain"
+                      className={`shrink-0 object-contain ${template === "half-a4" ? "h-[16mm] w-[28mm]" : "h-[23mm] w-[38mm]"}`}
                     />
                   }
-                <p className="mt-1 text-center font-serif text-base italic text-[#655c36]">
+                <p className={`mt-1 text-center font-serif italic text-[#655c36] ${template === "half-a4" ? "text-[9px]" : "text-base"}`}>
                     {organization?.motto || BUSINESS_PROFILE_DEFAULTS.motto}
                   </p>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-3xl font-extrabold tracking-tight text-[#655c36]">
+                  <h2 className={`font-extrabold tracking-tight text-[#655c36] ${template === "half-a4" ? "text-xl" : "text-3xl"}`}>
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
-                  <p className="text-lg font-semibold text-[#494033]">
+                  <p className={`font-semibold text-[#494033] ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
                     {organization?.tagline || BUSINESS_PROFILE_DEFAULTS.tagline}
                   </p>
-                  <p className="flex items-center gap-1 text-sm text-gray-600">
+                  <p className={`flex items-center gap-1 text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-sm"}`}>
                     <MapPin className="h-3.5 w-3.5 shrink-0" />
                     <span className="whitespace-pre-line">
                       {organization?.address || BUSINESS_PROFILE_DEFAULTS.address}
                     </span>
                   </p>
-                  <p className="flex items-center gap-1 text-sm text-gray-600">
+                  <p className={`flex items-center gap-1 text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-sm"}`}>
                     <Phone className="h-3.5 w-3.5 shrink-0" />
                     {organization?.phone || BUSINESS_PROFILE_DEFAULTS.phone}
                   </p>
                 </div>
               </div>
               {
-                <p className="shrink-0 self-start rounded-full border border-[#655c36]/40 bg-white px-3 py-1.5 text-sm font-semibold text-[#655c36]">
+                <p className={`shrink-0 self-start rounded-full border border-[#655c36]/40 bg-white font-semibold text-[#655c36] ${template === "half-a4" ? "px-2 py-1 text-[8px]" : "px-3 py-1.5 text-sm"}`}>
                   State: {organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
                 </p>
               }
             </div>
 
-            <div className="grid grid-cols-[3fr_1fr] gap-3">
-              <div className="border border-[#655c36] border-l-4 border-l-[#655c36] bg-white p-3">
+            <div className={`grid grid-cols-[3fr_1fr] ${template === "half-a4" ? "gap-1" : "gap-3"}`}>
+              <div className={`border border-[#655c36] border-l-4 border-l-[#655c36] bg-[#f4f0df] ${template === "half-a4" ? "p-2" : "p-3"}`}>
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Bill To</p>
-                <p className="text-lg font-bold text-[#28231b]">{customer?.name}</p>
+                <p className={`font-bold text-[#28231b] ${template === "half-a4" ? "text-sm" : "text-lg"}`}>{customer?.name}</p>
                 {customer?.phone && (
-                  <p className="text-sm text-gray-600">{customer.phone}</p>
+                  <p className={`text-gray-600 ${template === "half-a4" ? "text-[9px]" : "text-sm"}`}>{customer.phone}</p>
                 )}
                 {customer?.gstin && (
-                  <p className="text-sm text-gray-600">
+                  <p className={`text-gray-600 ${template === "half-a4" ? "text-[9px]" : "text-sm"}`}>
                     GSTIN: {customer.gstin}
                   </p>
                 )}
               </div>
-              <div className="border border-[#655c36] bg-white p-3">
+              <div className={`border border-[#655c36] bg-[#f8f5ea] ${template === "half-a4" ? "p-2 text-[9px]" : "p-3"}`}>
                 <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Invoice Details</p>
                 <p className="font-bold text-[#28231b]">No.: {sale.invoiceNumber}</p>
                 <p>
@@ -402,7 +411,7 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <table className="w-full table-fixed border-collapse border border-[#655c36] text-sm leading-tight">
+            <table className="w-full table-fixed border-collapse border border-[#655c36] leading-tight" data-invoice-items-table>
               <colgroup>
                 {(sale.isGst
                   ? ["5%", "20%", "10%", "6%", "9%", "9%", "10%", "11%", "10%", "10%"]
@@ -537,18 +546,18 @@ export default function PrintInvoicePage({
 
             <div
               data-pdf-keep-together
-              className="grid grid-cols-[1.9fr_1fr_1fr] gap-3"
+                className={`grid grid-cols-[1.9fr_1fr_1fr] ${template === "half-a4" ? "gap-1 text-[9px]" : "gap-3"}`}
             >
-              <div className="border border-[#655c36] p-3">
+              <div className={`border border-[#655c36] ${template === "half-a4" ? "p-1.5" : "p-3"}`}>
                 <p className="font-bold">Amount in words</p>
                 <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
               </div>
-              <div className="border border-[#655c36] p-3">
+              <div className={`border border-[#655c36] ${template === "half-a4" ? "p-1.5" : "p-3"}`}>
                 <p className="font-bold">Payment type</p>
                 <p>{paymentTypeLabel}</p>
               </div>
-              <div className="flex flex-col gap-1 border border-[#655c36] bg-[#f4f0df] p-3">
-                <div className="flex justify-between border-b border-[#655c36]/20 pb-1 text-lg font-extrabold">
+              <div className={`flex flex-col border border-[#655c36] bg-[#f4f0df] ${template === "half-a4" ? "gap-0.5 p-1.5" : "gap-1 p-3"}`}>
+                <div className={`flex justify-between border-b border-[#655c36]/20 pb-1 font-extrabold ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
                   <span>Grand Total</span>
                   <span className="text-[#191919]">
                     {formatPaise(grandTotalNetPaise)}
@@ -565,12 +574,12 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <div className="mt-auto flex items-end justify-between gap-4 pt-6">
-              <p className="text-xs italic text-gray-600">
+            <div className={`mt-auto flex items-end justify-between ${template === "half-a4" ? "gap-2 pt-1" : "gap-4 pt-6"}`}>
+              <p className={`italic text-gray-600 ${template === "half-a4" ? "text-[7px]" : "text-xs"}`}>
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
               </p>
-              <p className="mb-2 shrink-0 rounded-sm border-b-2 border-[#655c36] bg-[#ffffff] px-4 py-2 text-lg font-extrabold tracking-tight text-[#28231b]">
+              <p className={`shrink-0 rounded-sm border-b-2 border-[#655c36] bg-[#ffffff] font-extrabold tracking-tight text-[#28231b] ${template === "half-a4" ? "mb-1 px-2 py-1 text-[10px]" : "mb-2 px-4 py-2 text-lg"}`}>
                 For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
               </p>
             </div>
