@@ -45,6 +45,7 @@ export default defineSchema({
     // Short business-type line and italic motto shown under the name on the printed invoice header (e.g. "Gold and Silver Merchants" / "The Name of Purity").
     tagline: v.optional(v.string()),
     motto: v.optional(v.string()),
+    companyType: v.optional(v.union(v.literal("daily_sales"), v.literal("gst_gold"), v.literal("gst_silver"))),
     loginImageStorageId: v.optional(v.id("_storage")),
     appIconStorageId: v.optional(v.id("_storage")),
     invoiceLogoStorageId: v.optional(v.id("_storage")),
@@ -74,6 +75,22 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_org", ["organizationId"])
     .index("by_user_and_org", ["userId", "organizationId"]),
+
+  currentOrganizations: defineTable({
+    userId: v.id("users"),
+    organizationId: v.id("organizations"),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  accountingYears: defineTable({
+    organizationId: v.id("organizations"),
+    name: v.string(),
+    startsAt: v.number(),
+    endsAt: v.number(),
+    status: v.union(v.literal("open"), v.literal("closed")),
+    closedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  }).index("by_org", ["organizationId"]),
 
   auditLogs: defineTable({
     deletedAt: v.optional(v.number()),

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal, api } from "./_generated/api";
 import { action, query } from "./_generated/server";
 import { requireAuthContext } from "./lib/auth";
+import { retrieveAccount } from "@convex-dev/auth/server";
 
 const PIN_PATTERN = /^\d{4,6}$/;
 const PBKDF2_ITERATIONS = 210_000;
@@ -93,5 +94,27 @@ export const verifyMyAppPin = action({
     if (!record) return { valid: false };
     const candidate = await derivePinHash(args.pin, hexToBytes(record.pinSalt));
     return { valid: safeEqual(candidate, record.pinHash) };
+  },
+});
+
+export const resetMyAppPinWithPassword = action({
+  args: { accountPassword: v.string(), pin: v.string() },
+  handler: async (ctx, args) => {
+    if (!PIN_PATTERN.test(args.pin)) throw new Error("Choose a 4 to 6 digit MPIN.");
+    const access = await ctx.runQuery(api.organizations.getMyAccess, {});
+    if (!access?.user?.email || !access.membership) throw new Error("Sign in again to reset your app MPIN.");
+    const verified = await retrieveAccount(ctx, {
+      provider: "password",
+      account: { id: access.user.email.toLowerCase(), secret: args.accountPassword },
+    });
+    if (!verified || verified.user._id !== access.user._id) throw new Error("Your account password did not match. Try again.");
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    await ctx.runMutation(internal.appSecurityInternal.replacePin, {
+      userId: access.user._id,
+      organizationId: access.membership.organizationId,
+      pinSalt: bytesToHex(salt),
+      pinHash: await derivePinHash(args.pin, salt),
+    });
+    return { reset: true };
   },
 });

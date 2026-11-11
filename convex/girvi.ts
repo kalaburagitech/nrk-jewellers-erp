@@ -7,12 +7,28 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
     return ctx.db
       .query("girviLoans")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
+  },
+});
+
+export const getPrintData = query({
+  args: { id: v.id("girviLoans") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
+    const loan = await ctx.db.get(args.id);
+    if (!loan || loan.deletedAt || loan.organizationId !== auth.organizationId) throw new Error("Girvi ticket not found in this company.");
+    const organization = await ctx.db.get(auth.organizationId);
+    const logoUrl = organization?.invoiceLogoStorageId ? await ctx.storage.getUrl(organization.invoiceLogoStorageId) : null;
+    const receipts = await ctx.db.query("girviReceipts").withIndex("by_loan", (q) => q.eq("loanId", loan._id))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect();
+    return { loan, organization, logoUrl, receipts };
   },
 });
 export const create = mutation({
@@ -32,7 +48,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
-    requireRole(auth, ["accountant", "billing_operator"]);
+    requireRole(auth, []);
     if (
       !args.ticketNumber.trim() ||
       !args.customerName.trim() ||
@@ -109,7 +125,7 @@ export const receive = mutation({
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
-    requireRole(auth, ["accountant", "billing_operator"]);
+    requireRole(auth, []);
     const loan = await ctx.db.get(args.id);
     if (
       !loan ||
@@ -159,6 +175,7 @@ export const receipts = query({
   args: { id: v.id("girviLoans") },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
     const loan = await ctx.db.get(args.id);
     if (!loan || loan.deletedAt || loan.organizationId !== auth.organizationId)
       throw new Error("Not found");

@@ -5,6 +5,7 @@ import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
+import { assertBookingYearOpen } from "./lib/accountingYears";
 
 /** Sales invoices only — quotations, proforma invoices, returns and credit notes each have their own dedicated list page/query. */
 export const list = query({
@@ -532,6 +533,9 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["billing_operator"]);
+    const company = await ctx.db.get(auth.organizationId);
+    if (company?.companyType === "daily_sales" && args.isGst) throw new Error("GST invoices belong in a GST company. Switch companies before creating this bill.");
+    if ((company?.companyType === "gst_gold" || company?.companyType === "gst_silver") && !args.isGst) throw new Error("This is a GST company. GST billing must stay enabled.");
 
     const existing = await ctx.db
       .query("sales")
@@ -550,6 +554,7 @@ export const create = mutation({
     }
     await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber);
     const billDate = args.billDate ?? Date.now();
+    await assertBookingYearOpen(ctx, auth.organizationId, billDate);
 
     const saleId = await ctx.db.insert("sales", {
       organizationId: auth.organizationId,
@@ -608,11 +613,15 @@ export const update = mutation({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
+    const company = await ctx.db.get(auth.organizationId);
+    if (company?.companyType === "daily_sales" && args.isGst) throw new Error("GST invoices belong in a GST company. Switch companies before editing this bill.");
+    if ((company?.companyType === "gst_gold" || company?.companyType === "gst_silver") && !args.isGst) throw new Error("This is a GST company. GST billing must stay enabled.");
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale || sale.deletedAt || sale.organizationId !== auth.organizationId) throw new Error("Not found");
     if (sale.documentType !== "sales_invoice") throw new Error("Only a finalized sales invoice can be edited");
     if (sale.status !== "finalized") throw new Error("Cannot edit a cancelled invoice");
+    await assertBookingYearOpen(ctx, auth.organizationId, args.billDate);
 
     if (args.invoiceNumber !== undefined) {
       const invoiceNumber = args.invoiceNumber.trim();

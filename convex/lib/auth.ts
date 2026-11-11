@@ -23,10 +23,18 @@ export async function requireAuthContext(ctx: QueryCtx | MutationCtx): Promise<A
     throw new ConvexError("Not authenticated");
   }
 
-  const membership = await ctx.db
+  const preference = await ctx.db.query("currentOrganizations")
+    .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+  const selectedMembership = preference ? await ctx.db.query("memberships")
+    .withIndex("by_user_and_org", (q) => q.eq("userId", userId).eq("organizationId", preference.organizationId))
+    .filter((q) => q.eq(q.field("status"), "active"))
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
+    .first() : null;
+  const membership = selectedMembership ?? await ctx.db
     .query("memberships")
     .withIndex("by_user", (q) => q.eq("userId", userId))
     .filter((q) => q.eq(q.field("status"), "active"))
+    .filter((q) => q.eq(q.field("deletedAt"), undefined))
     .first();
 
   if (!membership) {

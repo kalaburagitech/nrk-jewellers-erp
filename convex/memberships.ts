@@ -38,6 +38,8 @@ export const listPendingUsers = query({
   args: {},
   handler: async (ctx) => {
     await requireAuthContext(ctx);
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, []);
     const users = await ctx.db.query("users").collect();
     const pending = [];
     for (const user of users) {
@@ -45,8 +47,9 @@ export const listPendingUsers = query({
         .query("memberships")
         .withIndex("by_user", (q) => q.eq("userId", user._id))
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-      if (!existing) pending.push({ _id: user._id, name: user.name ?? user.email ?? "Unknown", email: user.email });
+        .filter((q) => q.eq(q.field("status"), "active"))
+        .collect();
+      if (!existing.some((membership) => membership.organizationId === auth.organizationId)) pending.push({ _id: user._id, name: user.name ?? user.email ?? "Unknown", email: user.email });
     }
     return pending;
   },

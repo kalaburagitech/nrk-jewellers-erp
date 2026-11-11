@@ -40,7 +40,7 @@ const GROUPS = [
   },
   { label: "Administration", paths: ["/settings", "/backup", "/manage-data"] },
 ];
-export function AppSidebar() {
+export function AppSidebar({ role }: { role: string }) {
   const pathname = usePathname();
   const { setOpenMobile, state, setOpen } = useSidebar();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -102,6 +102,7 @@ export function AppSidebar() {
             .flatMap((path) =>
               NAV_SECTIONS.filter((section) => section.href === path),
             )
+            .filter((section) => section.href !== "/girvi" || role === "owner" || role === "admin")
             .filter(
               (section) =>
                 !term ||

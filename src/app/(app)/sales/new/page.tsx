@@ -12,8 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -148,6 +148,7 @@ export default function NewBillPage() {
   const existingSale = useQuery(api.sales.getInvoiceData, editSaleId ? { saleId: editSaleId } : "skip");
 
   const customers = useQuery(api.customers.list);
+  const access = useQuery(api.organizations.getMyAccess);
   const products = useQuery(api.products.list);
   const boxes = useQuery(api.boxes.list);
   const purities = useQuery(api.metalPurities.list);
@@ -161,7 +162,7 @@ export default function NewBillPage() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
-  const [isGst, setIsGst] = useState(true);
+  const [isGst, setIsGst] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [discountMode, setDiscountMode] = useState<"none" | "percent" | "fixed">("none");
   const [discountValue, setDiscountValue] = useState("");
@@ -176,6 +177,11 @@ export default function NewBillPage() {
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
   const [prefilled, setPrefilled] = useState(false);
+  const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
+
+  useEffect(() => {
+    if (!editSaleId) setIsGst(gstCompany);
+  }, [editSaleId, gstCompany]);
 
   // One-time prefill once the existing invoice loads, in edit mode — guarded
   // by `prefilled` so it never re-runs after the user starts editing.
@@ -484,12 +490,7 @@ export default function NewBillPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Customer & Invoice Type</CardTitle>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="gst-toggle" className="text-sm text-muted-foreground">
-                  GST Invoice
-                </Label>
-                <Switch id="gst-toggle" checked={isGst} onCheckedChange={setIsGst} />
-              </div>
+              <span className="rounded-full border px-3 py-1 text-sm font-medium text-muted-foreground">{isGst ? "GST Invoice" : "Daily Sales · No GST"}</span>
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-4">

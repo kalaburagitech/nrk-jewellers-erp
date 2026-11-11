@@ -137,6 +137,8 @@ export const NAV_SECTIONS: NavSection[] = [
     href: "/settings",
     items: [
       { title: "Business Profile", href: "/settings/business" },
+      { title: "Companies", href: "/settings/companies" },
+      { title: "Booking Years", href: "/settings/accounting-years" },
       { title: "GST Configuration", href: "/settings/gst" },
       { title: "Invoice Templates", href: "/settings/invoice-templates" },
       { title: "Metal Purity Configuration", href: "/settings/purity" },

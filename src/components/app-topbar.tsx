@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useAction, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Bell, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
+import { ArrowLeft, Bell, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -177,14 +177,19 @@ export function AppTopbar({
   organizationName,
   userName,
   role,
+  companies = [],
+  activeOrganizationId,
 }: {
   organizationName?: string;
   userName?: string;
   role?: string;
+  companies?: { organizationId: string; name: string; role: string; companyType?: string }[];
+  activeOrganizationId?: string;
 }) {
   const { signOut } = useAuthActions();
   const appLock = useAppLock();
   const changeOwnerPassword = useAction(api.memberships.changeOwnerPassword);
+  const selectCompany = useMutation(api.organizations.selectCompany);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -192,6 +197,7 @@ export function AppTopbar({
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const page = NAV_SECTIONS.flatMap((section) => [
     ...(section.items ?? []),
     section,
@@ -202,6 +208,7 @@ export function AppTopbar({
     <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-card/95 px-4 backdrop-blur-xl sm:gap-5 lg:px-8 print:hidden">
       <div className="flex min-w-0 items-center gap-2">
         <SidebarTrigger aria-label="Expand or collapse navigation" title="Expand or collapse navigation" />
+        {pathname !== "/" && <Button variant="ghost" size="icon" aria-label="Go back" title="Go back" onClick={() => window.history.length > 1 ? router.back() : router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>}
         <Separator orientation="vertical" className="h-5" />
         <div className="min-w-0">
           <p className="truncate text-base font-semibold tracking-tight">
@@ -216,6 +223,15 @@ export function AppTopbar({
         <GlobalSearch />
       </div>
       <div className="flex items-center gap-2">
+        {companies.length > 1 && <DropdownMenu>
+          <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="max-w-48"><Building2 className="h-4 w-4" /><span className="truncate">{organizationName ?? "Company"}</span></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Switch company</p>
+            {companies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })}>
+              <Building2 className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{company.name}</span>{company.organizationId === activeOrganizationId && <span className="text-xs text-muted-foreground">Current</span>}
+            </DropdownMenuItem>)}
+          </DropdownMenuContent>
+        </DropdownMenu>}
         {role && (
           <Badge variant="outline" className="hidden xl:inline-flex capitalize">
             {role.replace("_", " ")}

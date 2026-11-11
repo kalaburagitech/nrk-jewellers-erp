@@ -5,6 +5,7 @@ import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computePurchaseLine } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
+import { assertBookingYearOpen } from "./lib/accountingYears";
 
 /** Purchase invoices only — purchase orders and purchase returns each have their own dedicated list page/query. */
 export const list = query({
@@ -32,6 +33,29 @@ export const getItems = query({
       .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
+  },
+});
+
+/** Purchase bill print payload. Every record is checked against the active company. */
+export const getPrintData = query({
+  args: { purchaseId: v.id("purchases") },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const purchase = await ctx.db.get(args.purchaseId);
+    if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId || purchase.status !== "finalized") {
+      throw new Error("Purchase bill not found in this company.");
+    }
+    const [items, supplier, organization, payment] = await Promise.all([
+      ctx.db.query("purchaseItems").withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.get(purchase.supplierId),
+      ctx.db.get(auth.organizationId),
+      ctx.db.query("payments").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.and(q.eq(q.field("sourceTable"), "purchases"), q.eq(q.field("sourceId"), args.purchaseId)))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).first(),
+    ]);
+    const logoUrl = organization?.invoiceLogoStorageId ? await ctx.storage.getUrl(organization.invoiceLogoStorageId) : null;
+    return { purchase, items, supplier, organization, payment, logoUrl };
   },
 });
 
@@ -385,6 +409,7 @@ export const create = mutation({
     const branchId = await resolveBranchId(ctx, auth.organizationId, auth.branchId);
     const invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "purchase_invoice", "PINV-");
     const billDate = args.billDate ?? Date.now();
+    await assertBookingYearOpen(ctx, auth.organizationId, billDate);
 
     const purchaseId = await ctx.db.insert("purchases", {
       organizationId: auth.organizationId,
@@ -441,6 +466,7 @@ export const update = mutation({
     requireRole(auth, []);
 
     const purchase = await ctx.db.get(args.purchaseId);
+    await assertBookingYearOpen(ctx, auth.organizationId, args.billDate);
     if (!purchase || purchase.deletedAt || purchase.organizationId !== auth.organizationId) throw new Error("Not found");
     if ((purchase.documentType ?? "purchase_invoice") !== "purchase_invoice") {
       throw new Error("Only a finalized purchase invoice can be edited");

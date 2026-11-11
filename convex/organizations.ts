@@ -13,19 +13,73 @@ export const getMyAccess = query({
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) return null;
-
-    const membership = await ctx.db
-      .query("memberships")
+    const memberships = await ctx.db.query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .filter((q) => q.eq(q.field("status"), "active"))
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-
-    if (!membership) return { user: await ctx.db.get(userId), membership: null, organization: null };
-
+      .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect();
+    const preference = await ctx.db.query("currentOrganizations")
+      .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+    const membership = memberships.find((item) => item.organizationId === preference?.organizationId) ?? memberships[0];
+    if (!membership) return { user: await ctx.db.get(userId), membership: null, organization: null, companies: [] };
+    const activeMemberships = await Promise.all(memberships.map(async (item) => {
+      const organization = await ctx.db.get(item.organizationId);
+      if (!organization || organization.deletedAt) return null;
+      return { membershipId: item._id, organizationId: item.organizationId, role: item.role, name: organization.name, companyType: organization.companyType };
+    }));
     const organization = await ctx.db.get(membership.organizationId);
     const user = await ctx.db.get(userId);
-    return { user, membership, organization };
+    return { user, membership, organization, companies: activeMemberships.filter((item) => item !== null) };
+  },
+});
+
+export const selectCompany = mutation({
+  args: { organizationId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Sign in to change companies.");
+    const membership = await ctx.db.query("memberships")
+      .withIndex("by_user_and_org", (q) => q.eq("userId", userId).eq("organizationId", args.organizationId))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined)).first();
+    if (!membership) throw new Error("You do not have access to this company.");
+    const preference = await ctx.db.query("currentOrganizations")
+      .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+    if (preference) await ctx.db.patch(preference._id, { organizationId: args.organizationId, updatedAt: Date.now() });
+    else await ctx.db.insert("currentOrganizations", { userId, organizationId: args.organizationId, updatedAt: Date.now() });
+    return { selected: true };
+  },
+});
+
+export const createCompany = mutation({
+  args: {
+    name: v.string(),
+    companyType: v.union(v.literal("daily_sales"), v.literal("gst_gold"), v.literal("gst_silver")),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    if (auth.role !== "owner") throw new Error("Only the owner can create a company.");
+    const name = args.name.trim();
+    if (!name) throw new Error("Enter a company name.");
+    const duplicate = await ctx.db.query("organizations").filter((q) => q.eq(q.field("name"), name)).filter((q) => q.eq(q.field("deletedAt"), undefined)).first();
+    if (duplicate) throw new Error("A company with this name already exists.");
+    const now = Date.now();
+    const organizationId = await ctx.db.insert("organizations", {
+      name,
+      companyType: args.companyType,
+      tagline: args.companyType === "daily_sales" ? "Daily Sales" : "GST Billing",
+      state: "Karnataka",
+      createdAt: now,
+    });
+    const branchId = await ctx.db.insert("branches", { organizationId, name: "Main Branch", isDefault: true, createdAt: now });
+    await ctx.db.insert("memberships", { userId: auth.userId, organizationId, branchId, role: "owner", status: "active", createdAt: now });
+    const purities = args.companyType === "gst_silver"
+      ? [{ metal: "silver" as const, label: "Silver 999", purityBasisPoints: 9990 }, { metal: "silver" as const, label: "Silver 925", purityBasisPoints: 9250 }]
+      : [{ metal: "gold" as const, label: "24K", purityBasisPoints: 9990 }, { metal: "gold" as const, label: "22K", purityBasisPoints: 9160 }, { metal: "gold" as const, label: "18K", purityBasisPoints: 7500 }, { metal: "gold" as const, label: "14K", purityBasisPoints: 5850 }];
+    for (const purity of purities) await ctx.db.insert("metalPurities", { organizationId, ...purity, isActive: true });
+    await ctx.db.insert("taxConfigurations", { organizationId, name: "Jewellery GST 3%", cgstBasisPoints: 150, sgstBasisPoints: 150, igstBasisPoints: 300, isActive: true });
+    await ctx.db.insert("bankAccounts", { organizationId, name: "Cash in hand", type: "cash", openingBalancePaise: 0, currentBalancePaise: 0, isActive: true, createdAt: now });
+    await ctx.db.insert("currentOrganizations", { userId: auth.userId, organizationId, updatedAt: now });
+    return { organizationId };
   },
 });
 

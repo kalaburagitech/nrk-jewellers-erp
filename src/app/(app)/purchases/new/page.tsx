@@ -78,6 +78,7 @@ export default function NewPurchasePage() {
   const products = useQuery(api.products.list);
   const boxes = useQuery(api.boxes.list);
   const purities = useQuery(api.metalPurities.list);
+  const currentRates = useQuery(api.metalRates.getCurrent);
   const createPurchase = useMutation(api.purchases.create);
   const updatePurchase = useMutation(api.purchases.update);
 
@@ -196,6 +197,7 @@ export default function NewPurchasePage() {
     products === undefined ||
     boxes === undefined ||
     purities === undefined ||
+    currentRates === undefined ||
     (editPurchaseId ? !prefilled : false);
 
   return (
@@ -297,7 +299,15 @@ export default function NewPurchasePage() {
                           render={({ field }) => (
                             <FormItem>
                               <FormLabel>Product</FormLabel>
-                              <Select value={field.value} onValueChange={field.onChange}>
+                              <Select value={field.value} onValueChange={(productId) => {
+                                field.onChange(productId);
+                                const product = products?.find((item) => item._id === productId);
+                                if (!product) return;
+                                form.setValue(`items.${index}.label`, product.name, { shouldDirty: true });
+                                form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", { shouldDirty: true });
+                                const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
+                                if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), { shouldDirty: true });
+                              }}>
                                 <FormControl>
                                   <SelectTrigger className="w-full">
                                     <SelectValue placeholder="Select product" />

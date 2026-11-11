@@ -30,3 +30,19 @@ export const savePin = internalMutation({
     await ctx.db.insert("appSecurity", { ...args, createdAt: now, updatedAt: now });
   },
 });
+
+export const replacePin = internalMutation({
+  args: {
+    userId: v.id("users"),
+    organizationId: v.id("organizations"),
+    pinSalt: v.string(),
+    pinHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db.query("appSecurity")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId)).unique();
+    const now = Date.now();
+    if (existing) await ctx.db.patch(existing._id, { pinSalt: args.pinSalt, pinHash: args.pinHash, organizationId: args.organizationId, updatedAt: now });
+    else await ctx.db.insert("appSecurity", { ...args, createdAt: now, updatedAt: now });
+  },
+});

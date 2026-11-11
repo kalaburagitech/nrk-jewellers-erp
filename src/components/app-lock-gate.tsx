@@ -29,6 +29,7 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
   const pinStatus = useQuery(api.appSecurity.getMyAppPinStatus, {});
   const setPin = useAction(api.appSecurity.setMyAppPin);
   const verifyPin = useAction(api.appSecurity.verifyMyAppPin);
+  const resetPin = useAction(api.appSecurity.resetMyAppPinWithPassword);
   const { signOut } = useAuthActions();
   const storageKey = `nrk-app-unlocked:${userId}`;
   const [sessionChecked, setSessionChecked] = useState(false);
@@ -37,6 +38,11 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
   const [confirmPin, setConfirmPin] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [accountPassword, setAccountPassword] = useState("");
+  const [recoveryPin, setRecoveryPin] = useState("");
+  const [recoveryConfirmPin, setRecoveryConfirmPin] = useState("");
+  const [recoveryMessage, setRecoveryMessage] = useState("");
 
   useEffect(() => {
     if (pinStatus === undefined) return;
@@ -103,6 +109,30 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
   async function handleSignOut() {
     clear();
     await signOut();
+  }
+
+  async function handlePinRecovery(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    setRecoveryMessage("");
+    if (!/^\d{4,6}$/.test(recoveryPin)) { setError("Choose a 4 to 6 digit MPIN."); return; }
+    if (recoveryPin !== recoveryConfirmPin) { setError("The new MPIN entries don’t match."); return; }
+    setBusy(true);
+    try {
+      await resetPin({ accountPassword, pin: recoveryPin });
+      window.sessionStorage.setItem(storageKey, "1");
+      setPinValue("");
+      setAccountPassword("");
+      setRecoveryPin("");
+      setRecoveryConfirmPin("");
+      setError(null);
+      setRecoveryMessage("MPIN updated. Unlocking your workspace…");
+      setUnlocked(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reset your MPIN. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (pinStatus === undefined || !sessionChecked) {
@@ -175,10 +205,23 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
             </Button>
           </form>
           {!settingUp && (
-            <Button variant="ghost" className="mt-3 w-full" onClick={() => void handleSignOut()}>
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </Button>
+            <div className="mt-3 grid gap-2">
+              <Button variant="ghost" className="w-full" onClick={() => { setShowRecovery((shown) => !shown); setError(null); setRecoveryMessage(""); }}>
+                {showRecovery ? "Back to MPIN" : "Forgot MPIN? Reset with account password"}
+              </Button>
+              {showRecovery && <form className="grid gap-3 rounded-lg border p-3" onSubmit={handlePinRecovery}>
+                <p className="text-sm text-muted-foreground">Verify your account password to choose a new MPIN. You’ll stay signed in.</p>
+                <div className="grid gap-2"><Label htmlFor="mpin-account-password">Account password</Label><Input id="mpin-account-password" type="password" autoComplete="current-password" value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} required /></div>
+                <div className="grid gap-2"><Label htmlFor="mpin-recovery-new">New MPIN</Label><Input id="mpin-recovery-new" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={recoveryPin} onChange={(event) => setRecoveryPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required /></div>
+                <div className="grid gap-2"><Label htmlFor="mpin-recovery-confirm">Confirm new MPIN</Label><Input id="mpin-recovery-confirm" type="password" inputMode="numeric" pattern="[0-9]{4,6}" maxLength={6} value={recoveryConfirmPin} onChange={(event) => setRecoveryConfirmPin(event.target.value.replace(/\D/g, "").slice(0, 6))} required /></div>
+                <Button type="submit" disabled={busy}>{busy ? "Verifying…" : "Verify and reset MPIN"}</Button>
+              </form>}
+              {recoveryMessage && <p role="status" className="text-sm text-success">{recoveryMessage}</p>}
+              <Button variant="ghost" className="w-full" onClick={() => void handleSignOut()}>
+                <LogOut className="h-4 w-4" />
+                Sign out
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -7,6 +7,7 @@ import type { TableNames } from "./_generated/dataModel";
 export const TABLES = [
   "branches",
   "applicationSettings",
+  "accountingYears",
   "customers",
   "suppliers",
   "stockGroups",
@@ -70,7 +71,7 @@ export const exportBackup = query({
     const organization = await ctx.db.get(auth.organizationId);
     const backup = {
       format: "nrk-erp-backup",
-      version: 1,
+      version: 2,
       organizationId: auth.organizationId,
       exportedAt: Date.now(),
       organization,
@@ -91,27 +92,25 @@ export const restore = mutation({
     if (args.json.length > 3_000_000)
       throw new Error("Backup exceeds 3 MB. Use a Convex deployment restore.");
     const backup = JSON.parse(args.json);
-    if (
-      backup.format !== "nrk-erp-backup" ||
-      backup.version !== 1 ||
-      backup.organizationId !== auth.organizationId
-    )
+    if (backup.format !== "nrk-erp-backup" || ![1, 2].includes(backup.version) || backup.organizationId !== auth.organizationId)
       throw new Error(
-        "Select a version 1 backup from this organization and deployment",
+        "Select a valid NRK backup from this organization and deployment",
       );
+    const backupTables = backup.tables && typeof backup.tables === "object"
+      ? { ...backup.tables, accountingYears: backup.tables.accountingYears ?? [] }
+      : null;
     if (
       !backup.organization ||
       backup.organization._id !== auth.organizationId ||
-      !backup.tables ||
-      Object.keys(backup.tables).length !== TABLES.length
+      !backupTables
     )
       throw new Error("Incomplete backup");
     const ids = new Set<string>();
     let count = 0;
     for (const table of TABLES) {
-      if (!Array.isArray(backup.tables[table]))
+      if (!Array.isArray(backupTables[table]))
         throw new Error(`Missing table: ${table}`);
-      for (const row of backup.tables[table]) {
+      for (const row of backupTables[table]) {
         if (
           row.organizationId !== auth.organizationId ||
           typeof row._id !== "string" ||
@@ -134,7 +133,7 @@ export const restore = mutation({
       "loginImageStorageId",
     ]);
     for (const table of TABLES)
-      for (const row of backup.tables[table]) {
+      for (const row of backupTables[table]) {
         for (const [key, value] of Object.entries(row)) {
           if (
             value === undefined ||
@@ -156,7 +155,7 @@ export const restore = mutation({
     const mapping = new Map<string, string>();
     // Retain existing IDs so memberships and audit references remain valid.
     for (const table of TABLES) {
-      for (const row of backup.tables[table]) {
+      for (const row of backupTables[table]) {
         const existing: any = await ctx.db.get(row._id as any);
         if (existing && existing.organizationId !== auth.organizationId)
           throw new Error("Record belongs to another organization");
@@ -179,7 +178,7 @@ export const restore = mutation({
               )
             : value;
     for (const table of TABLES) {
-      for (const row of backup.tables[table]) {
+      for (const row of backupTables[table]) {
         const { _id, _creationTime, ...fields } = row;
         void _creationTime;
         await ctx.db.replace(mapping.get(_id) as any, remap(fields));

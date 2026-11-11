@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Pencil, Plus, Receipt, Trash2 } from "lucide-react";
+import { Pencil, Plus, Printer, Receipt, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +56,7 @@ function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases"
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Purchase items</DialogTitle>
+          {purchase.status === "finalized" && <Button variant="outline" size="sm" asChild><Link href={`/purchases/invoices/${purchase._id}/print`} target="_blank"><Printer className="h-4 w-4" />Print bill</Link></Button>}
           {canEdit && purchase.status === "finalized" && (
             <div className="flex gap-2">
               <Button variant="outline" size="sm" asChild>

@@ -16,6 +16,7 @@ export const bootstrapFirstOwnerInternal = internalMutation({
     const now = Date.now();
     const organizationId = await ctx.db.insert("organizations", {
       name: args.organizationName ?? "NR Karakalli Jewellers",
+      companyType: "daily_sales",
       tagline: "Gold and Silver Merchants",
       motto: "The Name of Purity",
       address: "Near Maruti Temple, Basaveshwara Chowk road, Shahapur",

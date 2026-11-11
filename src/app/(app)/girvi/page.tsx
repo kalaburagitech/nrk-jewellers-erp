@@ -5,6 +5,7 @@ import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
@@ -20,7 +21,7 @@ import {
 import { formatPaise } from "@/lib/money";
 import { rupeesToPaise } from "@/lib/money";
 import { girviInterestPaise } from "@/lib/girvi-interest";
-import { Landmark, Plus, Search } from "lucide-react";
+import { Landmark, Plus, Printer, Search } from "lucide-react";
 
 function RepayDialog({
   loan,
@@ -53,9 +54,7 @@ function RepayDialog({
     <Dialog open onOpenChange={(open) => !open && close()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>
-            Ticket {loan.ticketNumber} · {loan.customerName}
-          </DialogTitle>
+          <div className="flex items-center justify-between gap-3"><DialogTitle>Ticket {loan.ticketNumber} · {loan.customerName}</DialogTitle><Button variant="outline" size="sm" asChild><Link href={`/girvi/${loan._id}/print`} target="_blank"><Printer className="h-4 w-4" />Print ticket</Link></Button></div>
         </DialogHeader>
         <p className="text-sm">
           {loan.description} · {(loan.weightMg / 1000).toFixed(3)} g ·{" "}
@@ -160,18 +159,14 @@ function RepayDialog({
   );
 }
 export default function GirviPage() {
-  const accounts = useQuery(api.cashBank.list);
-  const loans = useQuery(api.girvi.list);
+  const access = useQuery(api.organizations.getMyAccess);
+  const allowed = ["owner", "admin"].includes(access?.membership?.role ?? "");
+  const accounts = useQuery(api.cashBank.list, allowed ? {} : "skip");
+  const loans = useQuery(api.girvi.list, allowed ? {} : "skip");
   const create = useMutation(api.girvi.create);
   const cancel = useMutation(api.girvi.cancel);
-  const access = useQuery(api.organizations.getMyAccess);
-  const canWrite = [
-    "owner",
-    "admin",
-    "accountant",
-    "billing_operator",
-  ].includes(access?.membership?.role ?? "");
-  const canDelete = ["owner", "admin"].includes(access?.membership?.role ?? "");
+  const canWrite = allowed;
+  const canDelete = allowed;
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<Doc<"girviLoans"> | null>(null);
   const [search, setSearch] = useState("");
@@ -191,6 +186,8 @@ export default function GirviPage() {
     visibleLoans?.map((row) => row._id) ?? [],
     `girvi:${status}:${search}`,
   );
+
+  if (access && !allowed) return <div className="mx-auto max-w-2xl rounded-xl border p-6"><h1 className="text-xl font-semibold">Girvi is owner-only</h1><p className="mt-2 text-sm text-muted-foreground">Ask the owner to open the Girvi workspace for you.</p></div>;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
