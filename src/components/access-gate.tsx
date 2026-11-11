@@ -57,7 +57,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
 
   return (
     <AppLockGate userId={access.membership.userId}>
-      <SidebarProvider defaultOpen={false} className="erp-shell">
+      <SidebarProvider defaultOpen={true} className="erp-shell">
         <AppSidebar role={access.membership.role} />
         <SidebarInset>
           <AppTopbar

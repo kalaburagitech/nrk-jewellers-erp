@@ -79,7 +79,7 @@ function GlobalSearch() {
         onChange={(e) => setTerm(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setTimeout(() => setFocused(false), 150)}
-        placeholder="Search customers, products, invoices…"
+        placeholder="Search transactions, parties, items…"
         className="h-11 rounded-xl border-border/70 bg-muted/40 pl-9 text-sm"
       />
       {focused && term.trim().length >= 2 && (
@@ -224,11 +224,11 @@ export function AppTopbar({
       </div>
       <div className="flex items-center gap-2">
         {companies.length > 1 && <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="max-w-48"><Building2 className="h-4 w-4" /><span className="truncate">{organizationName ?? "Company"}</span></Button></DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="max-w-56"><Building2 className="h-4 w-4" /><span className="truncate">{organizationName ?? "Company"}</span></Button></DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
             <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Switch company</p>
-            {companies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })}>
-              <Building2 className="h-4 w-4" /><span className="min-w-0 flex-1 truncate">{company.name}</span>{company.organizationId === activeOrganizationId && <span className="text-xs text-muted-foreground">Current</span>}
+            {companies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })} className="items-start py-2">
+              <Building2 className="mt-0.5 h-4 w-4" /><span className="min-w-0 flex-1"><span className="block truncate">{company.name}</span><span className="block text-xs capitalize text-muted-foreground">{company.companyType?.replaceAll("_", " ") ?? company.role.replaceAll("_", " ")}</span></span>{company.organizationId === activeOrganizationId && <span className="text-xs text-muted-foreground">Current</span>}
             </DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>}

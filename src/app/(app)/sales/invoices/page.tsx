@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Pencil, Plus, Printer, Receipt, Truck } from "lucide-react";
+import { Eye, Pencil, Plus, Printer, Receipt, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -200,7 +200,7 @@ export default function SalesInvoicesPage() {
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
                     <TableHead>Status</TableHead>
-                    {canEdit && <TableHead className="w-24 text-right">Actions</TableHead>}
+                    <TableHead className="w-28 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -220,20 +220,23 @@ export default function SalesInvoicesPage() {
                           {s.status}
                         </Badge>
                       </TableCell>
-                      {canEdit && (
-                        <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                          {s.status === "finalized" && (
-                            <div className="flex justify-end gap-1">
+                      <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                        <div className="flex justify-end gap-1">
+                          <Button variant="ghost" size="icon" title={`View ${s.invoiceNumber}`} aria-label={`View ${s.invoiceNumber}`} onClick={() => setSelected(s._id)}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
+                          {canEdit && s.status === "finalized" && (
+                            <>
                               <Button asChild variant="ghost" size="icon" title={`Edit ${s.invoiceNumber}`} aria-label={`Edit ${s.invoiceNumber}`}>
                                 <Link href={`/sales/new?edit=${s._id}`}>
                                   <Pencil className="h-4 w-4" />
                                 </Link>
                               </Button>
                               <DeleteDocumentButton compact table="sales" id={s._id} name={s.invoiceNumber} />
-                            </div>
+                            </>
                           )}
-                        </TableCell>
-                      )}
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

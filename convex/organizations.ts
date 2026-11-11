@@ -21,7 +21,13 @@ export const getMyAccess = query({
       .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
     const membership = memberships.find((item) => item.organizationId === preference?.organizationId) ?? memberships[0];
     if (!membership) return { user: await ctx.db.get(userId), membership: null, organization: null, companies: [] };
-    const activeMemberships = await Promise.all(memberships.map(async (item) => {
+    const uniqueMemberships = new Map<string, (typeof memberships)[number]>();
+    for (const item of memberships) {
+      const key = String(item.organizationId);
+      const previous = uniqueMemberships.get(key);
+      if (!previous || item._id === membership._id) uniqueMemberships.set(key, item);
+    }
+    const activeMemberships = await Promise.all([...uniqueMemberships.values()].map(async (item) => {
       const organization = await ctx.db.get(item.organizationId);
       if (!organization || organization.deletedAt) return null;
       return { membershipId: item._id, organizationId: item.organizationId, role: item.role, name: organization.name, companyType: organization.companyType };

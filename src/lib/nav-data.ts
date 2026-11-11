@@ -6,7 +6,6 @@ import {
   Boxes,
   PackageSearch,
   Users,
-  Truck,
   Landmark,
   Coins,
   BarChart3,
@@ -28,12 +27,24 @@ export type NavSection = {
 // Mirrors the Phase 1 navigation from the SRS (section 5). Sub-items route to
 // not-yet-built screens as placeholders until their milestone lands.
 export const NAV_SECTIONS: NavSection[] = [
-  { title: "Dashboard", icon: LayoutDashboard, href: "/" },
+  { title: "Home", icon: LayoutDashboard, href: "/" },
   { title: "Girvi / Metal Loans", icon: Landmark, href: "/girvi" },
   { title: "Backup & Restore", icon: Settings, href: "/backup" },
   { title: "Manage / Delete Data", icon: Boxes, href: "/manage-data" },
+  { title: "Parties", icon: Users, href: "/customers", items: [
+    { title: "Customers", href: "/customers" },
+    { title: "Suppliers", href: "/suppliers" },
+    { title: "Customer Ledgers", href: "/customers/ledgers" },
+    { title: "Outstanding Balances", href: "/customers/outstanding" },
+    { title: "Purchase History", href: "/suppliers/history" },
+  ] },
+  { title: "Items", icon: PackageSearch, href: "/inventory/products", items: [
+    { title: "Item List", href: "/inventory/products" },
+    { title: "Stock Groups", href: "/inventory/groups" },
+    { title: "Stock Categories", href: "/inventory/categories" },
+  ] },
   {
-    title: "Sales",
+    title: "Sale",
     icon: Receipt,
     href: "/sales",
     items: [
@@ -48,7 +59,7 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    title: "Purchases & Expenses",
+    title: "Purchase & Expense",
     icon: ShoppingCart,
     href: "/purchases",
     items: [
@@ -82,25 +93,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Box Inventory", href: "/boxes/inventory" },
       { title: "Box Transfers", href: "/boxes/transfers" },
       { title: "Barcode Labels", href: "/boxes/labels" },
-    ],
-  },
-  {
-    title: "Customers",
-    icon: Users,
-    href: "/customers",
-    items: [
-      { title: "Customer Directory", href: "/customers" },
-      { title: "Customer Ledgers", href: "/customers/ledgers" },
-      { title: "Outstanding Balances", href: "/customers/outstanding" },
-    ],
-  },
-  {
-    title: "Suppliers",
-    icon: Truck,
-    href: "/suppliers",
-    items: [
-      { title: "Supplier Directory", href: "/suppliers" },
-      { title: "Purchase History", href: "/suppliers/history" },
     ],
   },
   {

@@ -3,11 +3,10 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { ChevronDown, Plus, Search, Sparkles } from "lucide-react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -25,20 +24,16 @@ import {
 import { NAV_SECTIONS } from "@/lib/nav-data";
 const GROUPS = [
   {
-    label: "Daily workspace",
-    paths: ["/", "/sales", "/purchases", "/inventory", "/boxes", "/girvi"],
+    label: "Home",
+    paths: ["/"],
   },
   {
-    label: "Business & insights",
-    paths: [
-      "/customers",
-      "/suppliers",
-      "/cash-bank",
-      "/metal-rates",
-      "/reports",
-    ],
+    label: "Transactions",
+    paths: ["/customers", "/inventory/products", "/sales", "/purchases", "/girvi"],
   },
-  { label: "Administration", paths: ["/settings", "/backup", "/manage-data"] },
+  { label: "Stock & money", paths: ["/inventory", "/boxes", "/cash-bank", "/metal-rates"] },
+  { label: "Reports", paths: ["/reports"] },
+  { label: "Settings & data", paths: ["/settings", "/backup", "/manage-data"] },
 ];
 export function AppSidebar({ role }: { role: string }) {
   const pathname = usePathname();
@@ -80,7 +75,7 @@ export function AppSidebar({ role }: { role: string }) {
           className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-sidebar-ring group-data-[collapsible=icon]:hidden"
         >
           <Plus className="h-4 w-4" />
-          New retail invoice
+          New Sale
           <span className="ml-auto rounded border border-white/20 px-1.5 py-0.5 text-xs text-white/70">
             F2
           </span>
@@ -91,7 +86,7 @@ export function AppSidebar({ role }: { role: string }) {
             aria-label="Search navigation"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Find a page…"
+            placeholder="Search menu"
             className="h-10 w-full rounded-lg border border-white/10 bg-black/10 pl-9 pr-3 text-sm text-white outline-none placeholder:text-white/50 focus:border-sidebar-primary/60"
           />
         </label>
@@ -123,7 +118,10 @@ export function AppSidebar({ role }: { role: string }) {
                     const active =
                       pathname === section.href ||
                       (section.href !== "/" &&
-                        pathname.startsWith(section.href + "/"));
+                        pathname.startsWith(section.href + "/")) ||
+                      Boolean(section.items?.some(
+                        (item) => pathname === item.href || pathname.startsWith(item.href + "/"),
+                      ));
                     const isExpanded =
                       Boolean(term) || (expanded[section.href] ?? active);
                     const children = section.items?.filter(
@@ -149,13 +147,7 @@ export function AppSidebar({ role }: { role: string }) {
                             }
                           >
                             <section.icon className="size-[19px]!" />
-                            <span>
-                              {section.title === "Purchases & Expenses"
-                                ? "Purchases & expenses"
-                                : section.title === "Manage / Delete Data"
-                                  ? "Data & recycle bin"
-                                  : section.title}
-                            </span>
+                            <span>{section.title === "Manage / Delete Data" ? "Data & recycle bin" : section.title}</span>
                           </Link>
                         </SidebarMenuButton>
                         {children && (
@@ -226,15 +218,6 @@ export function AppSidebar({ role }: { role: string }) {
             </p>
           )}
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border/70 px-5 py-4 group-data-[collapsible=icon]:hidden">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <Sparkles className="h-4 w-4 text-sidebar-primary" />
-          Your jewellery workspace
-        </div>
-        <p className="mt-1.5 text-xs text-sidebar-foreground/50">
-          F2 New bill · F3 Purchase · Ctrl/⌘ B Sidebar
-        </p>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );
