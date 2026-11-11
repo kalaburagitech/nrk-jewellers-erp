@@ -195,6 +195,7 @@ export default defineSchema({
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
+    description: v.optional(v.string()),
     sku: v.optional(v.string()),
     stockGroupId: v.optional(v.id("stockGroups")),
     stockCategoryId: v.optional(v.id("stockCategories")),

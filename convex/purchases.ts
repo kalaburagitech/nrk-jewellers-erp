@@ -34,7 +34,7 @@ export const list = query({
       const modes = [...new Set(billPayments.map((payment) => payment.mode.replaceAll("_", " ")))];
       const breakup = new Map<string, number>();
       for (const payment of billPayments) breakup.set(payment.mode, (breakup.get(payment.mode) ?? 0) + payment.amountPaise);
-      const descriptions = purchaseItems.map((item) => productById.get(String(item.productId))?.customFields?.description?.trim())
+      const descriptions = purchaseItems.map((item) => productById.get(String(item.productId))?.description?.trim() || productById.get(String(item.productId))?.customFields?.description?.trim())
         .filter((value): value is string => Boolean(value));
       return {
         ...purchase,

@@ -13,6 +13,7 @@ import { api } from "../../../../../convex/_generated/api";
 import { Gem, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -88,6 +89,7 @@ function CreateProductDialog() {
 
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [sku, setSku] = useState("");
   const [unit, setUnit] = useState<(typeof UNITS)[number]["value"]>("gram");
   const [stockGroupId, setStockGroupId] = useState<string>(NONE);
@@ -100,6 +102,7 @@ function CreateProductDialog() {
 
   function reset() {
     setName("");
+    setDescription("");
     setSku("");
     setUnit("gram");
     setStockGroupId(NONE);
@@ -120,6 +123,7 @@ function CreateProductDialog() {
     try {
       await createProduct({
         name,
+        description: description.trim() || undefined,
         sku: sku || undefined,
         unit,
         stockGroupId: stockGroupId === NONE ? undefined : (stockGroupId as Id<"stockGroups">),
@@ -151,37 +155,40 @@ function CreateProductDialog() {
           Add Product
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Add product / ornament</DialogTitle>
+          <DialogTitle>Add item</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-2">
-            <Label>Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Gold Chain 22K" />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_0.8fr]">
             <div className="grid gap-2">
-              <Label>SKU</Label>
-              <Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="optional" />
+              <Label htmlFor="item-name">Item name</Label>
+              <Input id="item-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Gold Chain 22K" />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="item-hsn">Item HSN</Label>
+              <Input id="item-hsn" value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="Enter HSN code" />
             </div>
             <div className="grid gap-2">
               <Label>Unit</Label>
               <Select value={unit} onValueChange={(v) => setUnit(v as typeof unit)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UNITS.map((u) => (
-                    <SelectItem key={u.value} value={u.value}>
-                      {u.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>{UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent>
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2">
+              <Label htmlFor="item-code">Item code</Label>
+              <Input id="item-code" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Optional code / SKU" />
+            </div>
+            <div className="grid gap-2">
+              <Label>Category</Label>
+              <Select value={stockCategoryId} onValueChange={setStockCategoryId}>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Choose category" /></SelectTrigger>
+                <SelectContent><SelectItem value={NONE}>None</SelectItem>{categories?.map((c) => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-2">
               <Label>Stock group</Label>
               <Select value={stockGroupId} onValueChange={setStockGroupId}>
@@ -215,7 +222,7 @@ function CreateProductDialog() {
               </Select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="grid gap-2">
               <Label>Metal purity</Label>
               <Select value={metalPurityId} onValueChange={setMetalPurityId}>
@@ -233,8 +240,8 @@ function CreateProductDialog() {
               </Select>
             </div>
             <div className="grid gap-2">
-              <Label>HSN code</Label>
-              <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="optional" />
+              <Label htmlFor="item-description">Description</Label>
+              <Textarea id="item-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Item details, design, or notes" rows={3} />
             </div>
           </div>
           <CustomFieldInputs entity="product" values={customFields} onChange={setCustomFields} />
@@ -270,6 +277,7 @@ export default function ProductsPage() {
       (p) =>
         p.name.toLowerCase().includes(q) ||
         p.sku?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
         Object.values(p.customFields ?? {}).some((value) =>
           value.toLowerCase().includes(q),
         ),
@@ -330,7 +338,7 @@ export default function ProductsPage() {
                   {filtered.map((p) => (
                     <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined}>
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.name}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{p.name}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "product")} values={p.customFields} /></div><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{p.name}{p.description && <p className="mt-0.5 max-w-lg truncate text-xs font-normal text-muted-foreground">{p.description}</p>}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "product")} values={p.customFields} /></div><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
                       <TableCell className="text-muted-foreground">{p.sku ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="capitalize">

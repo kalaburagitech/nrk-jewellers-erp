@@ -21,6 +21,7 @@ const unit = v.union(v.literal("gram"), v.literal("kilogram"), v.literal("piece"
 export const create = mutation({
   args: {
     name: v.string(),
+    description: v.optional(v.string()),
     sku: v.optional(v.string()),
     stockGroupId: v.optional(v.id("stockGroups")),
     stockCategoryId: v.optional(v.id("stockCategories")),
@@ -40,6 +41,7 @@ export const create = mutation({
     return await ctx.db.insert("products", {
       organizationId: auth.organizationId,
       name,
+      description: args.description?.trim() || undefined,
       sku: args.sku?.trim() || undefined,
       stockGroupId: args.stockGroupId,
       stockCategoryId: args.stockCategoryId,
@@ -58,6 +60,7 @@ export const update = mutation({
   args: {
     id: v.id("products"),
     name: v.string(),
+    description: v.optional(v.string()),
     sku: v.optional(v.string()),
     stockGroupId: v.optional(v.id("stockGroups")),
     stockCategoryId: v.optional(v.id("stockCategories")),
@@ -77,6 +80,7 @@ export const update = mutation({
     const customFields = await normalizeCustomFieldValues(ctx, auth.organizationId, "product", args.customFields);
     await ctx.db.patch(args.id, {
       name,
+      description: args.description?.trim() || undefined,
       sku: args.sku?.trim() || undefined,
       stockGroupId: args.stockGroupId,
       stockCategoryId: args.stockCategoryId,

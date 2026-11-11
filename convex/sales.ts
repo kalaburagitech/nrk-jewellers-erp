@@ -40,7 +40,7 @@ export const list = query({
       });
       const descriptions = saleItems.map((item) => {
         const fields = productById.get(String(item.productId))?.customFields;
-        return fields?.description?.trim();
+        return (productById.get(String(item.productId))?.description?.trim() || fields?.description?.trim());
       }).filter((value): value is string => Boolean(value));
       return {
         ...sale,
