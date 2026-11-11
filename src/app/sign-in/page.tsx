@@ -33,12 +33,17 @@ export default function SignInPage() {
     try {
       await signIn("password", formData);
       router.push("/");
-    } catch {
-      setError(
-        flow === "signIn"
-          ? "Invalid email or password."
-          : "Could not create account — the email may already be in use.",
-      );
+    } catch (authError) {
+      const message = authError instanceof Error ? authError.message : "";
+      if (flow === "signIn" && /TooManyFailedAttempts|too many failed attempts/i.test(message)) {
+        setError("Too many sign-in attempts. Please wait a few minutes before trying again.");
+      } else {
+        setError(
+          flow === "signIn"
+            ? "Invalid email or password."
+            : "Could not create account — the email may already be in use.",
+        );
+      }
     } finally {
       setSubmitting(false);
     }

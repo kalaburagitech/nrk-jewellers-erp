@@ -8,6 +8,8 @@
  * @module
  */
 
+import type * as appSecurity from "../appSecurity.js";
+import type * as appSecurityInternal from "../appSecurityInternal.js";
 import type * as auth from "../auth.js";
 import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
@@ -45,6 +47,8 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  appSecurity: typeof appSecurity;
+  appSecurityInternal: typeof appSecurityInternal;
   auth: typeof auth;
   boxes: typeof boxes;
   cashBank: typeof cashBank;

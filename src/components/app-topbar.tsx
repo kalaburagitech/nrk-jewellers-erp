@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Bell, KeyRound, LogOut, Search } from "lucide-react";
+import { Bell, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -17,6 +17,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { ColorThemePicker } from "@/components/color-theme-picker";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { Button } from "@/components/ui/button";
+import { useAppLock } from "@/components/app-lock-gate";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -182,6 +183,7 @@ export function AppTopbar({
   role?: string;
 }) {
   const { signOut } = useAuthActions();
+  const appLock = useAppLock();
   const changeOwnerPassword = useAction(api.memberships.changeOwnerPassword);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [newPassword, setNewPassword] = useState("");
@@ -237,6 +239,10 @@ export function AppTopbar({
                 {userName ?? "Account"}
               </p>
             </div>
+            <DropdownMenuItem onSelect={appLock.lock}>
+              <LockKeyhole className="h-4 w-4" />
+              Lock app
+            </DropdownMenuItem>
             {role === "owner" && (
               <DropdownMenuItem onSelect={() => {
                 setNewPassword("");
@@ -250,7 +256,10 @@ export function AppTopbar({
               </DropdownMenuItem>
             )}
             <DropdownMenuItem
-              onSelect={() => void signOut()}
+              onSelect={() => {
+                appLock.clear();
+                void signOut();
+              }}
               className="text-destructive"
             >
               <LogOut className="h-4 w-4" />

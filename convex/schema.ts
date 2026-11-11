@@ -96,6 +96,19 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_org_and_key", ["organizationId", "key"]),
 
+  // Hashed per-user app unlock PINs. The secret hash stays server-side and is
+  // never included in the public access/profile queries.
+  appSecurity: defineTable({
+    userId: v.id("users"),
+    organizationId: v.id("organizations"),
+    pinSalt: v.string(),
+    pinHash: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_org", ["organizationId"]),
+
   // ---------- Parties ----------
   customers: defineTable({
     deletedAt: v.optional(v.number()),

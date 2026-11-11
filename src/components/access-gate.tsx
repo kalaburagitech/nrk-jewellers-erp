@@ -7,6 +7,7 @@ import { Gem, Loader2 } from "lucide-react";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
+import { AppLockGate } from "@/components/app-lock-gate";
 
 function CenteredState({ children }: { children: ReactNode }) {
   return (
@@ -55,16 +56,18 @@ export function AccessGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <SidebarProvider defaultOpen={false} className="erp-shell">
-      <AppSidebar />
-      <SidebarInset>
-        <AppTopbar
-          organizationName={access.organization?.name}
-          userName={access.user?.name ?? access.user?.email}
-          role={access.membership?.role}
-        />
-        <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">{children}</main>
-      </SidebarInset>
-    </SidebarProvider>
+    <AppLockGate userId={access.membership.userId}>
+      <SidebarProvider defaultOpen={false} className="erp-shell">
+        <AppSidebar />
+        <SidebarInset>
+          <AppTopbar
+            organizationName={access.organization?.name}
+            userName={access.user?.name ?? access.user?.email}
+            role={access.membership.role}
+          />
+          <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">{children}</main>
+        </SidebarInset>
+      </SidebarProvider>
+    </AppLockGate>
   );
 }
