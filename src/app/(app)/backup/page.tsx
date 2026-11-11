@@ -112,7 +112,7 @@ export default function BackupPage() {
                     const b = JSON.parse(json);
                     if (
                       b.format !== "nrk-erp-backup" ||
-                      b.version !== 1 ||
+                      ![1, 2].includes(b.version) ||
                       !b.tables
                     )
                       throw new Error("Invalid NRK backup");

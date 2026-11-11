@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as accountingYears from "../accountingYears.js";
 import type * as appSecurity from "../appSecurity.js";
 import type * as appSecurityInternal from "../appSecurityInternal.js";
 import type * as auth from "../auth.js";
@@ -21,6 +22,7 @@ import type * as ewayBills from "../ewayBills.js";
 import type * as expenses from "../expenses.js";
 import type * as girvi from "../girvi.js";
 import type * as http from "../http.js";
+import type * as lib_accountingYears from "../lib/accountingYears.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_customFieldValues from "../lib/customFieldValues.js";
 import type * as lib_sequences from "../lib/sequences.js";
@@ -47,6 +49,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accountingYears: typeof accountingYears;
   appSecurity: typeof appSecurity;
   appSecurityInternal: typeof appSecurityInternal;
   auth: typeof auth;
@@ -60,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   expenses: typeof expenses;
   girvi: typeof girvi;
   http: typeof http;
+  "lib/accountingYears": typeof lib_accountingYears;
   "lib/auth": typeof lib_auth;
   "lib/customFieldValues": typeof lib_customFieldValues;
   "lib/sequences": typeof lib_sequences;
