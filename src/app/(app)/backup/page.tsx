@@ -1,19 +1,23 @@
 "use client";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { useState } from "react";
-import { useConvex, useMutation, useQuery } from "convex/react";
+import { useAction, useConvex, useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DatabaseBackup, Download, Upload } from "lucide-react";
+import { AlertTriangle, DatabaseBackup, Download, RotateCcw, Upload } from "lucide-react";
 
 export default function BackupPage() {
   const convex = useConvex();
   const restore = useMutation(api.dataManagement.restore);
+  const clearCompanyData = useAction(api.dataManagement.clearCompanyData);
   const access = useQuery(api.organizations.getMyAccess);
   const allowed = ["owner", "admin"].includes(access?.membership?.role ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [backupReady, setBackupReady] = useState(false);
+  const [resetPin, setResetPin] = useState("");
+  const [resetConfirmation, setResetConfirmation] = useState("");
   const [file, setFile] = useState<{
     name: string;
     json: string;
@@ -30,6 +34,7 @@ export default function BackupPage() {
     a.download = `NRK-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setBackupReady(true);
   }
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -163,6 +168,74 @@ export default function BackupPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+      {access?.membership?.role === "owner" && access.organization && (
+        <Card className="border-destructive/40">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-destructive">
+              <AlertTriangle className="h-5 w-5" />
+              Clear company records
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This soft-deletes operational records in <strong>{access.organization.name}</strong>, including invoices, purchases, inventory, parties and Girvi records. Company settings, branches, tax and purity setup, accounts, booking years and the audit trail are retained. You can restore records from a backup.
+            </p>
+            <Button
+              variant="outline"
+              disabled={busy || !allowed}
+              onClick={() => run(async () => {
+                await download();
+                setMessage("Safety backup downloaded. Confirm the company name and enter your MPIN to continue.");
+              })}
+            >
+              <Download />
+              Download safety backup
+            </Button>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm font-medium">
+                Type <span className="font-mono">RESET {access.organization.name}</span>
+                <input
+                  value={resetConfirmation}
+                  onChange={(event) => setResetConfirmation(event.target.value)}
+                  className="w-full rounded-md border bg-background px-3 py-2 font-normal"
+                  autoComplete="off"
+                  placeholder={`RESET ${access.organization.name}`}
+                />
+              </label>
+              <label className="space-y-1 text-sm font-medium">
+                Owner app MPIN
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={resetPin}
+                  onChange={(event) => setResetPin(event.target.value.replace(/\D/g, ""))}
+                  className="w-full rounded-md border bg-background px-3 py-2 font-normal"
+                  autoComplete="off"
+                  placeholder="4 to 6 digits"
+                />
+              </label>
+            </div>
+            <Button
+              variant="destructive"
+              disabled={busy || !allowed || !backupReady || resetConfirmation !== `RESET ${access.organization.name}` || !/^\d{4,6}$/.test(resetPin)}
+              onClick={() => run(async () => {
+                // Always create a fresh downloadable backup immediately before the reset.
+                await download();
+                const result = await clearCompanyData({ confirmation: resetConfirmation, pin: resetPin });
+                setMessage(`Company data cleared. ${result.count} records were soft-deleted; your fresh backup was downloaded.`);
+                setResetPin("");
+                setResetConfirmation("");
+                setBackupReady(false);
+              })}
+            >
+              <RotateCcw />
+              {busy ? "Working…" : "Soft-delete company data"}
+            </Button>
+            {!backupReady && <p className="text-xs text-muted-foreground">Download a safety backup before this action is enabled.</p>}
+          </CardContent>
+        </Card>
       )}
       {message && (
         <p role="status" className="rounded-lg border p-4 text-sm">

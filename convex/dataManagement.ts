@@ -1,9 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Dynamic table access is restricted to this explicit business-data allowlist.
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { action, internalMutation, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import type { TableNames } from "./_generated/dataModel";
+import { api, internal } from "./_generated/api";
+import type { RegisteredAction } from "convex/server";
 export const TABLES = [
   "branches",
   "applicationSettings",
@@ -201,6 +203,58 @@ export const restore = mutation({
       createdAt: Date.now(),
     });
     return { count };
+  },
+});
+
+export const clearCompanyDataInternal = internalMutation({
+  args: { organizationId: v.id("organizations"), userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const tables = await readRows(ctx, args.organizationId);
+    const preserve = new Set(["branches", "applicationSettings", "accountingYears", "taxConfigurations", "metalPurities", "bankAccounts"]);
+    const now = Date.now();
+    let count = 0;
+    for (const table of TABLES) {
+      if (preserve.has(table)) continue;
+      for (const row of tables[table]) {
+        await ctx.db.patch(row._id, { deletedAt: now, ...("isActive" in row ? { isActive: false } : {}) } as never);
+        count++;
+      }
+    }
+    for (const account of tables.bankAccounts) await ctx.db.patch(account._id, { currentBalancePaise: account.openingBalancePaise });
+    await ctx.db.insert("auditLogs", {
+      organizationId: args.organizationId,
+      userId: args.userId,
+      action: "company.soft_reset",
+      entityTable: "organizations",
+      entityId: args.organizationId,
+      metadata: { count, preservedConfiguration: true },
+      createdAt: now,
+    });
+    return { count };
+  },
+});
+
+function bytesToHex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export const clearCompanyData: RegisteredAction<"public", { confirmation: string; pin: string }, Promise<{ count: number }>> = action({
+  args: { confirmation: v.string(), pin: v.string() },
+  handler: async (ctx, args): Promise<{ count: number }> => {
+    const access = await ctx.runQuery(api.organizations.getMyAccess, {});
+    if (access?.membership?.role !== "owner" || !access.organization || !access.user) throw new Error("Only the owner can reset company data.");
+    if (args.confirmation !== `RESET ${access.organization.name}`) throw new Error(`Type RESET ${access.organization.name} exactly to confirm.`);
+    if (!/^\d{4,6}$/.test(args.pin)) throw new Error("Enter your 4 to 6 digit app MPIN.");
+    const pinRecord: { pinSalt: string; pinHash: string } | null = await ctx.runQuery(internal.appSecurityInternal.getPinRecord, { userId: access.user._id });
+    if (!pinRecord) throw new Error("Set an app MPIN before resetting company data.");
+    const salt = Uint8Array.from(pinRecord.pinSalt.match(/.{2}/g) ?? [], (byte) => Number.parseInt(byte, 16));
+    const keyMaterial = await crypto.subtle.importKey("raw", new TextEncoder().encode(args.pin), "PBKDF2", false, ["deriveBits"]);
+    const derived = new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: Uint8Array.from(salt).buffer as ArrayBuffer, iterations: 210_000 }, keyMaterial, 256));
+    const candidate = bytesToHex(derived);
+    let difference = candidate.length ^ pinRecord.pinHash.length;
+    for (let index = 0; index < Math.min(candidate.length, pinRecord.pinHash.length); index++) difference |= candidate.charCodeAt(index) ^ pinRecord.pinHash.charCodeAt(index);
+    if (difference !== 0) throw new Error("The MPIN did not match. No company data was changed.");
+    return await ctx.runMutation(internal.dataManagement.clearCompanyDataInternal, { organizationId: access.organization._id, userId: access.user._id });
   },
 });
 export const listRecords = query({
