@@ -25,6 +25,10 @@ export default function SignInPage() {
     setSubmitting(true);
     const formData = new FormData(e.currentTarget);
     formData.set("flow", flow);
+    const email = formData.get("email");
+    if (typeof email === "string") {
+      formData.set("email", email.trim().toLowerCase());
+    }
     try {
       await signIn("password", formData);
       router.push("/");
