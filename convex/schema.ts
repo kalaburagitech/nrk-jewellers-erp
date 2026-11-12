@@ -255,10 +255,13 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     productId: v.id("products"),
     boxItemId: v.optional(v.id("boxItems")),
+    // Physical location at the time of this movement. Kept on the ledger so
+    // transfers and sales remain attributable after the item changes boxes.
+    boxId: v.optional(v.id("boxes")),
     direction: v.union(v.literal("in"), v.literal("out")),
     netWeightMg: v.number(),
     quantity: v.number(),
-    sourceTable: v.string(), // "purchases" | "sales" | "stockAdjustments" | "boxTransfers" ...
+    sourceTable: v.string(), // purchases, sales, stock_adjustments, box_transfers, etc.
     sourceId: v.string(),
     createdAt: v.number(),
   })

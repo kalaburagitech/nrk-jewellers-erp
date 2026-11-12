@@ -12,13 +12,14 @@ const SOURCE_LABEL: Record<string, string> = {
   purchases: "Purchase",
   sales: "Sale",
   stock_adjustments: "Adjustment",
+  box_transfers: "Box transfer",
 };
 
 export default function StockJournalPage() {
   const journal = useQuery(api.reports.getStockJournal);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex max-w-full flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Stock Journal</h1>
         <p className="text-sm text-muted-foreground">
@@ -41,7 +42,9 @@ export default function StockJournalPage() {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Product</TableHead>
+                  <TableHead>Box</TableHead>
                   <TableHead>Source</TableHead>
+                  <TableHead className="text-right">Pcs</TableHead>
                   <TableHead>Direction</TableHead>
                   <TableHead className="text-right">Weight</TableHead>
                 </TableRow>
@@ -51,7 +54,9 @@ export default function StockJournalPage() {
                   <TableRow key={m._id}>
                     <TableCell>{new Date(m.createdAt).toLocaleDateString("en-IN")}</TableCell>
                     <TableCell className="font-medium">{m.productName}</TableCell>
+                    <TableCell>{m.boxName}</TableCell>
                     <TableCell className="text-muted-foreground">{SOURCE_LABEL[m.sourceTable] ?? m.sourceTable}</TableCell>
+                    <TableCell className="text-right">{m.quantity}</TableCell>
                     <TableCell>
                       <Badge variant={m.direction === "in" ? "secondary" : "outline"} className="capitalize">
                         {m.direction}

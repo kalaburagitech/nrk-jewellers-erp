@@ -188,7 +188,7 @@ export const listReturnableItems = query({
     );
     return withBoxItem
       .filter(({ boxItem }) => boxItem?.status === "sold")
-      .map(({ item, boxItem }) => ({ ...item, label: boxItem?.label ?? "Item" }));
+      .map(({ item, boxItem }) => ({ ...item, label: boxItem?.label ?? "Item", previousBoxId: boxItem?.boxId }));
   },
 });
 
@@ -388,8 +388,9 @@ async function applySaleTransaction(
       organizationId: auth.organizationId,
       productId: boxItem.productId,
       boxItemId: item.boxItemId,
+      boxId: boxItem.boxId,
       direction: "out",
-      netWeightMg: computed.netWeightMg,
+      netWeightMg: boxItem.netWeightMg,
       quantity: 1,
       sourceTable: "sales",
       sourceId: saleId,
@@ -490,8 +491,9 @@ async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale:
           organizationId: auth.organizationId,
           productId: boxItem.productId,
           boxItemId: boxItem._id,
+          boxId: boxItem.boxId,
           direction: "in",
-          netWeightMg: item.netWeightMg,
+          netWeightMg: boxItem.netWeightMg,
           quantity: 1,
           sourceTable: "sales",
           sourceId: sale._id,
@@ -866,6 +868,7 @@ export const createReturn = mutation({
     documentType: v.union(v.literal("sales_return"), v.literal("credit_note")),
     originalSaleId: v.id("sales"),
     saleItemIds: v.array(v.id("saleItems")),
+    boxAssignments: v.array(v.object({ saleItemId: v.id("saleItems"), boxId: v.id("boxes") })),
     idempotencyKey: v.string(),
   },
   handler: async (ctx, args) => {
@@ -890,7 +893,11 @@ export const createReturn = mutation({
     const customer = await ctx.db.get(originalSale.customerId);
     if (!customer) throw new Error("Customer not found");
 
-    const lines: Array<{ saleItem: Doc<"saleItems">; boxItem: Doc<"boxItems"> }> = [];
+    if (args.boxAssignments.length !== args.saleItemIds.length || new Set(args.boxAssignments.map((assignment) => assignment.saleItemId)).size !== args.saleItemIds.length) {
+      throw new Error("Choose a physical box for each item being returned.");
+    }
+    const boxBySaleItem = new Map(args.boxAssignments.map((assignment) => [assignment.saleItemId, assignment.boxId]));
+    const lines: Array<{ saleItem: Doc<"saleItems">; boxItem: Doc<"boxItems">; box: Doc<"boxes"> }> = [];
     for (const saleItemId of args.saleItemIds) {
       const saleItem = await ctx.db.get(saleItemId);
       if (!saleItem || saleItem.saleId !== args.originalSaleId) throw new Error("Return item not found on this invoice");
@@ -898,7 +905,10 @@ export const createReturn = mutation({
       const boxItem = await ctx.db.get(saleItem.boxItemId);
       if (!boxItem) throw new Error("Original item not found");
       if (boxItem.status !== "sold") throw new Error(`"${boxItem.label}" has already been returned or is not sold`);
-      lines.push({ saleItem, boxItem });
+      const boxId = boxBySaleItem.get(saleItemId);
+      const box = boxId ? await ctx.db.get(boxId) : null;
+      if (!box || box.deletedAt || box.organizationId !== auth.organizationId || !box.isActive) throw new Error("Select an active box in this company for every returned item.");
+      lines.push({ saleItem, boxItem, box });
     }
 
     const returnValuePaise = lines.reduce((sum, l) => sum + l.saleItem.lineTotalPaise, 0);
@@ -933,7 +943,7 @@ export const createReturn = mutation({
     });
 
     const boxDeltas = new Map<Id<"boxes">, number>();
-    for (const { saleItem, boxItem } of lines) {
+    for (const { saleItem, boxItem, box } of lines) {
       await ctx.db.insert("saleItems", {
         organizationId: auth.organizationId,
         saleId: returnId,
@@ -953,15 +963,16 @@ export const createReturn = mutation({
         lineTotalPaise: saleItem.lineTotalPaise,
       });
 
-      await ctx.db.patch(boxItem._id, { status: "in_stock" });
-      boxDeltas.set(boxItem.boxId, (boxDeltas.get(boxItem.boxId) ?? 0) + 1);
+      await ctx.db.patch(boxItem._id, { boxId: box._id, status: "in_stock" });
+      boxDeltas.set(box._id, (boxDeltas.get(box._id) ?? 0) + 1);
 
       await ctx.db.insert("stockMovements", {
         organizationId: auth.organizationId,
         productId: boxItem.productId,
         boxItemId: boxItem._id,
+        boxId: box._id,
         direction: "in",
-        netWeightMg: saleItem.netWeightMg,
+        netWeightMg: boxItem.netWeightMg,
         quantity: 1,
         sourceTable: "sales",
         sourceId: returnId,
@@ -1028,7 +1039,7 @@ export const cancel = mutation({
           const box = await ctx.db.get(stock.boxId);
           await ctx.db.patch(stock._id, { status: "sold" });
           if (box) await ctx.db.patch(box._id, { itemCount: Math.max(0, (box.itemCount ?? 0) - 1) });
-          await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, direction: "out", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "sales", sourceId: sale._id, createdAt: Date.now() });
+          await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, boxId: stock.boxId, direction: "out", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "sales", sourceId: sale._id, createdAt: Date.now() });
         }
         const customer = await ctx.db.get(sale.customerId);
         if (!customer) throw new Error("Customer not found");

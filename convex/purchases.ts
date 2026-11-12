@@ -297,6 +297,7 @@ async function applyPurchaseTransaction(
       organizationId: auth.organizationId,
       productId: item.productId,
       boxItemId,
+      boxId: item.boxId,
       direction: "in",
       netWeightMg: computed.netWeightMg,
       quantity: 1,
@@ -365,6 +366,7 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
       await ctx.db.insert("stockMovements", {
         organizationId: auth.organizationId,
         productId: item.productId,
+        boxId: item.boxId,
         direction: "out",
         netWeightMg: item.netWeightMg,
         quantity: 1,
@@ -560,7 +562,7 @@ export const cancel = mutation({
         const box = await ctx.db.get(stock.boxId);
         await ctx.db.patch(stock._id, { status: "in_stock" });
         if (box) await ctx.db.patch(box._id, { itemCount: (box.itemCount ?? 0) + 1 });
-        await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, direction: "in", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "purchases", sourceId: purchase._id, createdAt: Date.now() });
+        await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, boxId: stock.boxId, direction: "in", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "purchases", sourceId: purchase._id, createdAt: Date.now() });
       }
       const supplier = await ctx.db.get(purchase.supplierId);
       if (!supplier) throw new Error("Supplier not found");
@@ -866,6 +868,7 @@ export const createPurchaseReturn = mutation({
         organizationId: auth.organizationId,
         productId: boxItem.productId,
         boxItemId: boxItem._id,
+        boxId: boxItem.boxId,
         direction: "out",
         netWeightMg: purchaseItem.netWeightMg,
         quantity: 1,

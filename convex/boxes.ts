@@ -90,14 +90,33 @@ export const transferItem = mutation({
     if (boxItem.status !== "in_stock") throw new Error("Only in-stock items can be transferred");
 
     const toBox = await ctx.db.get(args.toBoxId);
-    if (!toBox || toBox.deletedAt || toBox.organizationId !== auth.organizationId) throw new Error("Destination box not found");
+    if (!toBox || toBox.deletedAt || toBox.organizationId !== auth.organizationId || !toBox.isActive) throw new Error("Choose an active destination box in this company.");
     if (toBox._id === boxItem.boxId) throw new Error("Item is already in this box");
 
     const fromBox = await ctx.db.get(boxItem.boxId);
+    if (!fromBox || fromBox.deletedAt || fromBox.organizationId !== auth.organizationId || !fromBox.isActive) throw new Error("The item's current box is unavailable. Refresh the box list and try again.");
+    const now = Date.now();
 
     await ctx.db.patch(args.boxItemId, { boxId: args.toBoxId });
-    if (fromBox) await ctx.db.patch(fromBox._id, { itemCount: Math.max(0, (fromBox.itemCount ?? 0) - 1) });
+    await ctx.db.patch(fromBox._id, { itemCount: Math.max(0, (fromBox.itemCount ?? 0) - 1) });
     await ctx.db.patch(args.toBoxId, { itemCount: (toBox.itemCount ?? 0) + 1 });
+
+    // A transfer is a paired ledger event: the physical item leaves one box
+    // and arrives in the other. Both rows commit atomically with its new boxId.
+    for (const [boxId, direction] of [[fromBox._id, "out"], [toBox._id, "in"]] as const) {
+      await ctx.db.insert("stockMovements", {
+        organizationId: auth.organizationId,
+        productId: boxItem.productId,
+        boxItemId: boxItem._id,
+        boxId,
+        direction,
+        netWeightMg: boxItem.netWeightMg,
+        quantity: 1,
+        sourceTable: "box_transfers",
+        sourceId: `${boxItem._id}:${now}`,
+        createdAt: now,
+      });
+    }
 
     await ctx.db.insert("auditLogs", {
       organizationId: auth.organizationId,
@@ -106,7 +125,7 @@ export const transferItem = mutation({
       entityTable: "boxItems",
       entityId: args.boxItemId,
       metadata: { fromBoxNumber: fromBox?.boxNumber, toBoxNumber: toBox.boxNumber, label: boxItem.label },
-      createdAt: Date.now(),
+      createdAt: now,
     });
   },
 });

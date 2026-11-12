@@ -287,7 +287,7 @@ export const getPurchaseReport = query({
   },
 });
 
-/** Box report: per-box item count and net weight — where everything physically is right now. */
+/** Physical box ledger. Legacy movements without boxId are included in the opening baseline. */
 export const getBoxReport = query({
   args: {},
   handler: async (ctx) => {
@@ -299,27 +299,57 @@ export const getBoxReport = query({
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
 
-    const rows = await Promise.all(
-      boxes
-        .filter((b) => (b.itemCount ?? 0) > 0)
-        .map(async (box) => {
-          const items = await ctx.db
-            .query("boxItems")
-            .withIndex("by_box", (q) => q.eq("boxId", box._id))
-            .filter((q) => q.eq(q.field("status"), "in_stock"))
-            .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect();
-          return {
-            boxId: box._id,
-            boxNumber: box.boxNumber,
-            label: box.label,
-            itemCount: items.length,
-            netWeightMg: items.reduce((sum, i) => sum + i.netWeightMg, 0),
-          };
-        }),
-    );
+    const [products, categories, allItems, allMovements] = await Promise.all([
+      ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+      ctx.db.query("stockMovements").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+    ]);
+    const categoryName = new Map(categories.map((category) => [category._id, category.name]));
+    const categoryByProduct = new Map(products.map((product) => [product._id, product.stockCategoryId ? categoryName.get(product.stockCategoryId) : undefined]));
+    const itemsByBox = new Map<string, typeof allItems>();
+    for (const item of allItems) {
+      if (item.status !== "in_stock") continue;
+      const rows = itemsByBox.get(item.boxId) ?? [];
+      rows.push(item);
+      itemsByBox.set(item.boxId, rows);
+    }
+    const movementsByBox = new Map<string, typeof allMovements>();
+    for (const movement of allMovements) {
+      if (!movement.boxId) continue;
+      const rows = movementsByBox.get(movement.boxId) ?? [];
+      rows.push(movement);
+      movementsByBox.set(movement.boxId, rows);
+    }
 
-    return rows;
+    return boxes.filter((box) => box.isActive).map((box) => {
+      const items = itemsByBox.get(box._id) ?? [];
+      const boxMovements = movementsByBox.get(box._id) ?? [];
+      const amountFor = (predicate: (movement: typeof boxMovements[number]) => boolean) => boxMovements
+        .filter(predicate).reduce((sum, movement) => sum + movement.netWeightMg * (movement.direction === "in" ? 1 : -1), 0);
+      const currentPhysicalWeightMg = items.reduce((sum, item) => sum + item.netWeightMg, 0);
+      const signedMovementMg = amountFor(() => true);
+      const categoriesInBox = [...new Set(items.map((item) => categoryByProduct.get(item.productId)).filter((name): name is string => Boolean(name)))];
+      return {
+        boxId: box._id,
+        boxNumber: box.boxNumber,
+        label: box.label,
+        categories: categoriesInBox,
+        itemCount: items.length,
+        openingWeightMg: Math.max(0, currentPhysicalWeightMg - signedMovementMg),
+        // Net incoming purchases and manual stock corrections. This keeps the
+        // box roll-forward balanced when an adjustment reduces physical weight.
+        stockAddedWeightMg: amountFor((movement) => movement.sourceTable === "purchases" || movement.sourceTable === "stock_adjustments"),
+        weightSoldMg: amountFor((movement) => movement.sourceTable === "sales"),
+        transferredInWeightMg: boxMovements.filter((movement) => movement.sourceTable === "box_transfers" && movement.direction === "in").reduce((sum, movement) => sum + movement.netWeightMg, 0),
+        transferredOutWeightMg: boxMovements.filter((movement) => movement.sourceTable === "box_transfers" && movement.direction === "out").reduce((sum, movement) => sum + movement.netWeightMg, 0),
+        currentPhysicalWeightMg,
+      };
+    });
   },
 });
 
@@ -384,10 +414,14 @@ export const getStockJournal = query({
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const productNameById = new Map(products.map((p) => [p._id, p.name]));
+    const boxes = await ctx.db.query("boxes").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId)).collect();
+    const boxById = new Map(boxes.map((box) => [box._id, `Box ${box.boxNumber}${box.label ? ` · ${box.label}` : ""}`]));
 
     return movements.map((m) => ({
       _id: m._id,
       productName: productNameById.get(m.productId) ?? "Product",
+      boxName: m.boxId ? boxById.get(m.boxId) ?? "Box unavailable" : "—",
+      quantity: m.quantity,
       direction: m.direction,
       netWeightMg: m.netWeightMg,
       sourceTable: m.sourceTable,

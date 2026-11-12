@@ -100,7 +100,7 @@ export default function BoxTransfersPage() {
                       </SelectTrigger>
                       <SelectContent className="max-h-64">
                         {boxes
-                          ?.filter((b) => b._id !== sourceBox._id)
+                          ?.filter((b) => b._id !== sourceBox._id && b.isActive)
                           .map((b) => (
                             <SelectItem key={b._id} value={b._id}>
                               Box {b.boxNumber}

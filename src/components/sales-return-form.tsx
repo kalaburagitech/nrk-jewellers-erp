@@ -39,11 +39,13 @@ export function SalesReturnFormDialog({
   title: string;
 }) {
   const customers = useQuery(api.customers.list);
+  const boxes = useQuery(api.boxes.list);
   const createReturn = useMutation(api.sales.createReturn);
 
   const [open, setOpen] = useState(false);
   const [customerId, setCustomerId] = useState<Id<"customers"> | "">("");
   const [saleId, setSaleId] = useState<Id<"sales"> | "">("");
+  const [returnBoxByItem, setReturnBoxByItem] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +68,7 @@ export function SalesReturnFormDialog({
   function reset() {
     setCustomerId("");
     setSaleId("");
+    setReturnBoxByItem({});
     selection.clear();
     setError(null);
   }
@@ -76,12 +79,21 @@ export function SalesReturnFormDialog({
       setError("Select the invoice and at least one item to return");
       return;
     }
+    const boxAssignments = [...selectedItemIds].map((saleItemId) => ({
+      saleItemId,
+      boxId: returnBoxByItem[saleItemId] as Id<"boxes"> | undefined,
+    }));
+    if (boxAssignments.some((assignment) => !assignment.boxId)) {
+      setError("Choose the physical box for every selected returned item.");
+      return;
+    }
     setSubmitting(true);
     try {
       await createReturn({
         documentType,
         originalSaleId: saleId,
         saleItemIds: [...selectedItemIds],
+        boxAssignments: boxAssignments as { saleItemId: Id<"saleItems">; boxId: Id<"boxes"> }[],
         idempotencyKey: crypto.randomUUID(),
       });
       reset();
@@ -142,6 +154,7 @@ export function SalesReturnFormDialog({
                 value={saleId}
                 onValueChange={(v) => {
                   setSaleId(v as Id<"sales">);
+                  setReturnBoxByItem({});
                   selection.clear();
                 }}
               >
@@ -180,25 +193,43 @@ export function SalesReturnFormDialog({
                 </p>
               ) : (
                 items.map((item) => (
-                  <label
+                  <div
                     key={item._id}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5"
+                    className={`grid gap-3 rounded-xl border border-border px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_220px] ${selectedItemIds.has(item._id) ? "border-primary/40 bg-primary/5" : ""}`}
                   >
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedItemIds.has(item._id)}
-                        aria-label={`Select ${item.label}`}
-                        disabled={submitting}
-                        onCheckedChange={() => selection.toggle(item._id)}
-                      />
-                      <span>
-                        {item.label} · {mgToGramsDisplay(item.netWeightMg)}g
-                      </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={selectedItemIds.has(item._id)}
+                          aria-label={`Select ${item.label}`}
+                          disabled={submitting}
+                          onCheckedChange={() => selection.toggle(item._id)}
+                        />
+                        <span>{item.label} · {mgToGramsDisplay(item.netWeightMg)}g</span>
+                      </div>
+                      <span className="shrink-0 font-medium">{formatPaise(item.lineTotalPaise)}</span>
                     </div>
-                    <span className="font-medium">
-                      {formatPaise(item.lineTotalPaise)}
-                    </span>
-                  </label>
+                    {selectedItemIds.has(item._id) && (
+                      <Select
+                        value={returnBoxByItem[item._id] ?? ""}
+                        onValueChange={(value) =>
+                          setReturnBoxByItem((previous) => ({ ...previous, [item._id]: value }))
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Assign returned item to a box" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64">
+                          {boxes?.filter((box) => box.isActive).map((box) => (
+                            <SelectItem key={box._id} value={box._id}>
+                              Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}
+                              {item.previousBoxId === box._id ? " · previous box" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </div>
                 ))
               )}
             </div>

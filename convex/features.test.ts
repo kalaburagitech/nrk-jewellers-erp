@@ -329,6 +329,7 @@ describe("transaction history and backup integrity", () => {
       originalSaleId: f.saleId,
       documentType: "sales_return",
       saleItemIds: [lines[0]._id],
+      boxAssignments: [{ saleItemId: lines[0]._id, boxId: f.box }],
       idempotencyKey: "return-1",
     });
     await expect(

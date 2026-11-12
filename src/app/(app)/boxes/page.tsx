@@ -21,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 
 function BoxDetailDialog({
   boxId,
@@ -65,6 +66,8 @@ function BoxDetailDialog({
 
 export default function BoxOverviewPage() {
   const boxes = useQuery(api.boxes.list);
+  const boxReport = useQuery(api.reports.getBoxReport);
+  const reportByBoxId = useMemo(() => new Map((boxReport ?? []).map((row) => [row.boxId, row])), [boxReport]);
   const createNext = useMutation(api.boxes.createNext);
   const [search, setSearch] = useState("");
   const [selectedBox, setSelectedBox] = useState<Id<"boxes"> | null>(null);
@@ -190,10 +193,13 @@ export default function BoxOverviewPage() {
                     </p>
                   )}
                   <Badge variant="secondary" className="text-xs font-normal">
-                    {box.itemCount
-                      ? `${box.itemCount} item${box.itemCount === 1 ? "" : "s"}`
+                    {(reportByBoxId.get(box._id)?.itemCount ?? box.itemCount)
+                      ? `${reportByBoxId.get(box._id)?.itemCount ?? box.itemCount} item${(reportByBoxId.get(box._id)?.itemCount ?? box.itemCount) === 1 ? "" : "s"}`
                       : "Empty"}
                   </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {mgToGramsDisplay(reportByBoxId.get(box._id)?.currentPhysicalWeightMg ?? 0)}g net
+                  </span>
                 </button>
                 <DeleteRecordButton
                   table="boxes"
