@@ -44,7 +44,7 @@ const TEMPLATES = [
 ] as const;
 
 /** The A5 item table always reserves this many row slots so the totals/footer below it land in the same place regardless of item count — unfilled slots are blank, not bordered. Kept low enough to leave real margin below the 138mm page budget for what a physical printer adds (most browsers print a URL/date header and page-number footer by default unless that's turned off in the print dialog). */
-const MIN_INVOICE_ITEM_ROWS = 5;
+const MIN_INVOICE_ITEM_ROWS = 8;
 
 /** Printed invoice amounts use whole rupees; weight values keep their precision. */
 function formatPaise(paise: number) {
@@ -346,7 +346,7 @@ export default function PrintInvoicePage({
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <div className={`flex items-center justify-between border-2 border-[#655c36] bg-[#f8f5ea] ${template === "half-a4" ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
+            <div className={`flex items-center justify-between border border-[#655c36] border-l-4 border-l-[#655c36] bg-[#f8f5ea] ${template === "half-a4" ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
               <div className={`flex min-w-0 flex-1 ${template === "half-a4" ? "items-center gap-2" : "items-center gap-5"}`}>
                 <div className={`flex shrink-0 flex-col items-center justify-center bg-white px-2 py-1 ${template === "half-a4" ? "w-[32mm]" : "w-[43mm] pr-4"}`}>
                   {
@@ -492,13 +492,14 @@ export default function PrintInvoicePage({
                   </tr>
                 ))}
                 {/* Blank filler rows reserve the same table height regardless of item
-                    count, so the totals/footer below never shift up or down — but
-                    unlike real item rows, these carry no borders: just plain blank
-                    space, not an empty bordered grid. */}
+                    count, so the totals/footer below never shift up or down. The
+                    column guides (vertical borders) carry through so it still reads
+                    as the same table, but there are no horizontal row lines across
+                    the blank space — just empty space within the columns. */}
                 {Array.from({ length: Math.max(0, MIN_INVOICE_ITEM_ROWS - items.length) }, (_, i) => (
                   <tr key={`blank-${i}`}>
                     {Array.from({ length: sale.isGst ? 10 : 9 }, (_, col) => (
-                      <td key={col} className="px-1 py-2">
+                      <td key={col} className="border-x border-[#655c36] px-1 py-2">
                         &nbsp;
                       </td>
                     ))}
@@ -598,7 +599,7 @@ export default function PrintInvoicePage({
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
               </p>
-              <p className={`shrink-0 font-extrabold text-[#13253f] ${template === "half-a4" ? "mb-1 text-[10px]" : "mb-2 text-lg"}`}>
+              <p className={`shrink-0 rounded-sm border-b-2 border-[#655c36] bg-white font-extrabold tracking-tight text-[#13253f] ${template === "half-a4" ? "mb-1 px-2 py-1 text-[10px]" : "mb-2 px-4 py-2 text-lg"}`}>
                 For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
               </p>
             </div>

@@ -9,7 +9,7 @@ import { DeleteRecordButton } from "@/components/delete-record-button";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { Package, Plus, Search } from "lucide-react";
+import { Check, Package, Pencil, Plus, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -22,6 +22,72 @@ import {
 } from "@/components/ui/dialog";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+
+function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
+  const renameItem = useMutation(api.boxes.renameItem);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.label);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      await renameItem({ boxItemId: item._id, label: draft });
+      setEditing(false);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not rename this item"));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <li className="flex flex-col gap-1 rounded-md border border-border p-3 text-sm">
+        <div className="flex items-center gap-2">
+          <Input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && save()}
+            className="h-8"
+          />
+          <Button type="button" size="icon" variant="ghost" className="h-8 w-8 shrink-0" disabled={saving} onClick={save} aria-label="Save">
+            <Check className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0"
+            onClick={() => {
+              setEditing(false);
+              setDraft(item.label);
+              setError("");
+            }}
+            aria-label="Cancel"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </li>
+    );
+  }
+
+  return (
+    <li className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+      <span>
+        {item.label} — {(item.netWeightMg / 1000).toFixed(3)}g net
+      </span>
+      <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setEditing(true)} aria-label={`Rename ${item.label}`}>
+        <Pencil className="h-3.5 w-3.5" />
+      </Button>
+    </li>
+  );
+}
 
 function BoxDetailDialog({
   boxId,
@@ -50,12 +116,7 @@ function BoxDetailDialog({
         ) : (
           <ul className="flex flex-col gap-2">
             {items.map((item) => (
-              <li
-                key={item._id}
-                className="rounded-md border border-border p-3 text-sm"
-              >
-                {item.label} — {(item.netWeightMg / 1000).toFixed(3)}g net
-              </li>
+              <BoxItemRow key={item._id} item={item} />
             ))}
           </ul>
         )}
@@ -70,6 +131,7 @@ export default function BoxOverviewPage() {
   const reportByBoxId = useMemo(() => new Map((boxReport ?? []).map((row) => [row.boxId, row])), [boxReport]);
   const createNext = useMutation(api.boxes.createNext);
   const [search, setSearch] = useState("");
+  const itemMatches = useQuery(api.boxes.searchItems, search.trim().length >= 2 ? { term: search } : "skip");
   const [selectedBox, setSelectedBox] = useState<Id<"boxes"> | null>(null);
   const [boxNumber, setBoxNumber] = useState("");
   const [label, setLabel] = useState("");
@@ -152,11 +214,36 @@ export default function BoxOverviewPage() {
         <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search by box number or label"
+          placeholder="Search box number, or an item like 'ring'"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
+
+      {itemMatches && itemMatches.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+          <p className="text-sm font-medium">
+            Items matching &quot;{search}&quot; — {itemMatches.length} found
+          </p>
+          <div className="flex flex-col gap-1">
+            {itemMatches.map((item) => (
+              <button
+                type="button"
+                key={item.boxItemId}
+                onClick={() => item.boxId && setSelectedBox(item.boxId)}
+                className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-left text-sm hover:bg-accent"
+              >
+                <span>
+                  {item.label} <span className="text-muted-foreground">· {item.productName}</span>
+                </span>
+                <span className="shrink-0 text-muted-foreground">
+                  Box {item.boxNumber ?? "—"} · {(item.netWeightMg / 1000).toFixed(3)}g
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <BulkRecordActions selection={selection} table="boxes" />
       {filtered === undefined ? (

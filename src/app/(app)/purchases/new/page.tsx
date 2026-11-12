@@ -125,6 +125,33 @@ export default function NewPurchasePage() {
   }, [editPurchaseId, existingPurchase, prefilled, form]);
   /* eslint-enable react-hooks/set-state-in-effect */
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
+
+  // Quick-add: pick a product/box/rate once and generate that many pre-filled
+  // lines at once — the operator still enters each piece's actual weight
+  // (gold pieces of the "same" design never weigh exactly the same), but
+  // doesn't have to re-pick product/box/charges N times for a bulk receipt.
+  const [quickProductId, setQuickProductId] = useState("");
+  const [quickBoxId, setQuickBoxId] = useState("");
+  const [quickQuantity, setQuickQuantity] = useState("1");
+  function handleQuickAdd() {
+    const product = products?.find((p) => p._id === quickProductId);
+    if (!product) return;
+    const quantity = Math.max(1, Math.min(50, Math.round(Number(quickQuantity)) || 1));
+    const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
+    const existingCount = fields.length;
+    append(
+      Array.from({ length: quantity }, (_, i) => ({
+        ...emptyLine(),
+        productId: quickProductId,
+        boxId: quickBoxId,
+        label: `${product.name} ${existingCount + i + 1}`,
+        metalPurityId: product.metalPurityId ?? "",
+        ratePerGramRupees: latestRate ? (latestRate / 100).toFixed(2) : "",
+      })),
+    );
+    setQuickQuantity("1");
+  }
+
   const watchedItems = useWatch({ control: form.control, name: "items" });
   const watchedGst = useWatch({ control: form.control, name: "gstPercent" });
   const watchedPaid = useWatch({ control: form.control, name: "amountPaidRupees" });
@@ -264,13 +291,67 @@ export default function NewPurchasePage() {
             </Card>
 
             <section className="flex flex-col gap-4">
+              <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+                <div>
+                  <h2 className="font-semibold">Receiving multiple pieces of the same design?</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Pick the product, box and quantity once — each piece still gets its own line to enter its actual weight.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="grid min-w-[12rem] flex-1 gap-2">
+                    <label className="text-sm font-medium">Product</label>
+                    <Select value={quickProductId} onValueChange={setQuickProductId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select product" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {products?.map((p) => (
+                          <SelectItem key={p._id} value={p._id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid min-w-[10rem] flex-1 gap-2">
+                    <label className="text-sm font-medium">Destination box</label>
+                    <Select value={quickBoxId} onValueChange={setQuickBoxId}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select box" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {boxes?.map((b) => (
+                          <SelectItem key={b._id} value={b._id}>
+                            Box {b.boxNumber}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid w-24 gap-2">
+                    <label className="text-sm font-medium">Quantity</label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="50"
+                      value={quickQuantity}
+                      onChange={(e) => setQuickQuantity(e.target.value)}
+                    />
+                  </div>
+                  <Button type="button" disabled={!quickProductId || !quickBoxId} onClick={handleQuickAdd}>
+                    <Plus className="h-4 w-4" /> Add {quickQuantity || "1"} piece{Number(quickQuantity) === 1 ? "" : "s"}
+                  </Button>
+                </div>
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
                 <div>
                   <h2 className="font-semibold">Items in this bill <span className="text-muted-foreground">({fields.length})</span></h2>
                   <p className="mt-1 text-sm text-muted-foreground">Add one line for each product or ornament received.</p>
                 </div>
                 <Button type="button" variant="outline" onClick={() => append(emptyLine())}>
-                  <Plus className="h-4 w-4" /> Add Item
+                  <Plus className="h-4 w-4" /> Add one-off item
                 </Button>
               </div>
               {fields.map((field, index) => {

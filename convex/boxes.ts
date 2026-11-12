@@ -15,6 +15,60 @@ export const list = query({
   },
 });
 
+/**
+ * "Which box is this ring in?" — searches in-stock piece labels and product
+ * names across every box, not just the box number/label search on the Box
+ * Overview page. Bounded read, client-filtered, same pattern as
+ * `search.globalSearch`.
+ */
+export const searchItems = query({
+  args: { term: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const term = args.term.trim().toLowerCase();
+    if (term.length < 2) return [];
+
+    const [boxItems, boxes, products] = await Promise.all([
+      ctx.db
+        .query("boxItems")
+        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("status"), "in_stock"))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(2000),
+      ctx.db
+        .query("boxes")
+        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
+      ctx.db
+        .query("products")
+        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect(),
+    ]);
+    const boxById = new Map(boxes.map((b) => [String(b._id), b]));
+    const productById = new Map(products.map((p) => [String(p._id), p]));
+
+    return boxItems
+      .filter((item) => {
+        const productName = productById.get(String(item.productId))?.name ?? "";
+        return item.label.toLowerCase().includes(term) || productName.toLowerCase().includes(term);
+      })
+      .slice(0, 30)
+      .map((item) => {
+        const box = boxById.get(String(item.boxId));
+        return {
+          boxItemId: item._id,
+          boxId: item.boxId,
+          boxNumber: box?.boxNumber,
+          label: item.label,
+          productName: productById.get(String(item.productId))?.name ?? "Item",
+          netWeightMg: item.netWeightMg,
+        };
+      });
+  },
+});
+
 export const getItems = query({
   args: { boxId: v.id("boxes") },
   handler: async (ctx, args) => {
@@ -27,6 +81,30 @@ export const getItems = query({
       .filter((q) => q.eq(q.field("status"), "in_stock"))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
+  },
+});
+
+/** Renames a physical piece's label (e.g. a typo, or just a clearer name) — the label is set once at purchase time and otherwise had no way to fix afterward. Doesn't touch weight, product, or stock status. */
+export const renameItem = mutation({
+  args: { boxItemId: v.id("boxItems"), label: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, ["inventory_manager"]);
+    const label = args.label.trim();
+    if (!label) throw new Error("Enter a label");
+    const boxItem = await ctx.db.get(args.boxItemId);
+    if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+    if (label === boxItem.label) return;
+    await ctx.db.patch(args.boxItemId, { label });
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "stock.rename_item",
+      entityTable: "boxItems",
+      entityId: args.boxItemId,
+      metadata: { fromLabel: boxItem.label, toLabel: label },
+      createdAt: Date.now(),
+    });
   },
 });
 
