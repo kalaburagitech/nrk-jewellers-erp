@@ -44,7 +44,7 @@ const TEMPLATES = [
 ] as const;
 
 /** The A5 item table always reserves this many row slots so the totals/footer below it land in the same place regardless of item count — unfilled slots are blank, not bordered. Kept low enough to leave real margin below the 138mm page budget for what a physical printer adds (most browsers print a URL/date header and page-number footer by default unless that's turned off in the print dialog). */
-const MIN_INVOICE_ITEM_ROWS = 8;
+const MIN_INVOICE_ITEM_ROWS = 5;
 
 /** Printed invoice amounts use whole rupees; weight values keep their precision. */
 function formatPaise(paise: number) {
@@ -141,7 +141,6 @@ export default function PrintInvoicePage({
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   // Fit the layout to the selected paper's printable height to avoid splitting a bill.
-  const PAGE_HEIGHT_MM = 202;
   const [fitZoom, setFitZoom] = useState(1);
 
   // Browsers only allow opening a share sheet / popup from a real user gesture, so coming here
@@ -179,7 +178,9 @@ export default function PrintInvoicePage({
       measureNode.getBoundingClientRect().height,
     );
     measureNode.remove();
-    const printableHeightPx = (template === "half-a4" ? 138 : PAGE_HEIGHT_MM) * (96 / 25.4);
+    // Leave a few millimetres of safety for browser/printer printable-area
+    // differences so the note and signature don't get pushed onto page two.
+    const printableHeightPx = (template === "half-a4" ? 132 : 194) * (96 / 25.4);
     setFitZoom(Math.min(1, printableHeightPx / naturalHeightPx));
   }, [template, data]);
 
@@ -282,7 +283,17 @@ export default function PrintInvoicePage({
         @media print {
           html, body { height: auto !important; min-height: 0 !important; overflow: visible !important; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          [data-invoice-sheet] { margin: 0 auto; box-shadow: none; break-inside: avoid; page-break-inside: avoid; background: #fff !important; }
+          [data-invoice-sheet] {
+            box-sizing: border-box;
+            width: ${template === "half-a4" ? "200mm" : "289mm"} !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            margin: 0 auto;
+            box-shadow: none;
+            break-inside: avoid;
+            page-break-inside: avoid;
+            background: #fff !important;
+          }
           [data-invoice-sheet] thead { display: table-header-group; }
           [data-pdf-keep-together] { break-inside: avoid; }
         }
