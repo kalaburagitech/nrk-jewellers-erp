@@ -12,13 +12,12 @@ export const list = query({
   args: {},
   handler: async (ctx) => {
     const auth = await requireAuthContext(ctx);
-    const rows = await ctx.db
+    const sales = await ctx.db
       .query("sales")
-      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .withIndex("by_org_and_type", (q) => q.eq("organizationId", auth.organizationId).eq("documentType", "sales_invoice"))
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
-    const sales = rows.filter((r) => r.documentType === "sales_invoice");
     const [items, products, payments] = await Promise.all([
       ctx.db.query("saleItems").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
         .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
@@ -143,13 +142,12 @@ export const listByDocumentType = query({
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
-    const rows = await ctx.db
+    const filtered = await ctx.db
       .query("sales")
-      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .withIndex("by_org_and_type", (q) => q.eq("organizationId", auth.organizationId).eq("documentType", args.documentType))
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
-    const filtered = rows.filter((r) => r.documentType === args.documentType);
     const customerIds = [...new Set(filtered.map((r) => r.customerId))];
     const customers = await Promise.all(customerIds.map((id) => ctx.db.get(id)));
     const nameById = new Map(customerIds.map((id, i) => [id, customers[i]?.name ?? "—"]));
@@ -583,6 +581,9 @@ export const create = mutation({
     let invoiceNumber = args.invoiceNumber?.trim();
     if (invoiceNumber && !/^\d+$/.test(invoiceNumber)) throw new Error("Invoice number must contain digits only.");
     if (!invoiceNumber) {
+      // Auto-numbering path: the while-loop below already guarantees the generated
+      // number isn't in `usedNumbers`, so skip the redundant assertUniqueInvoice
+      // scan afterwards — this table scan is the only one needed.
       const existingNumbers = (await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).collect()).map(row => row.invoiceNumber);
       const usedNumbers = new Set(existingNumbers.map((number) => number.toLowerCase()));
       const highestSerial = existingNumbers.reduce((highest, number) => {
@@ -593,8 +594,9 @@ export const create = mutation({
       do {
         invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "sales_invoice", "");
       } while (usedNumbers.has(invoiceNumber.toLowerCase()) || Number(invoiceNumber) <= highestSerial);
+    } else {
+      await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber);
     }
-    await assertUniqueInvoice(ctx, auth.organizationId, invoiceNumber);
     const billDate = args.billDate ?? Date.now();
     await assertBookingYearOpen(ctx, auth.organizationId, billDate);
 
@@ -1051,7 +1053,11 @@ export const cancel = mutation({
       await ctx.db.insert("auditLogs", { organizationId: auth.organizationId, userId: auth.userId, action: "sale.soft_delete", entityTable: "sales", entityId: sale._id, metadata: { reason: args.reason }, createdAt: Date.now() });
       return;
     }
-    const activeReturnIds = new Set((await ctx.db.query("sales").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).collect()).filter(row => !row.deletedAt && row.status === "finalized" && (row.documentType === "sales_return" || row.documentType === "credit_note")).map(row => row._id as string));
+    const [returns, creditNotes] = await Promise.all([
+      ctx.db.query("sales").withIndex("by_org_and_type", q => q.eq("organizationId", auth.organizationId).eq("documentType", "sales_return")).collect(),
+      ctx.db.query("sales").withIndex("by_org_and_type", q => q.eq("organizationId", auth.organizationId).eq("documentType", "credit_note")).collect(),
+    ]);
+    const activeReturnIds = new Set([...returns, ...creditNotes].filter(row => !row.deletedAt && row.status === "finalized").map(row => row._id as string));
     const movements = await ctx.db.query("stockMovements").withIndex("by_org", q => q.eq("organizationId", auth.organizationId)).filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const items = await ctx.db.query("saleItems").withIndex("by_sale", q => q.eq("saleId", sale._id)).filter((q) => q.eq(q.field("deletedAt"), undefined))

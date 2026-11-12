@@ -42,6 +42,9 @@ const TEMPLATES = [
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
 
+/** The A5 item table always reserves this many row slots (padded with blank rows when a bill has fewer items), so the totals/signature block below it lands in the same place on every printed invoice. */
+const MIN_INVOICE_ITEM_ROWS = 5;
+
 /** Printed invoice amounts use whole rupees; weight values keep their precision. */
 function formatPaise(paise: number) {
   return `₹${Math.round(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
@@ -487,6 +490,19 @@ export default function PrintInvoicePage({
                     </td>
                   </tr>
                 ))}
+                {/* Pad to a fixed row count so the table always occupies the
+                    same space on the page regardless of item count — the
+                    layout below (totals, signature) should never shift up
+                    or down depending on how many items are on the bill. */}
+                {Array.from({ length: Math.max(0, MIN_INVOICE_ITEM_ROWS - items.length) }, (_, i) => (
+                  <tr key={`empty-${i}`}>
+                    {Array.from({ length: sale.isGst ? 10 : 9 }, (_, col) => (
+                      <td key={col} className="border border-[#655c36] px-1 py-2">
+                        &nbsp;
+                      </td>
+                    ))}
+                  </tr>
+                ))}
                 <tr className="bg-[#f4f0df] font-bold">
                   <td className="border border-[#655c36] px-1 py-2" colSpan={3}>
                     Sub Total
@@ -532,15 +548,17 @@ export default function PrintInvoicePage({
                     -{formatPaise(sale.discountPaise)}
                   </td>
                 </tr>
-                <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
-                    Old Item Deduction
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
-                    -{formatPaise(oldGoldExchange?.exchangeValuePaise ?? 0)}
-                  </td>
-                </tr>
+                {oldGoldExchange && (
+                  <tr>
+                    <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                    <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                      Old Item Deduction
+                    </td>
+                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                      -{formatPaise(oldGoldExchange.exchangeValuePaise)}
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
 

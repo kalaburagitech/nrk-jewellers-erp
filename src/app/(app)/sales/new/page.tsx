@@ -46,6 +46,22 @@ function dateInputToTimestamp(value: string): number {
   return new Date(`${value}T00:00:00.000Z`).getTime();
 }
 
+/**
+ * rupeesToPaise/percentToBasisPoints silently fall back to 0 on invalid input
+ * (negative, non-numeric, or >100%) so the live total preview never crashes —
+ * but that means a typo (e.g. wastage "150" instead of "1.50") would otherwise
+ * zero itself out with no feedback and ship as a wrong bill. This surfaces
+ * that as a blocking, visible error instead.
+ */
+function numberFieldError(raw: string, opts?: { max?: number }): string | null {
+  if (!raw.trim()) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "Enter a valid number";
+  if (n < 0) return "Cannot be negative";
+  if (opts?.max !== undefined && n > opts.max) return `Cannot exceed ${opts.max}`;
+  return null;
+}
+
 type BillLine = {
   boxItemId: Id<"boxItems">;
   label: string;
@@ -60,6 +76,140 @@ type BillLine = {
   stoneChargeRupees: string;
   taxConfigurationId: string;
 };
+
+/**
+ * Shown once a box is matched, so an operator who finds the box empty (or
+ * missing the specific piece they need) can add it right there instead of
+ * leaving the bill to go fix inventory first. The new piece is added
+ * straight onto the bill once saved.
+ */
+function QuickAddItemForm({
+  boxId,
+  boxNumber,
+  products,
+  onAdded,
+}: {
+  boxId: Id<"boxes">;
+  boxNumber: number;
+  products: Doc<"products">[];
+  onAdded: (boxItem: Doc<"boxItems">, productName: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [productId, setProductId] = useState("");
+  const [productNameInput, setProductNameInput] = useState("");
+  const [label, setLabel] = useState("");
+  const [grossGrams, setGrossGrams] = useState("");
+  const [stoneGrams, setStoneGrams] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const quickAddItem = useMutation(api.boxes.quickAddItem);
+
+  const term = productNameInput.trim().toLowerCase();
+  const matches = term.length === 0 ? [] : products.filter((p) => p.name.toLowerCase().includes(term)).slice(0, 6);
+  const isNewProduct = !productId && productNameInput.trim().length > 0;
+
+  function reset() {
+    setProductId("");
+    setProductNameInput("");
+    setLabel("");
+    setGrossGrams("");
+    setStoneGrams("");
+    setError(null);
+  }
+
+  async function handleSave() {
+    setError(null);
+    if (!label.trim()) {
+      setError("Enter a label for this item.");
+      return;
+    }
+    if (!productId && !productNameInput.trim()) {
+      setError("Select or enter a product.");
+      return;
+    }
+    const grossWeightMg = gramsToMg(grossGrams || "0");
+    if (grossWeightMg <= 0) {
+      setError("Enter a gross weight greater than zero.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const created = await quickAddItem({
+        boxId,
+        productId: productId ? (productId as Id<"products">) : undefined,
+        newProductName: productId ? undefined : productNameInput.trim(),
+        label: label.trim(),
+        grossWeightMg,
+        stoneWeightMg: gramsToMg(stoneGrams || "0"),
+      });
+      if (created) onAdded(created, productNameInput.trim());
+      reset();
+      setOpen(false);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not add this item."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" size="sm" className="self-start" onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" /> Item not here? Add a new piece to box {boxNumber}
+      </Button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-md border border-dashed border-border p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium">New item for box {boxNumber}</p>
+        <Button type="button" variant="ghost" size="sm" onClick={() => { reset(); setOpen(false); }}>
+          Cancel
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="relative col-span-2">
+          <Input
+            placeholder="Product (type to search or add new)"
+            value={productNameInput}
+            onChange={(e) => {
+              setProductNameInput(e.target.value);
+              setProductId("");
+            }}
+          />
+          {matches.length > 0 && (
+            <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-popover py-1 shadow-md">
+              {matches.map((p) => (
+                <button
+                  type="button"
+                  key={p._id}
+                  className="block w-full px-3 py-2 text-left text-sm hover:bg-accent"
+                  onClick={() => {
+                    setProductId(p._id);
+                    setProductNameInput(p.name);
+                  }}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {isNewProduct && (
+            <p className="mt-1 text-xs text-muted-foreground">New product — created when you save this item.</p>
+          )}
+        </div>
+        <Input placeholder="Label (e.g. Ring 3)" value={label} onChange={(e) => setLabel(e.target.value)} />
+        <Input inputMode="decimal" placeholder="Gross weight (g)" value={grossGrams} onChange={(e) => setGrossGrams(e.target.value)} />
+        <Input inputMode="decimal" placeholder="Stone weight (g)" value={stoneGrams} onChange={(e) => setStoneGrams(e.target.value)} />
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Button type="button" size="sm" className="self-start" disabled={saving} onClick={handleSave}>
+        {saving ? "Adding…" : "Add item to box and bill"}
+      </Button>
+    </div>
+  );
+}
 
 function BoxItemPicker({
   boxes,
@@ -136,8 +286,101 @@ function BoxItemPicker({
             })}
           </div>
         )}
+        {matchedBox && items && (
+          <QuickAddItemForm boxId={matchedBox._id} boxNumber={matchedBox.boxNumber} products={products} onAdded={onAdd} />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Customer name is a type-to-search-or-create field, not a plain dropdown —
+ * an operator can pick an existing customer or just type a new one, with the
+ * new customer only actually created in the database when the bill is
+ * finalized (never on every keystroke).
+ */
+function CustomerPicker({
+  customers,
+  customerId,
+  nameInput,
+  phoneInput,
+  onSelectExisting,
+  onNameChange,
+  onPhoneChange,
+}: {
+  customers: Doc<"customers">[];
+  customerId: string;
+  nameInput: string;
+  phoneInput: string;
+  onSelectExisting: (customer: Doc<"customers">) => void;
+  onNameChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const term = nameInput.trim().toLowerCase();
+  const matches =
+    term.length === 0
+      ? []
+      : customers.filter((c) => c.name.toLowerCase().includes(term) || c.phone?.toLowerCase().includes(term)).slice(0, 8);
+  const isNew = !customerId && nameInput.trim().length > 0;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          placeholder="Type a name to search, or add a new customer"
+          value={nameInput}
+          onChange={(e) => onNameChange(e.target.value)}
+          onFocus={() => setOpen(true)}
+        />
+      </div>
+      {open && matches.length > 0 && (
+        <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-popover py-1 shadow-md">
+          {matches.map((c) => (
+            <button
+              type="button"
+              key={c._id}
+              className="flex w-full flex-col items-start px-3 py-2 text-left text-sm hover:bg-accent"
+              onClick={() => {
+                onSelectExisting(c);
+                setOpen(false);
+              }}
+            >
+              <span>{c.name}</span>
+              {c.phone && <span className="text-xs text-muted-foreground">{c.phone}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex items-center gap-2">
+        <Input
+          placeholder="Phone number"
+          inputMode="tel"
+          value={phoneInput}
+          disabled={!!customerId}
+          onChange={(e) => onPhoneChange(e.target.value)}
+          className="max-w-xs"
+        />
+        {isNew && (
+          <Badge variant="secondary" className="font-normal">
+            New customer — saved when you finalize this bill
+          </Badge>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -156,12 +399,15 @@ export default function NewBillPage() {
   const currentRates = useQuery(api.metalRates.getCurrent);
   const createSale = useMutation(api.sales.create);
   const updateSale = useMutation(api.sales.update);
+  const createCustomer = useMutation(api.customers.create);
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const boxPickerRef = useRef<HTMLDivElement>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
+  const [customerNameInput, setCustomerNameInput] = useState("");
+  const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [isGst, setIsGst] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [discountMode, setDiscountMode] = useState<"none" | "percent" | "fixed">("none");
@@ -188,10 +434,12 @@ export default function NewBillPage() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!editSaleId || !existingSale || prefilled) return;
-    const { sale, items, oldGoldExchange, payments: existingPayments } = existingSale;
+    const { sale, items, customer, oldGoldExchange, payments: existingPayments } = existingSale;
     setInvoiceNumber(sale.invoiceNumber);
     setBillDate(timestampToDateInput(sale.createdAt));
     setCustomerId(sale.customerId);
+    setCustomerNameInput(customer?.name ?? "");
+    setCustomerPhoneInput(customer?.phone ?? "");
     setIsGst(sale.isGst);
     setLines(
       items.map((item) => ({
@@ -247,7 +495,32 @@ export default function NewBillPage() {
     return map;
   }, [currentRates]);
 
-  function addLine(boxItem: Doc<"boxItems">) {
+  function selectExistingCustomer(customer: Doc<"customers">) {
+    setCustomerId(customer._id);
+    setCustomerNameInput(customer.name);
+    setCustomerPhoneInput(customer.phone ?? "");
+  }
+
+  function handleCustomerNameChange(value: string) {
+    setCustomerNameInput(value);
+    setCustomerId("");
+  }
+
+  /** Auto-fills the existing customer the moment the typed phone number matches one on file, so the operator doesn't end up creating a duplicate. */
+  function handleCustomerPhoneChange(value: string) {
+    setCustomerPhoneInput(value);
+    const match = customers?.find((c) => c.phone && c.phone === value.trim());
+    if (match) selectExistingCustomer(match);
+  }
+
+  /**
+   * `productNameOverride` covers the quick-add path: the product we just
+   * created via `boxes.quickAddItem` may not have reached this component's
+   * reactive `products` query yet by the time its callback runs, so
+   * `productById` can still be a stale snapshot — pass the name we already
+   * know instead of trusting that lookup.
+   */
+  function addLine(boxItem: Doc<"boxItems">, productNameOverride?: string) {
     const product = productById.get(boxItem.productId);
     const purityId = product?.metalPurityId ?? "";
     const defaultRatePaise = purityId ? rateByPurity.get(purityId) : undefined;
@@ -256,7 +529,7 @@ export default function NewBillPage() {
       {
         boxItemId: boxItem._id,
         label: boxItem.label,
-        productName: product?.name ?? "Product",
+        productName: productNameOverride ?? product?.name ?? "Product",
         grossWeightMg: boxItem.grossWeightMg,
         stoneWeightMg: boxItem.stoneWeightMg,
         metalPurityId: purityId,
@@ -298,6 +571,31 @@ export default function NewBillPage() {
     [lines, taxConfigs, isGst],
   );
 
+  const lineErrors = useMemo(
+    () =>
+      lines.map((line) => {
+        const checks: [string, string | null][] = [
+          ["Other deduction", numberFieldError(line.otherDeductionGrams)],
+          ["Rate/g", numberFieldError(line.ratePerGramRupees)],
+          ["Wastage %", numberFieldError(line.wastagePercent, { max: 100 })],
+          ["Making charge", numberFieldError(line.makingChargeRupees)],
+          ["Stone charge", numberFieldError(line.stoneChargeRupees)],
+        ];
+        const failed = checks.find(([, error]) => error);
+        return failed ? `${failed[0]}: ${failed[1]}` : null;
+      }),
+    [lines],
+  );
+
+  const discountError = useMemo(() => {
+    if (discountMode === "none") return null;
+    return discountMode === "percent"
+      ? numberFieldError(discountValue, { max: 100 })
+      : numberFieldError(discountValue);
+  }, [discountMode, discountValue]);
+
+  const paymentErrors = useMemo(() => payments.map((p) => numberFieldError(p.amountRupees)), [payments]);
+
   const oldGoldComputed = useMemo(() => {
     if (!oldGoldEnabled) return null;
     return computeOldGoldExchange({
@@ -305,6 +603,15 @@ export default function NewBillPage() {
       meltingDeductionBasisPoints: percentToBasisPoints(oldGoldMeltingPercent || "0") ?? 0,
       ratePerGramPaise: rupeesToPaise(oldGoldRateRupees || "0") ?? 0,
     });
+  }, [oldGoldEnabled, oldGoldGrossGrams, oldGoldMeltingPercent, oldGoldRateRupees]);
+
+  const oldGoldError = useMemo(() => {
+    if (!oldGoldEnabled) return null;
+    return (
+      numberFieldError(oldGoldGrossGrams) ||
+      numberFieldError(oldGoldMeltingPercent, { max: 100 }) ||
+      numberFieldError(oldGoldRateRupees)
+    );
   }, [oldGoldEnabled, oldGoldGrossGrams, oldGoldMeltingPercent, oldGoldRateRupees]);
 
   const totals = useMemo(() => {
@@ -340,6 +647,8 @@ export default function NewBillPage() {
     setIdempotencyKey(crypto.randomUUID());
     setBillDate(todayDateInput());
     setCustomerId("");
+    setCustomerNameInput("");
+    setCustomerPhoneInput("");
     setLines([]);
     setDiscountMode("none");
     setDiscountValue("");
@@ -353,12 +662,30 @@ export default function NewBillPage() {
 
   async function finalizeSale(after: "view" | "print" | "printShare" | "new") {
     setServerError(null);
-    if (!customerId) {
-      setServerError("Select a customer.");
+    if (!customerId && !customerNameInput.trim()) {
+      setServerError("Select or enter a customer.");
       return;
     }
     if (lines.length === 0) {
       setServerError("Add at least one item.");
+      return;
+    }
+    const firstLineError = lineErrors.find(Boolean);
+    if (firstLineError) {
+      setServerError(firstLineError);
+      return;
+    }
+    if (discountError) {
+      setServerError(`Discount: ${discountError}`);
+      return;
+    }
+    const firstPaymentError = paymentErrors.find(Boolean);
+    if (firstPaymentError) {
+      setServerError(`Payment amount: ${firstPaymentError}`);
+      return;
+    }
+    if (oldGoldEnabled && oldGoldError) {
+      setServerError(`Old gold exchange: ${oldGoldError}`);
       return;
     }
     if (oldGoldEnabled && (!oldGoldPurityId || !oldGoldComputed || oldGoldComputed.grossWeightMg <= 0 || oldGoldComputed.ratePerGramPaise <= 0)) {
@@ -367,6 +694,14 @@ export default function NewBillPage() {
     }
     setSubmitting(true);
     try {
+      const resolvedCustomerId = customerId
+        ? (customerId as Id<"customers">)
+        : await createCustomer({
+            name: customerNameInput.trim(),
+            phone: customerPhoneInput.trim() || undefined,
+            customerType: "cash",
+          });
+
       const items = lines.map((line) => ({
         boxItemId: line.boxItemId,
         metalPurityId: line.metalPurityId ? (line.metalPurityId as Id<"metalPurities">) : undefined,
@@ -401,7 +736,7 @@ export default function NewBillPage() {
         await updateSale({
           invoiceNumber,
           saleId: editSaleId,
-          customerId: customerId as Id<"customers">,
+          customerId: resolvedCustomerId,
           isGst,
           items,
           discountMode,
@@ -416,7 +751,7 @@ export default function NewBillPage() {
 
       const result = await createSale({
         invoiceNumber: invoiceNumber.trim() || undefined,
-        customerId: customerId as Id<"customers">,
+        customerId: resolvedCustomerId,
         isGst,
         items,
         discountMode,
@@ -496,19 +831,15 @@ export default function NewBillPage() {
               <div className="flex flex-wrap gap-4">
                 <div className="max-w-sm flex-1">
                   <Label className="mb-2 block">Customer</Label>
-                  <Select value={customerId} onValueChange={setCustomerId}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="Select customer" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers?.map((c) => (
-                        <SelectItem key={c._id} value={c._id}>
-                          {c.name}
-                          {c.phone ? ` · ${c.phone}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <CustomerPicker
+                    customers={customers ?? []}
+                    customerId={customerId}
+                    nameInput={customerNameInput}
+                    phoneInput={customerPhoneInput}
+                    onSelectExisting={selectExistingCustomer}
+                    onNameChange={handleCustomerNameChange}
+                    onPhoneChange={handleCustomerPhoneChange}
+                  />
                 </div>
                 <div>
                   <Label className="mb-2 block">Invoice serial number</Label>
@@ -630,6 +961,7 @@ export default function NewBillPage() {
                         </div>
                       )}
                     </div>
+                    {lineErrors[index] && <p className="text-sm text-destructive">{lineErrors[index]}</p>}
                     {computed && (
                       <p className="text-sm text-muted-foreground">
                         Net {mgToGramsDisplay(computed.netWeightMg)}g · Metal {formatPaise(computed.metalValuePaise)}{" "}
@@ -695,6 +1027,7 @@ export default function NewBillPage() {
                     />
                   </div>
                 </div>
+                {oldGoldError && <p className="text-sm text-destructive">{oldGoldError}</p>}
                 {oldGoldComputed && (
                   <p className="text-sm text-muted-foreground">
                     Net weight {mgToGramsDisplay(oldGoldComputed.netWeightMg)}g · Exchange value{" "}
@@ -735,6 +1068,7 @@ export default function NewBillPage() {
                       value={discountValue}
                       onChange={(e) => setDiscountValue(e.target.value)}
                     />
+                    {discountError && <p className="text-sm text-destructive">{discountError}</p>}
                   </div>
                 )}
               </div>
@@ -744,7 +1078,8 @@ export default function NewBillPage() {
               <div className="flex flex-col gap-3">
                 <Label>Payment</Label>
                 {payments.map((payment, index) => (
-                  <div key={index} className="flex items-center gap-2">
+                  <div key={index} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2">
                     <Select
                       value={payment.mode}
                       onValueChange={(v) =>
@@ -777,6 +1112,8 @@ export default function NewBillPage() {
                         <Minus className="h-4 w-4" />
                       </Button>
                     )}
+                  </div>
+                  {paymentErrors[index] && <p className="text-sm text-destructive">{paymentErrors[index]}</p>}
                   </div>
                 ))}
                 <Button

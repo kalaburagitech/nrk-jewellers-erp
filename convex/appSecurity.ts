@@ -84,16 +84,25 @@ export const setMyAppPin = action({
 
 export const verifyMyAppPin = action({
   args: { pin: v.string() },
-  handler: async (ctx, args): Promise<{ valid: boolean }> => {
-    if (!PIN_PATTERN.test(args.pin)) return { valid: false };
+  handler: async (ctx, args): Promise<{ valid: boolean; lockedUntil?: number }> => {
     const access = await ctx.runQuery(api.organizations.getMyAccess, {});
     if (!access?.user || !access.membership) throw new Error("Sign in to unlock the app.");
-    const record: { pinSalt: string; pinHash: string } | null = await ctx.runQuery(internal.appSecurityInternal.getPinRecord, {
-      userId: access.user._id,
-    });
+    const record: { pinSalt: string; pinHash: string; failedAttempts: number; lockedUntil?: number } | null = await ctx.runQuery(
+      internal.appSecurityInternal.getPinRecord,
+      { userId: access.user._id },
+    );
     if (!record) return { valid: false };
+    if (record.lockedUntil && record.lockedUntil > Date.now()) {
+      return { valid: false, lockedUntil: record.lockedUntil };
+    }
+    if (!PIN_PATTERN.test(args.pin)) {
+      const { lockedUntil } = await ctx.runMutation(internal.appSecurityInternal.recordPinAttempt, { userId: access.user._id, success: false });
+      return { valid: false, lockedUntil };
+    }
     const candidate = await derivePinHash(args.pin, hexToBytes(record.pinSalt));
-    return { valid: safeEqual(candidate, record.pinHash) };
+    const valid = safeEqual(candidate, record.pinHash);
+    const { lockedUntil } = await ctx.runMutation(internal.appSecurityInternal.recordPinAttempt, { userId: access.user._id, success: valid });
+    return { valid, lockedUntil };
   },
 });
 

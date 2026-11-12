@@ -136,7 +136,12 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
       if (pinStatus?.configured) {
         const result = await verifyPin({ pin });
         if (!result.valid) {
-          setError("That passcode doesn’t match. Please try again.");
+          if (result.lockedUntil) {
+            const minutes = Math.ceil((result.lockedUntil - Date.now()) / 60_000);
+            setError(`Too many incorrect attempts. Try again in ${Math.max(1, minutes)} minute${minutes === 1 ? "" : "s"}, or reset with your account password.`);
+          } else {
+            setError("That passcode doesn’t match. Please try again.");
+          }
           return;
         }
       } else {

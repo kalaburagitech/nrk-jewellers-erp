@@ -78,6 +78,95 @@ export const createNext = mutation({
   },
 });
 
+/**
+ * Adds one physical piece directly into a box from the billing screen, for
+ * when an operator finds a box empty (or the item they need missing) mid-sale
+ * and shouldn't have to leave billing to go fix inventory first. Same direct
+ * boxItems-without-a-purchase-row pattern `stockAdjustments.adjustBox`
+ * already uses — not a new precedent, just reachable from a different screen
+ * and open to billing_operator (adjustBox is inventory_manager-only).
+ */
+export const quickAddItem = mutation({
+  args: {
+    boxId: v.id("boxes"),
+    productId: v.optional(v.id("products")),
+    newProductName: v.optional(v.string()),
+    label: v.string(),
+    grossWeightMg: v.number(),
+    stoneWeightMg: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, ["billing_operator", "inventory_manager"]);
+
+    const label = args.label.trim();
+    if (!label) throw new Error("Enter a label for this item");
+    if (args.grossWeightMg <= 0) throw new Error("Gross weight must be greater than zero");
+    if (args.stoneWeightMg < 0 || args.stoneWeightMg > args.grossWeightMg) {
+      throw new Error("Stone weight must be between 0 and gross weight");
+    }
+
+    const box = await ctx.db.get(args.boxId);
+    if (!box || box.deletedAt || box.organizationId !== auth.organizationId || !box.isActive) {
+      throw new Error("Box not found");
+    }
+
+    let productId = args.productId;
+    if (productId) {
+      const product = await ctx.db.get(productId);
+      if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");
+    } else {
+      const newProductName = args.newProductName?.trim();
+      if (!newProductName) throw new Error("Select a product or enter a new product name");
+      productId = await ctx.db.insert("products", {
+        organizationId: auth.organizationId,
+        name: newProductName,
+        unit: "gram",
+        isActive: true,
+        createdAt: Date.now(),
+      });
+    }
+
+    const netWeightMg = Math.max(0, args.grossWeightMg - args.stoneWeightMg);
+    const now = Date.now();
+    const boxItemId = await ctx.db.insert("boxItems", {
+      organizationId: auth.organizationId,
+      boxId: args.boxId,
+      productId,
+      label,
+      grossWeightMg: args.grossWeightMg,
+      stoneWeightMg: args.stoneWeightMg,
+      netWeightMg,
+      status: "in_stock",
+      createdAt: now,
+    });
+    await ctx.db.patch(args.boxId, { itemCount: (box.itemCount ?? 0) + 1 });
+    await ctx.db.insert("stockMovements", {
+      organizationId: auth.organizationId,
+      productId,
+      boxItemId,
+      boxId: args.boxId,
+      direction: "in",
+      netWeightMg,
+      quantity: 1,
+      sourceTable: "stock_adjustments",
+      sourceId: boxItemId,
+      createdAt: now,
+    });
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "stock.quick_add_from_billing",
+      entityTable: "boxItems",
+      entityId: boxItemId,
+      metadata: { boxNumber: box.boxNumber, label, grossWeightMg: args.grossWeightMg },
+      createdAt: now,
+    });
+
+    return await ctx.db.get(boxItemId);
+  },
+});
+
 /** Moves one physical item to a different box — never two boxes at once, since this patches the single boxItem.boxId that is the source of truth for its location. */
 export const transferItem = mutation({
   args: { boxItemId: v.id("boxItems"), toBoxId: v.id("boxes") },

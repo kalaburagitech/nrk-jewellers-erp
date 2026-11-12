@@ -166,7 +166,7 @@ export default function NewPurchasePage() {
         await updatePurchase({
           purchaseId: editPurchaseId,
           supplierId: values.supplierId as Id<"suppliers">,
-          taxPaise: totals.taxPaise,
+          gstBasisPoints: percentToBasisPoints(values.gstPercent || "0") ?? 0,
           amountPaidPaise,
           paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
           billDate: dateInputToTimestamp(values.billDate),
@@ -176,7 +176,7 @@ export default function NewPurchasePage() {
       } else {
         const result = await createPurchase({
           supplierId: values.supplierId as Id<"suppliers">,
-          taxPaise: totals.taxPaise,
+          gstBasisPoints: percentToBasisPoints(values.gstPercent || "0") ?? 0,
           amountPaidPaise,
           paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
           billDate: dateInputToTimestamp(values.billDate),

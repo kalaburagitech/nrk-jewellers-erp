@@ -18,7 +18,7 @@ export const getMyAccess = query({
       .filter((q) => q.eq(q.field("status"), "active"))
       .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect();
     const preference = await ctx.db.query("currentOrganizations")
-      .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+      .withIndex("by_user", (q) => q.eq("userId", userId)).order("desc").first();
     const membership = memberships.find((item) => item.organizationId === preference?.organizationId) ?? memberships[0];
     if (!membership) return { user: await ctx.db.get(userId), membership: null, organization: null, companies: [] };
     const uniqueMemberships = new Map<string, (typeof memberships)[number]>();
@@ -49,7 +49,7 @@ export const selectCompany = mutation({
       .filter((q) => q.eq(q.field("deletedAt"), undefined)).first();
     if (!membership) throw new Error("You do not have access to this company.");
     const preference = await ctx.db.query("currentOrganizations")
-      .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+      .withIndex("by_user", (q) => q.eq("userId", userId)).order("desc").first();
     if (preference) await ctx.db.patch(preference._id, { organizationId: args.organizationId, updatedAt: Date.now() });
     else await ctx.db.insert("currentOrganizations", { userId, organizationId: args.organizationId, updatedAt: Date.now() });
     return { selected: true };
@@ -125,7 +125,7 @@ export const deleteCompany = mutation({
     if (membership?.role !== "owner") throw new Error("Only this company's owner can delete it.");
     const organization = await ctx.db.get(args.organizationId);
     if (!organization || organization.deletedAt) throw new Error("This company is already unavailable.");
-    const current = await ctx.db.query("currentOrganizations").withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+    const current = await ctx.db.query("currentOrganizations").withIndex("by_user", (q) => q.eq("userId", userId)).order("desc").first();
     if (current?.organizationId === args.organizationId) throw new Error("Switch to another company before deleting this one.");
     const otherOwned = await ctx.db.query("memberships")
       .withIndex("by_user", (q) => q.eq("userId", userId))

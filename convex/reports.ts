@@ -15,13 +15,12 @@ export const getGstSalesRegister = query({
     const sales = (
       await ctx.db
         .query("sales")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .order("desc")
+        .withIndex("by_org_and_time", (q) =>
+          q.eq("organizationId", auth.organizationId).gte("createdAt", args.startDate).lte("createdAt", args.endDate),
+        )
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(2000)
-    ).filter(
-      (s) => s.isGst && s.status === "finalized" && s.createdAt >= args.startDate && s.createdAt <= args.endDate,
-    );
+      .collect()
+    ).filter((s) => s.isGst && s.status === "finalized");
 
     const customers = await ctx.db
       .query("customers")
@@ -92,13 +91,12 @@ export const getGstPurchaseRegister = query({
     const purchases = (
       await ctx.db
         .query("purchases")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .order("desc")
+        .withIndex("by_org_and_time", (q) =>
+          q.eq("organizationId", auth.organizationId).gte("createdAt", args.startDate).lte("createdAt", args.endDate),
+        )
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(2000)
-    ).filter(
-      (p) => p.taxPaise > 0 && p.status === "finalized" && p.createdAt >= args.startDate && p.createdAt <= args.endDate,
-    );
+      .collect()
+    ).filter((p) => p.taxPaise > 0 && p.status === "finalized");
 
     const suppliers = await ctx.db
       .query("suppliers")
@@ -127,19 +125,21 @@ export const getSalesReport = query({
     const sales = (
       await ctx.db
         .query("sales")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .order("desc")
+        .withIndex("by_org_and_time", (q) =>
+          q.eq("organizationId", auth.organizationId).gte("createdAt", args.startDate).lte("createdAt", args.endDate),
+        )
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(2000)
-    ).filter((s) => s.status === "finalized" && s.createdAt >= args.startDate && s.createdAt <= args.endDate);
+      .collect()
+    ).filter((s) => s.status === "finalized");
 
     const payments = (
       await ctx.db
         .query("payments")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .order("desc")
+        .withIndex("by_org_and_time", (q) =>
+          q.eq("organizationId", auth.organizationId).gte("createdAt", args.startDate).lte("createdAt", args.endDate),
+        )
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(5000)
+      .collect()
     ).filter(
       (p) =>
         // Old gold exchange credits are stored with sourceTable
@@ -147,9 +147,7 @@ export const getSalesReport = query({
         // than "sales" — include them here too, or this breakdown would
         // under-count and silently disagree with Total Sales.
         (p.sourceTable === "sales" || p.sourceTable === "old_gold_exchanges") &&
-        p.direction === "receipt" &&
-        p.createdAt >= args.startDate &&
-        p.createdAt <= args.endDate,
+        p.direction === "receipt",
     );
 
     const byPaymentMode = new Map<string, number>();
@@ -233,11 +231,12 @@ export const getPurchaseReport = query({
     const purchases = (
       await ctx.db
         .query("purchases")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .order("desc")
+        .withIndex("by_org_and_time", (q) =>
+          q.eq("organizationId", auth.organizationId).gte("createdAt", args.startDate).lte("createdAt", args.endDate),
+        )
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(2000)
-    ).filter((p) => p.status === "finalized" && p.createdAt >= args.startDate && p.createdAt <= args.endDate);
+      .collect()
+    ).filter((p) => p.status === "finalized");
 
     const suppliers = await ctx.db
       .query("suppliers")

@@ -120,6 +120,8 @@ export default defineSchema({
     organizationId: v.id("organizations"),
     pinSalt: v.string(),
     pinHash: v.string(),
+    failedAttempts: v.optional(v.number()),
+    lockedUntil: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -334,7 +336,9 @@ export default defineSchema({
   })
     .index("by_org", ["organizationId"])
     .index("by_supplier", ["supplierId"])
-    .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"]),
+    .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"])
+    .index("by_org_and_type", ["organizationId", "documentType"])
+    .index("by_org_and_time", ["organizationId", "createdAt"]),
 
   purchaseItems: defineTable({
     deletedAt: v.optional(v.number()),
@@ -389,7 +393,9 @@ export default defineSchema({
   })
     .index("by_org", ["organizationId"])
     .index("by_customer", ["customerId"])
-    .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"]),
+    .index("by_org_and_idempotency", ["organizationId", "idempotencyKey"])
+    .index("by_org_and_type", ["organizationId", "documentType"])
+    .index("by_org_and_time", ["organizationId", "createdAt"]),
 
   saleItems: defineTable({
     deletedAt: v.optional(v.number()),
@@ -433,7 +439,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_org", ["organizationId"])
-    .index("by_party", ["partyType", "partyId"]),
+    .index("by_party", ["partyType", "partyId"])
+    .index("by_org_and_time", ["organizationId", "createdAt"]),
 
   // Old gold a customer trades in against a new jewellery bill (SRS §8).
   // Recorded as its own audit-tracked row (not hidden inside a generic

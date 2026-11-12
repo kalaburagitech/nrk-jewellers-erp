@@ -12,6 +12,13 @@ export const getSummary = query({
     const orgId = auth.organizationId;
 
     const todayStart = Math.floor((Date.now() + 19_800_000) / 86_400_000) * 86_400_000 - 19_800_000;
+    const dayMs = 24 * 60 * 60 * 1000;
+    // The dashboard only ever needs "today" plus the 7-day trend window, so
+    // range-query that window directly instead of taking the N most recent
+    // rows org-wide — a `take(500)` cap would silently under-count once the
+    // org's *total* history (not just this week's) passes 500/1000 rows.
+    const windowStart = todayStart - 6 * dayMs;
+    const windowEnd = todayStart + dayMs;
 
     const [
       recentSales,
@@ -25,16 +32,16 @@ export const getSummary = query({
     ] = await Promise.all([
       ctx.db
         .query("sales")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+        .withIndex("by_org_and_time", (q) => q.eq("organizationId", orgId).gte("createdAt", windowStart).lt("createdAt", windowEnd))
         .order("desc")
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(500),
+      .collect(),
       ctx.db
         .query("purchases")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+        .withIndex("by_org_and_time", (q) => q.eq("organizationId", orgId).gte("createdAt", windowStart).lt("createdAt", windowEnd))
         .order("desc")
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(500),
+      .collect(),
       ctx.db
         .query("customers")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
@@ -63,10 +70,10 @@ export const getSummary = query({
       .collect(),
       ctx.db
         .query("payments")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
+        .withIndex("by_org_and_time", (q) => q.eq("organizationId", orgId).gte("createdAt", windowStart).lt("createdAt", windowEnd))
         .order("desc")
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .take(1000),
+      .collect(),
     ]);
 
     const todaysSalesPaise = recentSales
@@ -88,7 +95,6 @@ export const getSummary = query({
     // Last 7 calendar days (oldest first) — drives the dashboard sparklines
     // and the Sales Overview chart. "Today vs yesterday" % deltas read off
     // the last two entries of this same array, so there's one source of truth.
-    const dayMs = 24 * 60 * 60 * 1000;
     const trend = Array.from({ length: 7 }, (_, i) => {
       const dayStart = todayStart - (6 - i) * dayMs;
       const dayEnd = dayStart + dayMs;

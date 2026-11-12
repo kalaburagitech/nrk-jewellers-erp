@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
-import { computePurchaseLine } from "../src/lib/jewelry-calc";
+import { computePurchaseLine, basisPointsOf } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBookingYearOpen } from "./lib/accountingYears";
 
@@ -110,13 +110,12 @@ export const listByDocumentType = query({
   args: { documentType: v.union(v.literal("purchase_order"), v.literal("purchase_return")) },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
-    const rows = await ctx.db
+    const filtered = await ctx.db
       .query("purchases")
-      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .withIndex("by_org_and_type", (q) => q.eq("organizationId", auth.organizationId).eq("documentType", args.documentType))
       .order("desc")
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(200);
-    const filtered = rows.filter((r) => r.documentType === args.documentType);
     const supplierIds = [...new Set(filtered.map((r) => r.supplierId))];
     const suppliers = await Promise.all(supplierIds.map((id) => ctx.db.get(id)));
     const nameById = new Map(supplierIds.map((id, i) => [id, suppliers[i]?.name ?? "—"]));
@@ -204,7 +203,7 @@ type PurchaseTransactionArgs = {
     makingChargePaise: number;
     stoneChargePaise: number;
   }>;
-  taxPaise: number;
+  gstBasisPoints: number;
   amountPaidPaise: number;
   paymentMode?: "cash" | "upi" | "card" | "cheque" | "bank_transfer";
 };
@@ -241,9 +240,14 @@ async function applyPurchaseTransaction(
     if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");
   }
 
+  if (args.gstBasisPoints < 0 || args.gstBasisPoints > 10000) {
+    throw new Error("GST % must be between 0 and 100");
+  }
+
   const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
   const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
-  const totalPaise = subtotalPaise + args.taxPaise;
+  const taxPaise = basisPointsOf(subtotalPaise, args.gstBasisPoints);
+  const totalPaise = subtotalPaise + taxPaise;
 
   if (args.amountPaidPaise < 0 || args.amountPaidPaise > totalPaise) {
     throw new Error("Amount paid must be between 0 and the invoice total");
@@ -255,7 +259,7 @@ async function applyPurchaseTransaction(
   await ctx.db.patch(purchaseId, {
     supplierId: args.supplierId,
     subtotalPaise,
-    taxPaise: args.taxPaise,
+    taxPaise,
     totalPaise,
     amountPaidPaise: args.amountPaidPaise,
     createdAt: billDate,
@@ -412,7 +416,7 @@ export const create = mutation({
   args: {
     supplierId: v.id("suppliers"),
     items: v.array(purchaseLineValidator),
-    taxPaise: v.number(),
+    gstBasisPoints: v.number(),
     amountPaidPaise: v.number(),
     paymentMode: v.optional(
       v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
@@ -481,7 +485,7 @@ export const update = mutation({
     purchaseId: v.id("purchases"),
     supplierId: v.id("suppliers"),
     items: v.array(purchaseLineValidator),
-    taxPaise: v.number(),
+    gstBasisPoints: v.number(),
     amountPaidPaise: v.number(),
     paymentMode: v.optional(
       v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
