@@ -16,6 +16,7 @@ import {
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { amountInWordsFromPaise } from "@/lib/amount-in-words";
 import { BUSINESS_PROFILE_DEFAULTS } from "@/lib/business-profile-defaults";
+import { withGstStateCode } from "@/lib/gst-state-codes";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
 
 const PAYMENT_MODE_LABEL: Record<string, string> = {
@@ -42,8 +43,8 @@ const TEMPLATES = [
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
 
-/** The A5 item table always reserves this many row slots (padded with blank rows when a bill has fewer items), so the totals/signature block below it lands in the same place on every printed invoice. */
-const MIN_INVOICE_ITEM_ROWS = 8;
+/** The A5 item table always reserves this many row slots so the totals/footer below it land in the same place regardless of item count — unfilled slots are blank, not bordered. Kept low enough to leave real margin below the 138mm page budget for what a physical printer adds (most browsers print a URL/date header and page-number footer by default unless that's turned off in the print dialog). */
+const MIN_INVOICE_ITEM_ROWS = 5;
 
 /** Printed invoice amounts use whole rupees; weight values keep their precision. */
 function formatPaise(paise: number) {
@@ -339,15 +340,15 @@ export default function PrintInvoicePage({
             style={{ zoom: fitZoom }}
             className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
-            <h1 className={`-mb-1 text-center font-bold tracking-tight text-[#655c36] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
+            <h1 className={`-mb-1 text-center font-bold tracking-[0.3em] text-[#13253f] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
               <p className="text-center font-bold text-red-700">
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <div className={`flex items-center justify-between border-2 border-[#655c36] bg-white ${template === "half-a4" ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
+            <div className={`flex items-center justify-between border-2 border-[#655c36] bg-[#f8f5ea] ${template === "half-a4" ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
               <div className={`flex min-w-0 flex-1 ${template === "half-a4" ? "items-center gap-2" : "items-center gap-5"}`}>
-                <div className={`flex shrink-0 flex-col items-center justify-center border-r border-[#655c36]/40 bg-[#f4f0df] px-2 py-1 ${template === "half-a4" ? "w-[32mm]" : "w-[43mm] pr-4"}`}>
+                <div className={`flex shrink-0 flex-col items-center justify-center bg-white px-2 py-1 ${template === "half-a4" ? "w-[32mm]" : "w-[43mm] pr-4"}`}>
                   {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -367,10 +368,10 @@ export default function PrintInvoicePage({
                   </p>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className={`font-extrabold tracking-tight text-[#655c36] ${template === "half-a4" ? "text-xl" : "text-3xl"}`}>
+                  <h2 className={`font-extrabold tracking-tight text-[#13253f] ${template === "half-a4" ? "text-xl" : "text-3xl"}`}>
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
-                  <p className={`font-semibold text-[#494033] ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
+                  <p className={`font-bold text-[#13253f] ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
                     {organization?.tagline || BUSINESS_PROFILE_DEFAULTS.tagline}
                   </p>
                   <p className={`flex items-center gap-1 text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-sm"}`}>
@@ -386,8 +387,8 @@ export default function PrintInvoicePage({
                 </div>
               </div>
               {
-                <p className={`shrink-0 self-start rounded-full border border-[#655c36]/40 bg-white font-semibold text-[#655c36] ${template === "half-a4" ? "px-2 py-1 text-[8px]" : "px-3 py-1.5 text-sm"}`}>
-                  State: {organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
+                <p className={`shrink-0 self-start rounded-full border border-[#655c36]/40 bg-white font-semibold text-[#13253f] ${template === "half-a4" ? "px-2 py-1 text-[8px]" : "px-3 py-1.5 text-sm"}`}>
+                  State: {withGstStateCode(organization?.state || BUSINESS_PROFILE_DEFAULTS.state)}
                 </p>
               }
             </div>
@@ -422,7 +423,7 @@ export default function PrintInvoicePage({
                 ).map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>
               <thead>
-                <tr className="bg-[#f4f0df] text-center text-[#655c36]">
+                <tr className="bg-[#f4f0df] text-center font-bold text-[#13253f]">
                   <th className="border border-[#655c36] px-1 py-2">Sl.No</th>
                   <th className="border border-[#655c36] px-1 py-2 text-left">
                     Description
@@ -490,14 +491,14 @@ export default function PrintInvoicePage({
                     </td>
                   </tr>
                 ))}
-                {/* Pad to a fixed row count so the table always occupies the
-                    same space on the page regardless of item count — the
-                    layout below (totals, signature) should never shift up
-                    or down depending on how many items are on the bill. */}
+                {/* Blank filler rows reserve the same table height regardless of item
+                    count, so the totals/footer below never shift up or down — but
+                    unlike real item rows, these carry no borders: just plain blank
+                    space, not an empty bordered grid. */}
                 {Array.from({ length: Math.max(0, MIN_INVOICE_ITEM_ROWS - items.length) }, (_, i) => (
-                  <tr key={`empty-${i}`}>
+                  <tr key={`blank-${i}`}>
                     {Array.from({ length: sale.isGst ? 10 : 9 }, (_, col) => (
-                      <td key={col} className="border border-[#655c36] px-1 py-2">
+                      <td key={col} className="px-1 py-2">
                         &nbsp;
                       </td>
                     ))}
@@ -597,7 +598,7 @@ export default function PrintInvoicePage({
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
               </p>
-              <p className={`shrink-0 rounded-sm border-b-2 border-[#655c36] bg-[#ffffff] font-extrabold tracking-tight text-[#28231b] ${template === "half-a4" ? "mb-1 px-2 py-1 text-[10px]" : "mb-2 px-4 py-2 text-lg"}`}>
+              <p className={`shrink-0 font-extrabold text-[#13253f] ${template === "half-a4" ? "mb-1 text-[10px]" : "mb-2 text-lg"}`}>
                 For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
               </p>
             </div>
