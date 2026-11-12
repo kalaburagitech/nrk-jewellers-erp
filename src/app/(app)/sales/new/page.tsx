@@ -451,6 +451,7 @@ export default function NewBillPage() {
   const [customerPhoneInput, setCustomerPhoneInput] = useState("");
   const [isGst, setIsGst] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
+  const [oldItemDeductionRupees, setOldItemDeductionRupees] = useState("0");
   const [discountMode, setDiscountMode] = useState<"none" | "percent" | "fixed">("none");
   const [discountValue, setDiscountValue] = useState("");
   const [payments, setPayments] = useState<{ mode: PaymentMode; amountRupees: string }[]>([
@@ -482,6 +483,7 @@ export default function NewBillPage() {
     setCustomerNameInput(customer?.name ?? "");
     setCustomerPhoneInput(customer?.phone ?? "");
     setIsGst(sale.isGst);
+    setOldItemDeductionRupees(((sale.oldItemDeductionPaise ?? 0) / 100).toFixed(2));
     setLines(
       items.map((item) => ({
         boxItemId: item.boxItemId as Id<"boxItems">,
@@ -682,7 +684,9 @@ export default function NewBillPage() {
       discountPaise = rupeesToPaise(discountValue || "0") ?? 0;
     }
     discountPaise = Math.min(discountPaise, subtotalPaise);
-    const preRound = subtotalPaise - discountPaise + taxPaise;
+    const beforeOldItemDeductionPaise = subtotalPaise - discountPaise + taxPaise;
+    const oldItemDeductionPaise = rupeesToPaise(oldItemDeductionRupees || "0") ?? 0;
+    const preRound = beforeOldItemDeductionPaise - oldItemDeductionPaise;
     const roundedTotal = preRound;
     const roundOffPaise = 0;
     const paymentsPaise = payments.reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
@@ -692,13 +696,21 @@ export default function NewBillPage() {
       subtotalPaise,
       taxPaise,
       discountPaise,
+      oldItemDeductionPaise,
+      beforeOldItemDeductionPaise,
       roundOffPaise,
       totalPaise: roundedTotal,
       oldGoldValuePaise,
       amountPaidPaise,
       balancePaise: roundedTotal - amountPaidPaise,
     };
-  }, [computedLines, discountMode, discountValue, payments, oldGoldComputed]);
+  }, [computedLines, discountMode, discountValue, oldItemDeductionRupees, payments, oldGoldComputed]);
+
+  const oldItemDeductionError =
+    numberFieldError(oldItemDeductionRupees) ??
+    (totals.oldItemDeductionPaise > totals.beforeOldItemDeductionPaise
+      ? "Cannot exceed the bill amount after discount."
+      : null);
 
   /** Clears the form back to a blank bill so the operator can keep billing the next customer without leaving the page. */
   function resetForm() {
@@ -708,6 +720,7 @@ export default function NewBillPage() {
     setCustomerNameInput("");
     setCustomerPhoneInput("");
     setLines([]);
+    setOldItemDeductionRupees("0");
     setDiscountMode("none");
     setDiscountValue("");
     setPayments([{ mode: "cash", amountRupees: "" }]);
@@ -735,6 +748,10 @@ export default function NewBillPage() {
     }
     if (discountError) {
       setServerError(`Discount: ${discountError}`);
+      return;
+    }
+    if (oldItemDeductionError) {
+      setServerError(`Old item deduction: ${oldItemDeductionError}`);
       return;
     }
     const firstPaymentError = paymentErrors.find(Boolean);
@@ -777,6 +794,7 @@ export default function NewBillPage() {
           : discountMode === "fixed"
             ? rupeesToPaise(discountValue || "0") ?? 0
             : 0;
+      const oldItemDeductionPaise = rupeesToPaise(oldItemDeductionRupees || "0") ?? 0;
       const paymentSplits = payments
         .filter((p) => Number(p.amountRupees) > 0)
         .map((p) => ({ mode: p.mode, amountPaise: rupeesToPaise(p.amountRupees) ?? 0 }));
@@ -799,6 +817,7 @@ export default function NewBillPage() {
           items,
           discountMode,
           discountValue: discountValuePaiseOrBp,
+          oldItemDeductionPaise,
           payments: paymentSplits,
           oldGoldExchange: oldGoldExchangeArg,
           billDate: dateInputToTimestamp(billDate),
@@ -814,6 +833,7 @@ export default function NewBillPage() {
         items,
         discountMode,
         discountValue: discountValuePaiseOrBp,
+        oldItemDeductionPaise,
         payments: paymentSplits,
         oldGoldExchange: oldGoldExchangeArg,
         billDate: dateInputToTimestamp(billDate),
@@ -1102,6 +1122,17 @@ export default function NewBillPage() {
             <CardContent className="flex flex-col gap-4">
               <div className="flex flex-wrap items-end gap-4">
                 <div className="grid gap-2">
+                  <Label>Old Item Deduction (₹)</Label>
+                  <Input
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    className="w-36"
+                    value={oldItemDeductionRupees}
+                    onChange={(e) => setOldItemDeductionRupees(e.target.value)}
+                  />
+                  {oldItemDeductionError && <p className="text-sm text-destructive">{oldItemDeductionError}</p>}
+                </div>
+                <div className="grid gap-2">
                   <Label>Discount</Label>
                   <Select value={discountMode} onValueChange={(v) => setDiscountMode(v as typeof discountMode)}>
                     <SelectTrigger className="w-40">
@@ -1194,6 +1225,10 @@ export default function NewBillPage() {
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Discount</span>
                   <span>-{formatPaise(totals.discountPaise)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Old item deduction</span>
+                  <span>-{formatPaise(totals.oldItemDeductionPaise)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Tax</span>

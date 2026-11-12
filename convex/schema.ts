@@ -381,6 +381,7 @@ export default defineSchema({
     isGst: v.boolean(),
     subtotalPaise: v.number(),
     discountPaise: v.number(),
+    oldItemDeductionPaise: v.optional(v.number()),
     taxPaise: v.number(),
     roundOffPaise: v.number(),
     totalPaise: v.number(),

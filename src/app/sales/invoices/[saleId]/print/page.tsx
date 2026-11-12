@@ -561,11 +561,20 @@ export default function PrintInvoicePage({
                     -{formatPaise(sale.discountPaise)}
                   </td>
                 </tr>
+                <tr>
+                  <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                    Old Item Deduction
+                  </td>
+                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                    -{formatPaise(sale.oldItemDeductionPaise ?? 0)}
+                  </td>
+                </tr>
                 {oldGoldExchange && (
                   <tr>
                     <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
                     <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
-                      Old Item Deduction
+                      Old Gold / Silver Exchange
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                       -{formatPaise(oldGoldExchange.exchangeValuePaise)}
@@ -713,12 +722,14 @@ export default function PrintInvoicePage({
                 <span className="text-gray-500">Subtotal</span>
                 <span>{formatPaise(sale.subtotalPaise)}</span>
               </div>
-              {sale.discountPaise > 0 && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Discount</span>
-                  <span>-{formatPaise(sale.discountPaise)}</span>
-                </div>
-              )}
+              <div className="flex justify-between">
+                <span className="text-gray-500">Discount</span>
+                <span>-{formatPaise(sale.discountPaise)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500">Old item deduction</span>
+                <span>-{formatPaise(sale.oldItemDeductionPaise ?? 0)}</span>
+              </div>
               {sale.isGst && (
                 <div className="flex justify-between">
                   <span className="text-gray-500">Tax</span>

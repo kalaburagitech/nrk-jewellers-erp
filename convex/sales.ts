@@ -244,6 +244,7 @@ type SaleTransactionArgs = {
   }>;
   discountMode: "percent" | "fixed" | "none";
   discountValue: number;
+  oldItemDeductionPaise?: number;
   payments: Array<{ mode: Doc<"payments">["mode"]; amountPaise: number }>;
   oldGoldExchange?: {
     metalPurityId: Id<"metalPurities">;
@@ -338,7 +339,16 @@ async function applySaleTransaction(
   }
   discountPaise = Math.min(discountPaise, itemsSubtotalPaise);
 
-  const preRoundTotal = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
+  const oldItemDeductionPaise = args.oldItemDeductionPaise ?? 0;
+  if (!Number.isSafeInteger(oldItemDeductionPaise) || oldItemDeductionPaise < 0) {
+    throw new Error("Old item deduction must be a valid amount of zero or more.");
+  }
+  const beforeOldItemDeductionPaise = itemsSubtotalPaise - discountPaise + itemsTaxPaise;
+  if (oldItemDeductionPaise > beforeOldItemDeductionPaise) {
+    throw new Error("Old item deduction cannot exceed the bill amount after discount.");
+  }
+
+  const preRoundTotal = beforeOldItemDeductionPaise - oldItemDeductionPaise;
   const roundedTotalPaise = preRoundTotal;
   const roundOffPaise = 0;
 
@@ -356,6 +366,7 @@ async function applySaleTransaction(
     isGst: args.isGst,
     subtotalPaise: itemsSubtotalPaise,
     discountPaise,
+    oldItemDeductionPaise,
     taxPaise: itemsTaxPaise,
     roundOffPaise,
     totalPaise: roundedTotalPaise,
@@ -561,6 +572,7 @@ export const create = mutation({
     items: v.array(saleLineValidator),
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(), // basis points if percent, paise if fixed
+    oldItemDeductionPaise: v.optional(v.number()),
     payments: v.array(paymentSplitValidator),
     oldGoldExchange: v.optional(oldGoldExchangeValidator),
     billDate: v.optional(v.number()),
@@ -615,6 +627,7 @@ export const create = mutation({
       isGst: args.isGst,
       subtotalPaise: 0,
       discountPaise: 0,
+      oldItemDeductionPaise: 0,
       taxPaise: 0,
       roundOffPaise: 0,
       totalPaise: 0,
@@ -655,6 +668,7 @@ export const update = mutation({
     items: v.array(saleLineValidator),
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(),
+    oldItemDeductionPaise: v.optional(v.number()),
     payments: v.array(paymentSplitValidator),
     oldGoldExchange: v.optional(oldGoldExchangeValidator),
     billDate: v.number(),
@@ -815,6 +829,7 @@ export const createEstimate = mutation({
       isGst: args.isGst,
       subtotalPaise: itemsSubtotalPaise,
       discountPaise,
+      oldItemDeductionPaise: 0,
       taxPaise: itemsTaxPaise,
       roundOffPaise,
       totalPaise: roundedTotalPaise,
@@ -940,6 +955,7 @@ export const createReturn = mutation({
       isGst: originalSale.isGst,
       subtotalPaise: returnValuePaise,
       discountPaise: 0,
+      oldItemDeductionPaise: 0,
       taxPaise: 0,
       roundOffPaise: 0,
       totalPaise: returnValuePaise,
