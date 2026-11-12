@@ -32,12 +32,12 @@ function PasscodeBoxes({
   autoFocus?: boolean;
 }) {
   return (
-    <div className="relative w-fit max-w-full rounded-xl focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2">
+    <div className="relative w-fit max-w-full rounded-xl focus-within:[&_.passcode-current]:ring-2 focus-within:[&_.passcode-current]:ring-primary/40 focus-within:[&_.passcode-current]:ring-offset-2">
       <div aria-hidden="true" className="grid grid-cols-6 gap-2">
         {Array.from({ length: 6 }, (_, index) => (
           <span
             key={index}
-            className={`flex h-11 w-8 items-center justify-center rounded-lg border bg-background sm:h-14 sm:w-12 ${index === Math.min(value.length, 5) ? "border-primary" : "border-input"}`}
+            className={`flex h-11 w-8 items-center justify-center rounded-lg border bg-background sm:h-14 sm:w-12 ${index === Math.min(value.length, 5) ? "passcode-current border-primary" : "border-input"}`}
           >
             {value[index] ? <span className="h-2.5 w-2.5 rounded-full bg-foreground" /> : null}
           </span>
