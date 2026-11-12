@@ -120,6 +120,7 @@ export const getInvoiceData = query({
           ...item,
           productName: product?.name ?? "Item",
           label: boxItem?.label ?? product?.name ?? "Item",
+          stockNetWeightMg: boxItem?.netWeightMg,
           purityLabel: purity?.label,
         };
       }),
@@ -285,6 +286,9 @@ async function applySaleTransaction(
     const boxItem = await ctx.db.get(item.boxItemId);
     if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
     if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);
+    if (!Number.isSafeInteger(item.otherDeductionMg) || item.otherDeductionMg < 0 || item.otherDeductionMg > boxItem.netWeightMg) {
+      throw new Error(`Other deduction for "${boxItem.label}" must be between 0 and its available net weight.`);
+    }
 
     let gstBasisPoints = 0;
     if (args.isGst && item.taxConfigurationId) {
@@ -299,6 +303,7 @@ async function applySaleTransaction(
     const computed = computeSaleLine({
       grossWeightMg: boxItem.grossWeightMg,
       stoneWeightMg: boxItem.stoneWeightMg,
+      stockNetWeightMg: boxItem.netWeightMg,
       otherDeductionMg: item.otherDeductionMg,
       ratePerGramPaise: item.ratePerGramPaise,
       wastageBasisPoints: item.wastageBasisPoints,

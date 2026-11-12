@@ -66,6 +66,8 @@ export function computePurchaseLine(input: PurchaseLineInput): PurchaseLineResul
 export type SaleLineInput = {
   grossWeightMg: number;
   stoneWeightMg: number;
+  /** Current physical net weight recorded in stock. Overrides gross-minus-stone when available. */
+  stockNetWeightMg?: number;
   otherDeductionMg: number;
   ratePerGramPaise: number;
   wastageBasisPoints: number;
@@ -84,7 +86,8 @@ export type SaleLineResult = SaleLineInput & {
 };
 
 export function computeSaleLine(input: SaleLineInput): SaleLineResult {
-  const net = netWeightMg(input.grossWeightMg, input.stoneWeightMg, input.otherDeductionMg);
+  const availableNetMg = input.stockNetWeightMg ?? netWeightMg(input.grossWeightMg, input.stoneWeightMg);
+  const net = Math.max(0, availableNetMg - input.otherDeductionMg);
   const metalValue = metalValuePaise(net, input.ratePerGramPaise);
   const wastageValue = basisPointsOf(metalValue, input.wastageBasisPoints);
   const taxableValue = metalValue + wastageValue + input.makingChargePaise + input.stoneChargePaise;

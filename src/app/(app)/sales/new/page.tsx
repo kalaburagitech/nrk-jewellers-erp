@@ -68,6 +68,7 @@ type BillLine = {
   productName: string;
   grossWeightMg: number;
   stoneWeightMg: number;
+  stockNetWeightMg: number;
   metalPurityId: string;
   otherDeductionGrams: string;
   ratePerGramRupees: string;
@@ -488,6 +489,7 @@ export default function NewBillPage() {
         productName: item.productName,
         grossWeightMg: item.grossWeightMg,
         stoneWeightMg: item.stoneWeightMg,
+        stockNetWeightMg: item.stockNetWeightMg ?? Math.max(0, item.grossWeightMg - item.stoneWeightMg),
         metalPurityId: item.metalPurityId ?? "",
         otherDeductionGrams: item.otherDeductionMg ? (item.otherDeductionMg / 1000).toFixed(3) : "",
         ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
@@ -581,6 +583,7 @@ export default function NewBillPage() {
         productName: productNameOverride ?? product?.name ?? "Product",
         grossWeightMg: boxItem.grossWeightMg,
         stoneWeightMg: boxItem.stoneWeightMg,
+        stockNetWeightMg: boxItem.netWeightMg,
         metalPurityId: purityId,
         otherDeductionGrams: "",
         ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
@@ -602,13 +605,14 @@ export default function NewBillPage() {
 
   const computedLines = useMemo(
     () =>
-      lines.map((line) => {
+      lines.map((line, index) => {
         const taxConfig = taxConfigs?.find((t) => t._id === line.taxConfigurationId);
         const gstBasisPoints =
           isGst && taxConfig ? taxConfig.cgstBasisPoints + taxConfig.sgstBasisPoints + taxConfig.igstBasisPoints : 0;
         return computeSaleLine({
           grossWeightMg: line.grossWeightMg,
           stoneWeightMg: line.stoneWeightMg,
+          stockNetWeightMg: line.stockNetWeightMg,
           otherDeductionMg: Math.round(Number(line.otherDeductionGrams || "0") * 1000) || 0,
           ratePerGramPaise: rupeesToPaise(line.ratePerGramRupees || "0") ?? 0,
           wastageBasisPoints: percentToBasisPoints(line.wastagePercent || "0") ?? 0,
@@ -622,18 +626,23 @@ export default function NewBillPage() {
 
   const lineErrors = useMemo(
     () =>
-      lines.map((line) => {
+      lines.map((line, index) => {
         const checks: [string, string | null][] = [
-          ["Other deduction", numberFieldError(line.otherDeductionGrams)],
+          ["Other deduction", numberFieldError(line.otherDeductionGrams, { max: line.stockNetWeightMg / 1000 })],
           ["Rate/g", numberFieldError(line.ratePerGramRupees)],
           ["Wastage %", numberFieldError(line.wastagePercent, { max: 100 })],
           ["Making charge", numberFieldError(line.makingChargeRupees)],
           ["Stone charge", numberFieldError(line.stoneChargeRupees)],
         ];
         const failed = checks.find(([, error]) => error);
-        return failed ? `${failed[0]}: ${failed[1]}` : null;
+        if (failed) return `${failed[0]}: ${failed[1]}`;
+        const computed = computedLines[index];
+        if (computed?.netWeightMg === 0 && computed.lineTotalPaise === 0) {
+          return "This item has zero net weight and zero value. Check its box stock weight and deductions before billing.";
+        }
+        return null;
       }),
-    [lines],
+    [lines, computedLines],
   );
 
   const discountError = useMemo(() => {
@@ -934,7 +943,7 @@ export default function NewBillPage() {
                   </CardHeader>
                   <CardContent className="flex flex-col gap-4">
                     <p className="text-sm text-muted-foreground">
-                      Gross {mgToGramsDisplay(line.grossWeightMg)}g · Stone {mgToGramsDisplay(line.stoneWeightMg)}g
+                      Gross {mgToGramsDisplay(line.grossWeightMg)}g · Stone {mgToGramsDisplay(line.stoneWeightMg)}g · Available net {mgToGramsDisplay(line.stockNetWeightMg)}g
                     </p>
                     <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                       <div className="grid gap-2">
