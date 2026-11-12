@@ -223,6 +223,8 @@ function BoxItemPicker({
   alreadyAddedIds: Set<string>;
 }) {
   const [boxNumberInput, setBoxNumberInput] = useState("");
+  const [boxListOpen, setBoxListOpen] = useState(false);
+  const boxListRef = useRef<HTMLDivElement>(null);
   const matchedBox = useMemo(
     () => boxes.find((b) => String(b.boxNumber) === boxNumberInput.trim()),
     [boxes, boxNumberInput],
@@ -235,20 +237,60 @@ function BoxItemPicker({
     return map;
   }, [products]);
 
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (boxListRef.current && !boxListRef.current.contains(e.target as Node)) setBoxListOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const term = boxNumberInput.trim().toLowerCase();
+  const boxMatches = (
+    term.length === 0
+      ? boxes
+      : boxes.filter((b) => String(b.boxNumber).includes(term) || b.label?.toLowerCase().includes(term))
+  )
+    .slice()
+    .sort((a, b) => a.boxNumber - b.boxNumber)
+    .slice(0, 50);
+
   return (
-    <Card>
+    <Card className="!overflow-visible">
       <CardHeader>
         <CardTitle className="text-base">Add items to this bill</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
-        <div className="relative max-w-xs">
+        <div ref={boxListRef} className="relative max-w-xs">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Enter box number"
+            placeholder="Enter box number, or browse all boxes"
             value={boxNumberInput}
             onChange={(e) => setBoxNumberInput(e.target.value)}
+            onFocus={() => setBoxListOpen(true)}
           />
+          {boxListOpen && boxMatches.length > 0 && (
+            <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-md">
+              {boxMatches.map((b) => (
+                <button
+                  type="button"
+                  key={b._id}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
+                  onClick={() => {
+                    setBoxNumberInput(String(b.boxNumber));
+                    setBoxListOpen(false);
+                  }}
+                >
+                  <span>
+                    Box {b.boxNumber}
+                    {b.label ? ` · ${b.label}` : ""}
+                  </span>
+                  <span className="text-xs text-muted-foreground">{b.itemCount ?? 0} item{b.itemCount === 1 ? "" : "s"}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         {boxNumberInput && !matchedBox && (
           <p className="text-sm text-muted-foreground">No box with that number.</p>
@@ -365,17 +407,16 @@ function CustomerPicker({
           ))}
         </div>
       )}
-      <div className="mt-2 flex items-center gap-2">
+      <div className="mt-2 flex flex-col gap-2">
         <Input
           placeholder="Phone number"
           inputMode="tel"
           value={phoneInput}
           disabled={!!customerId}
           onChange={(e) => onPhoneChange(e.target.value)}
-          className="max-w-xs"
         />
         {isNew && (
-          <Badge variant="secondary" className="font-normal">
+          <Badge variant="secondary" className="w-fit font-normal">
             New customer — saved when you finalize this bill
           </Badge>
         )}
@@ -402,7 +443,6 @@ export default function NewBillPage() {
   const createCustomer = useMutation(api.customers.create);
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
-  const boxPickerRef = useRef<HTMLDivElement>(null);
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [billDate, setBillDate] = useState(() => todayDateInput());
   const [customerId, setCustomerId] = useState("");
@@ -520,6 +560,15 @@ export default function NewBillPage() {
    * `productById` can still be a stale snapshot — pass the name we already
    * know instead of trusting that lookup.
    */
+  /** Mirrors how a sale line's rate defaults from today's metal rate — without this, the rate field was the one thing operators had to look up and type themselves, and leaving it blank blocks the whole bill rather than failing quietly. */
+  function handleOldGoldPurityChange(purityId: string) {
+    setOldGoldPurityId(purityId);
+    if (!oldGoldRateRupees) {
+      const defaultRatePaise = rateByPurity.get(purityId);
+      if (defaultRatePaise) setOldGoldRateRupees((defaultRatePaise / 100).toFixed(2));
+    }
+  }
+
   function addLine(boxItem: Doc<"boxItems">, productNameOverride?: string) {
     const product = productById.get(boxItem.productId);
     const purityId = product?.metalPurityId ?? "";
@@ -857,14 +906,12 @@ export default function NewBillPage() {
             </CardContent>
           </Card>
 
-          <div ref={boxPickerRef}>
-            <BoxItemPicker
-              boxes={boxes}
-              products={products}
-              onAdd={addLine}
-              alreadyAddedIds={new Set(lines.map((l) => l.boxItemId))}
-            />
-          </div>
+          <BoxItemPicker
+            boxes={boxes}
+            products={products}
+            onAdd={addLine}
+            alreadyAddedIds={new Set(lines.map((l) => l.boxItemId))}
+          />
 
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
@@ -872,9 +919,6 @@ export default function NewBillPage() {
                 <h2 className="font-semibold">Items in this bill <span className="text-muted-foreground">({lines.length})</span></h2>
                 <p className="mt-1 text-sm text-muted-foreground">No item-count limit is set. Each sale item must be a unique in-stock piece from a box.</p>
               </div>
-              <Button type="button" variant="outline" onClick={() => boxPickerRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })}>
-                <Plus className="h-4 w-4" /> Add Item
-              </Button>
             </div>
             {lines.map((line, index) => {
               const computed = computedLines[index];
@@ -983,10 +1027,13 @@ export default function NewBillPage() {
             </CardHeader>
             {oldGoldEnabled && (
               <CardContent className="flex flex-col gap-4">
+                <p className="text-sm text-muted-foreground">
+                  Pick the purity and enter the weight — the rate fills in automatically from today&apos;s price. Melting deduction is optional.
+                </p>
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
                   <div className="grid gap-2">
                     <Label>Purity</Label>
-                    <Select value={oldGoldPurityId} onValueChange={setOldGoldPurityId}>
+                    <Select value={oldGoldPurityId} onValueChange={handleOldGoldPurityChange}>
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select purity" />
                       </SelectTrigger>

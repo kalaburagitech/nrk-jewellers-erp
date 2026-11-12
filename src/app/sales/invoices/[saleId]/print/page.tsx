@@ -43,7 +43,7 @@ const TEMPLATES = [
 ] as const;
 
 /** The A5 item table always reserves this many row slots (padded with blank rows when a bill has fewer items), so the totals/signature block below it lands in the same place on every printed invoice. */
-const MIN_INVOICE_ITEM_ROWS = 5;
+const MIN_INVOICE_ITEM_ROWS = 8;
 
 /** Printed invoice amounts use whole rupees; weight values keep their precision. */
 function formatPaise(paise: number) {
@@ -337,7 +337,7 @@ export default function PrintInvoicePage({
             data-invoice-sheet
             data-invoice-compact={template === "half-a4" ? "true" : undefined}
             style={{ zoom: fitZoom }}
-            className={`mx-auto flex flex-col justify-between bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
+            className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
             <h1 className={`-mb-1 text-center font-bold tracking-tight text-[#655c36] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
@@ -592,7 +592,7 @@ export default function PrintInvoicePage({
               </div>
             </div>
 
-            <div className={`mt-auto flex items-end justify-between ${template === "half-a4" ? "gap-2 pt-1" : "gap-4 pt-6"}`}>
+            <div className={`flex items-end justify-between ${template === "half-a4" ? "gap-2 pt-1" : "gap-4 pt-6"}`}>
               <p className={`italic text-gray-600 ${template === "half-a4" ? "text-[7px]" : "text-xs"}`}>
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
