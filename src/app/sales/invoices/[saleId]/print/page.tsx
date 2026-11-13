@@ -305,7 +305,7 @@ export default function PrintInvoicePage({
         [data-invoice-compact="true"] [data-pdf-keep-together] > div {
           padding: 1.2mm !important;
         }
-        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "210mm auto" : "297mm auto"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
+        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5 landscape" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
       `}</style>
 
       <div className="mx-auto flex max-w-[297mm] items-center justify-between px-4 pb-4 print:hidden">
@@ -349,7 +349,7 @@ export default function PrintInvoicePage({
             data-invoice-sheet
             data-invoice-compact={template === "half-a4" ? "true" : undefined}
             style={{ zoom: fitZoom }}
-            className={`mx-auto flex flex-col bg-white text-[#13253f] print:min-h-0 ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
+            className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
             <h1 className={`-mb-1 text-center font-bold tracking-[0.3em] text-[#13253f] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
