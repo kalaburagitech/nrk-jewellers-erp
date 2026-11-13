@@ -137,7 +137,6 @@ export default function PrintInvoicePage({
   });
   const [template, setTemplate] = useState<Template>("half-a4");
   const [sharing, setSharing] = useState(false);
-  const [printing, setPrinting] = useState(false);
   const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
@@ -271,32 +270,6 @@ export default function PrintInvoicePage({
     }
   }
 
-  // Renders the exact on-screen invoice to a pixel-perfect PDF and opens it in
-  // a new tab instead of calling window.print() directly on this page. The
-  // browser's native print pass re-flows @page/zoom/print CSS independently
-  // of what's on screen, which kept drifting slightly from the live layout —
-  // printing a fixed-size rendered image sidesteps that mismatch entirely,
-  // and the PDF viewer's own print button still supports printing straight
-  // to a physical printer, not just saving a file.
-  async function handlePrint() {
-    if (!invoiceRef.current || template === "thermal") {
-      window.print();
-      return;
-    }
-    setPrinting(true);
-    try {
-      const file = await renderInvoicePdf(
-        invoiceRef.current,
-        sale.invoiceNumber,
-        template,
-      );
-      const url = URL.createObjectURL(file);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } finally {
-      setPrinting(false);
-    }
-  }
-
   const widthClass =
     template === "thermal"
       ? "w-[76mm] text-xs"
@@ -362,9 +335,9 @@ export default function PrintInvoicePage({
             <MessageCircle className="h-4 w-4" />
             {sharing ? "Preparing PDF…" : "Share via WhatsApp"}
           </Button>
-          <Button onClick={handlePrint} disabled={printing}>
+          <Button onClick={() => window.print()}>
             <Printer className="h-4 w-4" />
-            {printing ? "Preparing PDF…" : "Print"}
+            Print
           </Button>
         </div>
       </div>
