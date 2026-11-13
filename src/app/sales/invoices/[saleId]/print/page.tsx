@@ -137,16 +137,12 @@ export default function PrintInvoicePage({
   });
   const [template, setTemplate] = useState<Template>("half-a4");
   const [sharing, setSharing] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   // Fit the layout to the selected paper's printable height to avoid splitting a bill.
   const [fitZoom, setFitZoom] = useState(1);
-  // Actual @page height to print/export, in mm — sized to hug the real content
-  // (border to border, like the reference) instead of always being a full
-  // fixed A5/A4 sheet with blank paper below a short invoice. Defaults to the
-  // old fixed sheet height until the effect below measures real content.
-  const [pageHeightMm, setPageHeightMm] = useState(148);
 
   // Browsers only allow opening a share sheet / popup from a real user gesture, so coming here
   // from the "WhatsApp Share [F4]" shortcut can't fire the share itself — it focuses the button
@@ -185,19 +181,8 @@ export default function PrintInvoicePage({
     measureNode.remove();
     // Leave a few millimetres of safety for browser/printer printable-area
     // differences so the note and signature don't get pushed onto page two.
-    const printableHeightMm = template === "half-a4" ? 132 : 194;
-    const printableHeightPx = printableHeightMm * (96 / 25.4);
+    const printableHeightPx = (template === "half-a4" ? 132 : 194) * (96 / 25.4);
     setFitZoom(Math.min(1, printableHeightPx / naturalHeightPx));
-
-    // Size the @page height to the real rendered content (capped at the same
-    // printable budget above, so it can never force a second page) instead of
-    // a fixed A5/A4 sheet, so a short invoice has no blank paper below the
-    // note/signature line — border to border, matching the reference layout.
-    const marginMm = template === "half-a4" ? 5 : 4;
-    const safetyBufferMm = (template === "half-a4" ? 138 : 202) - printableHeightMm;
-    const renderedHeightPx = Math.min(naturalHeightPx, printableHeightPx);
-    const renderedHeightMm = (renderedHeightPx * 25.4) / 96;
-    setPageHeightMm(Math.ceil(renderedHeightMm) + safetyBufferMm + marginMm * 2);
   }, [template, data]);
 
   if (data === undefined) {
@@ -286,6 +271,32 @@ export default function PrintInvoicePage({
     }
   }
 
+  // Renders the exact on-screen invoice to a pixel-perfect PDF and opens it in
+  // a new tab instead of calling window.print() directly on this page. The
+  // browser's native print pass re-flows @page/zoom/print CSS independently
+  // of what's on screen, which kept drifting slightly from the live layout —
+  // printing a fixed-size rendered image sidesteps that mismatch entirely,
+  // and the PDF viewer's own print button still supports printing straight
+  // to a physical printer, not just saving a file.
+  async function handlePrint() {
+    if (!invoiceRef.current || template === "thermal") {
+      window.print();
+      return;
+    }
+    setPrinting(true);
+    try {
+      const file = await renderInvoicePdf(
+        invoiceRef.current,
+        sale.invoiceNumber,
+        template,
+      );
+      const url = URL.createObjectURL(file);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } finally {
+      setPrinting(false);
+    }
+  }
+
   const widthClass =
     template === "thermal"
       ? "w-[76mm] text-xs"
@@ -321,7 +332,7 @@ export default function PrintInvoicePage({
         [data-invoice-compact="true"] [data-pdf-keep-together] > div {
           padding: 1.2mm !important;
         }
-        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? `210mm ${pageHeightMm}mm` : `297mm ${pageHeightMm}mm`}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
+        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5 landscape" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
       `}</style>
 
       <div className="mx-auto flex max-w-[297mm] items-center justify-between px-4 pb-4 print:hidden">
@@ -351,9 +362,9 @@ export default function PrintInvoicePage({
             <MessageCircle className="h-4 w-4" />
             {sharing ? "Preparing PDF…" : "Share via WhatsApp"}
           </Button>
-          <Button onClick={() => window.print()}>
+          <Button onClick={handlePrint} disabled={printing}>
             <Printer className="h-4 w-4" />
-            Print
+            {printing ? "Preparing PDF…" : "Print"}
           </Button>
         </div>
       </div>
@@ -365,7 +376,7 @@ export default function PrintInvoicePage({
             data-invoice-sheet
             data-invoice-compact={template === "half-a4" ? "true" : undefined}
             style={{ zoom: fitZoom }}
-            className={`mx-auto flex flex-col bg-white text-[#13253f] print:min-h-0 ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
+            className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
             <h1 className={`-mb-1 text-center font-bold tracking-[0.3em] text-[#13253f] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (

@@ -16,13 +16,13 @@ describe("invoice PDF export", () => {
     expect(pdf.internal.pageSize.getHeight()).toBeCloseTo(210, 1);
     expect(pdf.getNumberOfPages()).toBe(1);
   });
-  it("uses A5 dimensions for half A4 and a full-length 80 mm receipt", () => {
+  it("uses landscape A5 dimensions for half A4 and a full-length 80 mm receipt", () => {
     const half = createInvoicePdf(
-      { dataUrl: pixel, width: 1000, height: 1200 },
+      { dataUrl: pixel, width: 2000, height: 1000 },
       "half-a4",
     );
-    expect(half.internal.pageSize.getWidth()).toBeCloseTo(148, 1);
-    expect(half.internal.pageSize.getHeight()).toBeCloseTo(210, 1);
+    expect(half.internal.pageSize.getWidth()).toBeCloseTo(210, 1);
+    expect(half.internal.pageSize.getHeight()).toBeCloseTo(148, 1);
     const thermal = createInvoicePdf(
       { dataUrl: pixel, width: 760, height: 2000 },
       "thermal",
