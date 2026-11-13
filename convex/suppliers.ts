@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import { normalizeCustomFieldValues } from "./lib/customFieldValues";
+import { GST_TYPE } from "./schema";
 
 export const list = query({
   args: {},
@@ -61,6 +62,11 @@ export const create = mutation({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    gstType: v.optional(GST_TYPE),
+    state: v.optional(v.string()),
+    creditLimitPaise: v.optional(v.number()),
+    openingBalancePaise: v.optional(v.number()),
+    openingBalanceDateMs: v.optional(v.number()),
     customFields: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
@@ -76,8 +82,12 @@ export const create = mutation({
       email: args.email?.trim() || undefined,
       address: args.address?.trim() || undefined,
       gstin: args.gstin?.trim() || undefined,
+      gstType: args.gstType,
+      state: args.state?.trim() || undefined,
+      creditLimitPaise: args.creditLimitPaise,
       customFields,
-      openingBalancePaise: 0,
+      openingBalancePaise: args.openingBalancePaise ?? 0,
+      openingBalanceDateMs: args.openingBalanceDateMs,
       isActive: true,
       createdAt: Date.now(),
     });
@@ -92,6 +102,11 @@ export const update = mutation({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    gstType: v.optional(GST_TYPE),
+    state: v.optional(v.string()),
+    creditLimitPaise: v.optional(v.number()),
+    openingBalancePaise: v.optional(v.number()),
+    openingBalanceDateMs: v.optional(v.number()),
     customFields: v.optional(v.record(v.string(), v.string())),
   },
   handler: async (ctx, args) => {
@@ -109,6 +124,11 @@ export const update = mutation({
       email: args.email?.trim() || undefined,
       address: args.address?.trim() || undefined,
       gstin: args.gstin?.trim() || undefined,
+      gstType: args.gstType,
+      state: args.state?.trim() || undefined,
+      creditLimitPaise: args.creditLimitPaise,
+      ...(args.openingBalancePaise === undefined ? {} : { openingBalancePaise: args.openingBalancePaise }),
+      openingBalanceDateMs: args.openingBalanceDateMs,
       ...(customFields === undefined ? {} : { customFields }),
     });
   },

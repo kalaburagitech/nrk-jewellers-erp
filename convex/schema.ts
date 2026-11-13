@@ -18,6 +18,19 @@ export const ROLES = v.union(
   v.literal("accountant"),
 );
 
+// GST registration status of a customer/supplier — drives invoice wording, not tax computation (tax rates are picked per line via taxConfigurations).
+export const GST_TYPE = v.union(
+  v.literal("unregistered_consumer"),
+  v.literal("regular"),
+  v.literal("composition"),
+  v.literal("sez"),
+  v.literal("overseas"),
+  v.literal("deemed_export"),
+  v.literal("tax_deductor"),
+  v.literal("tax_collector_ecommerce"),
+  v.literal("uin_holder"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -137,9 +150,12 @@ export default defineSchema({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    gstType: v.optional(GST_TYPE),
+    state: v.optional(v.string()),
     customerType: v.union(v.literal("cash"), v.literal("regular"), v.literal("credit")),
     creditLimitPaise: v.optional(v.number()),
     openingBalancePaise: v.number(),
+    openingBalanceDateMs: v.optional(v.number()),
     // Maintained running balance (= latest customerLedgerEntries.balancePaise),
     // updated by every mutation that writes a ledger entry — avoids reading
     // the ledger per customer just to show an outstanding figure.
@@ -163,8 +179,12 @@ export default defineSchema({
     email: v.optional(v.string()),
     address: v.optional(v.string()),
     gstin: v.optional(v.string()),
+    gstType: v.optional(GST_TYPE),
+    state: v.optional(v.string()),
+    creditLimitPaise: v.optional(v.number()),
     customFields: v.optional(v.record(v.string(), v.string())),
     openingBalancePaise: v.number(),
+    openingBalanceDateMs: v.optional(v.number()),
     currentBalancePaise: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
@@ -199,6 +219,8 @@ export default defineSchema({
     name: v.string(),
     description: v.optional(v.string()),
     sku: v.optional(v.string()),
+    // "service" items (making-charge-only labor, polish, repair) carry no weight/stock — billed as a flat charge with no box piece behind them.
+    itemType: v.optional(v.union(v.literal("product"), v.literal("service"))),
     stockGroupId: v.optional(v.id("stockGroups")),
     stockCategoryId: v.optional(v.id("stockCategories")),
     metalPurityId: v.optional(v.id("metalPurities")),

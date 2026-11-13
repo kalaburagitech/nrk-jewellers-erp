@@ -36,6 +36,7 @@ import {
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
+import { Pencil } from "lucide-react";
 
 const UNITS = [
   { value: "gram", label: "Gram" },
@@ -81,39 +82,43 @@ function ImportProductsDialog({ purities }: { purities: Doc<"metalPurities">[] |
 
 const NONE = "__none__";
 
-function CreateProductDialog() {
+function ProductFormDialog({ product }: { product?: Doc<"products"> }) {
   const createProduct = useMutation(api.products.create);
+  const updateProduct = useMutation(api.products.update);
   const groups = useQuery(api.stockGroups.list);
   const categories = useQuery(api.stockCategories.list);
   const purities = useQuery(api.metalPurities.list);
+  const isEdit = !!product;
 
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [sku, setSku] = useState("");
-  const [unit, setUnit] = useState<(typeof UNITS)[number]["value"]>("gram");
-  const [stockGroupId, setStockGroupId] = useState<string>(NONE);
-  const [stockCategoryId, setStockCategoryId] = useState<string>(NONE);
-  const [metalPurityId, setMetalPurityId] = useState<string>(NONE);
-  const [hsnCode, setHsnCode] = useState("");
+  const [name, setName] = useState(product?.name ?? "");
+  const [description, setDescription] = useState(product?.description ?? "");
+  const [sku, setSku] = useState(product?.sku ?? "");
+  const [itemType, setItemType] = useState<"product" | "service">(product?.itemType ?? "product");
+  const [unit, setUnit] = useState<(typeof UNITS)[number]["value"]>(product?.unit ?? "gram");
+  const [stockGroupId, setStockGroupId] = useState<string>(product?.stockGroupId ?? NONE);
+  const [stockCategoryId, setStockCategoryId] = useState<string>(product?.stockCategoryId ?? NONE);
+  const [metalPurityId, setMetalPurityId] = useState<string>(product?.metalPurityId ?? NONE);
+  const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? "");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [customFields, setCustomFields] = useState<Record<string, string>>(product?.customFields ?? {});
 
   function reset() {
-    setName("");
-    setDescription("");
-    setSku("");
-    setUnit("gram");
-    setStockGroupId(NONE);
-    setStockCategoryId(NONE);
-    setMetalPurityId(NONE);
-    setHsnCode("");
+    setName(product?.name ?? "");
+    setDescription(product?.description ?? "");
+    setSku(product?.sku ?? "");
+    setItemType(product?.itemType ?? "product");
+    setUnit(product?.unit ?? "gram");
+    setStockGroupId(product?.stockGroupId ?? NONE);
+    setStockCategoryId(product?.stockCategoryId ?? NONE);
+    setMetalPurityId(product?.metalPurityId ?? NONE);
+    setHsnCode(product?.hsnCode ?? "");
     setError(null);
-    setCustomFields({});
+    setCustomFields(product?.customFields ?? {});
   }
 
-  async function handleCreate() {
+  async function handleSave() {
     if (!name.trim()) {
       setError("Name is required.");
       return;
@@ -121,18 +126,24 @@ function CreateProductDialog() {
     setSubmitting(true);
     setError(null);
     try {
-      await createProduct({
+      const payload = {
         name,
         description: description.trim() || undefined,
         sku: sku || undefined,
+        itemType,
         unit,
         stockGroupId: stockGroupId === NONE ? undefined : (stockGroupId as Id<"stockGroups">),
         stockCategoryId: stockCategoryId === NONE ? undefined : (stockCategoryId as Id<"stockCategories">),
         metalPurityId: metalPurityId === NONE ? undefined : (metalPurityId as Id<"metalPurities">),
         hsnCode: hsnCode || undefined,
         customFields,
-      });
-      reset();
+      };
+      if (isEdit) {
+        await updateProduct({ id: product._id, ...payload });
+      } else {
+        await createProduct(payload);
+      }
+      if (!isEdit) reset();
       setOpen(false);
     } catch (e) {
       setError(getUserErrorMessage(e, "Could not save these changes. Check your access and try again."));
@@ -150,36 +161,48 @@ function CreateProductDialog() {
       }}
     >
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Add Product
-        </Button>
+        {isEdit ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit item">
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button>
+            <Plus className="h-4 w-4" />
+            Add Product
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
-          <DialogTitle>Add item</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit item" : "Add item"}</DialogTitle>
         </DialogHeader>
         <div className="flex flex-col gap-5">
+          <div className="flex gap-2">
+            <Button type="button" variant={itemType === "product" ? "default" : "outline"} size="sm" onClick={() => setItemType("product")}>Product</Button>
+            <Button type="button" variant={itemType === "service" ? "default" : "outline"} size="sm" onClick={() => setItemType("service")}>Service</Button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_0.8fr]">
             <div className="grid gap-2">
-              <Label htmlFor="item-name">Item name</Label>
+              <Label htmlFor="item-name">{itemType === "service" ? "Service name" : "Item name"}</Label>
               <Input id="item-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Gold Chain 22K" />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="item-hsn">Item HSN</Label>
+              <Label htmlFor="item-hsn">{itemType === "service" ? "Service HSN" : "Item HSN"}</Label>
               <Input id="item-hsn" value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="Enter HSN code" />
             </div>
-            <div className="grid gap-2">
-              <Label>Unit</Label>
-              <Select value={unit} onValueChange={(v) => setUnit(v as typeof unit)}>
-                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                <SelectContent>{UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
+            {itemType === "product" && (
+              <div className="grid gap-2">
+                <Label>Unit</Label>
+                <Select value={unit} onValueChange={(v) => setUnit(v as typeof unit)}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div className="grid gap-2">
-              <Label htmlFor="item-code">Item code</Label>
+              <Label htmlFor="item-code">{itemType === "service" ? "Service code" : "Item code"}</Label>
               <Input id="item-code" value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Optional code / SKU" />
             </div>
             <div className="grid gap-2">
@@ -189,56 +212,44 @@ function CreateProductDialog() {
                 <SelectContent><SelectItem value={NONE}>None</SelectItem>{categories?.map((c) => <SelectItem key={c._id} value={c._id}>{c.name}</SelectItem>)}</SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
-              <Label>Stock group</Label>
-              <Select value={stockGroupId} onValueChange={setStockGroupId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>None</SelectItem>
-                  {groups?.map((g) => (
-                    <SelectItem key={g._id} value={g._id}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-2">
-              <Label>Stock category</Label>
-              <Select value={stockCategoryId} onValueChange={setStockCategoryId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>None</SelectItem>
-                  {categories?.map((c) => (
-                    <SelectItem key={c._id} value={c._id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {itemType === "product" && (
+              <div className="grid gap-2">
+                <Label>Stock group</Label>
+                <Select value={stockGroupId} onValueChange={setStockGroupId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>None</SelectItem>
+                    {groups?.map((g) => (
+                      <SelectItem key={g._id} value={g._id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label>Metal purity</Label>
-              <Select value={metalPurityId} onValueChange={setMetalPurityId}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="None" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>None</SelectItem>
-                  {purities?.map((p) => (
-                    <SelectItem key={p._id} value={p._id}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {itemType === "product" && (
+              <div className="grid gap-2">
+                <Label>Metal purity</Label>
+                <Select value={metalPurityId} onValueChange={setMetalPurityId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="None" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={NONE}>None</SelectItem>
+                    {purities?.map((p) => (
+                      <SelectItem key={p._id} value={p._id}>
+                        {p.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="grid gap-2">
               <Label htmlFor="item-description">Description</Label>
               <Textarea id="item-description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Item details, design, or notes" rows={3} />
@@ -248,8 +259,8 @@ function CreateProductDialog() {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
-          <Button onClick={handleCreate} disabled={submitting}>
-            {submitting ? "Saving…" : "Save product"}
+          <Button onClick={handleSave} disabled={submitting}>
+            {submitting ? "Saving…" : isEdit ? "Save changes" : "Save product"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -295,7 +306,7 @@ export default function ProductsPage() {
         </div>
         <div className="flex gap-2">
           <ImportProductsDialog purities={purities} />
-          <CreateProductDialog />
+          <ProductFormDialog />
         </div>
       </div>
 
@@ -330,6 +341,7 @@ export default function ProductsPage() {
                     <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead>SKU</TableHead>
+                    <TableHead>Type</TableHead>
                     <TableHead>Unit</TableHead>
                     <TableHead>Purity</TableHead>
                   </TableRow>
@@ -338,8 +350,13 @@ export default function ProductsPage() {
                   {filtered.map((p) => (
                     <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined}>
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.name}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{p.name}{p.description && <p className="mt-0.5 max-w-lg truncate text-xs font-normal text-muted-foreground">{p.description}</p>}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "product")} values={p.customFields} /></div><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{p.name}{p.description && <p className="mt-0.5 max-w-lg truncate text-xs font-normal text-muted-foreground">{p.description}</p>}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "product")} values={p.customFields} /></div><div className="flex items-center gap-1"><ProductFormDialog product={p} /><DeleteRecordButton table="products" id={p._id} name={p.name} /></div></div></TableCell>
                       <TableCell className="text-muted-foreground">{p.sku ?? "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant={p.itemType === "service" ? "outline" : "secondary"} className="capitalize">
+                          {p.itemType ?? "product"}
+                        </Badge>
+                      </TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="capitalize">
                           {p.unit}

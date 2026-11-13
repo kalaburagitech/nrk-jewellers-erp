@@ -18,11 +18,14 @@ export const list = query({
 
 const unit = v.union(v.literal("gram"), v.literal("kilogram"), v.literal("piece"), v.literal("carat"));
 
+const itemType = v.optional(v.union(v.literal("product"), v.literal("service")));
+
 export const create = mutation({
   args: {
     name: v.string(),
     description: v.optional(v.string()),
     sku: v.optional(v.string()),
+    itemType,
     stockGroupId: v.optional(v.id("stockGroups")),
     stockCategoryId: v.optional(v.id("stockCategories")),
     metalPurityId: v.optional(v.id("metalPurities")),
@@ -43,6 +46,7 @@ export const create = mutation({
       name,
       description: args.description?.trim() || undefined,
       sku: args.sku?.trim() || undefined,
+      itemType: args.itemType ?? "product",
       stockGroupId: args.stockGroupId,
       stockCategoryId: args.stockCategoryId,
       metalPurityId: args.metalPurityId,
@@ -62,6 +66,7 @@ export const update = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     sku: v.optional(v.string()),
+    itemType,
     stockGroupId: v.optional(v.id("stockGroups")),
     stockCategoryId: v.optional(v.id("stockCategories")),
     metalPurityId: v.optional(v.id("metalPurities")),
@@ -82,6 +87,7 @@ export const update = mutation({
       name,
       description: args.description?.trim() || undefined,
       sku: args.sku?.trim() || undefined,
+      itemType: args.itemType ?? "product",
       stockGroupId: args.stockGroupId,
       stockCategoryId: args.stockCategoryId,
       metalPurityId: args.metalPurityId,

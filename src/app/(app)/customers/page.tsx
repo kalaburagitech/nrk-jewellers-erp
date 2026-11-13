@@ -44,9 +44,11 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
-import { customerFormSchema, type CustomerFormValues } from "@/lib/schemas/party";
-import { rupeesToPaise } from "@/lib/money";
+import { customerFormSchema, GST_TYPE_OPTIONS, type CustomerFormValues } from "@/lib/schemas/party";
+import { rupeesToPaise, paiseToRupeesInput } from "@/lib/money";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
+import { Pencil } from "lucide-react";
+import type { Doc } from "../../../../convex/_generated/dataModel";
 
 const CUSTOMER_IMPORT_HEADERS = ["Name", "Phone", "Email", "Address", "GSTIN", "Type (cash/regular/credit)", "Credit Limit", "Notes"];
 
@@ -85,46 +87,66 @@ const CUSTOMER_TYPE_LABEL: Record<string, string> = {
   credit: "Credit",
 };
 
-function CreateCustomerDialog() {
+function CustomerFormDialog({ customer }: { customer?: Doc<"customers"> }) {
   const createCustomer = useMutation(api.customers.create);
+  const updateCustomer = useMutation(api.customers.update);
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const [customFields, setCustomFields] = useState<Record<string, string>>(customer?.customFields ?? {});
+  const isEdit = !!customer;
 
-  const form = useForm<CustomerFormValues>({
-    resolver: zodResolver(customerFormSchema),
-    defaultValues: {
-      name: "",
-      phone: "",
-      email: "",
-      address: "",
-      gstin: "",
-      customerType: "regular",
-      creditLimitRupees: "",
-      dueDate: "",
-      notes: "",
-    },
-  });
+  const defaultValues: CustomerFormValues = {
+    name: customer?.name ?? "",
+    phone: customer?.phone ?? "",
+    email: customer?.email ?? "",
+    address: customer?.address ?? "",
+    gstin: customer?.gstin ?? "",
+    gstType: customer?.gstType ?? "unregistered_consumer",
+    state: customer?.state ?? "",
+    customerType: customer?.customerType ?? "regular",
+    creditLimitRupees: customer?.creditLimitPaise !== undefined ? paiseToRupeesInput(customer.creditLimitPaise) : "",
+    dueDate: customer?.dueDateMs ? new Date(customer.dueDateMs).toISOString().slice(0, 10) : "",
+    openingBalanceRupees: customer?.openingBalancePaise ? paiseToRupeesInput(customer.openingBalancePaise) : "",
+    openingBalanceDate: customer?.openingBalanceDateMs
+      ? new Date(customer.openingBalanceDateMs).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
+    notes: customer?.notes ?? "",
+  };
+
+  const form = useForm<CustomerFormValues>({ resolver: zodResolver(customerFormSchema), defaultValues });
   const customerType = useWatch({ control: form.control, name: "customerType" });
+
+  function resetForm() {
+    form.reset(defaultValues);
+    setCustomFields(customer?.customFields ?? {});
+  }
 
   async function onSubmit(values: CustomerFormValues) {
     setServerError(null);
     try {
-      await createCustomer({
+      const payload = {
         name: values.name,
         phone: values.phone || undefined,
         email: values.email || undefined,
         address: values.address || undefined,
         gstin: values.gstin || undefined,
+        gstType: (values.gstType || undefined) as Doc<"customers">["gstType"],
+        state: values.state || undefined,
         customerType: values.customerType,
         creditLimitPaise: values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
         dueDateMs: values.dueDate ? new Date(values.dueDate).getTime() : undefined,
+        openingBalancePaise: values.openingBalanceRupees ? (rupeesToPaise(values.openingBalanceRupees) ?? undefined) : undefined,
+        openingBalanceDateMs: values.openingBalanceDate ? new Date(values.openingBalanceDate).getTime() : undefined,
         notes: values.notes || undefined,
         customFields,
-      });
+      };
+      if (isEdit) {
+        await updateCustomer({ id: customer._id, ...payload });
+      } else {
+        await createCustomer(payload);
+      }
       setOpen(false);
-      form.reset();
-      setCustomFields({});
+      if (!isEdit) { form.reset(); setCustomFields({}); }
     } catch (e) {
       setServerError(getUserErrorMessage(e, "Could not save this customer. Please try again."));
     }
@@ -135,18 +157,24 @@ function CreateCustomerDialog() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) { form.reset(); setCustomFields({}); }
+        if (!next) resetForm();
       }}
     >
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Add Customer
-        </Button>
+        {isEdit ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit customer">
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button>
+            <Plus className="h-4 w-4" />
+            Add Customer
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add customer</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit customer" : "Add customer"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
@@ -220,27 +248,62 @@ function CreateCustomerDialog() {
               />
               <FormField
                 control={form.control}
-                name="customerType"
+                name="state"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Type</FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="regular">Regular</SelectItem>
-                        <SelectItem value="credit">Credit</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <FormLabel>State</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="optional" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
             </div>
+            <FormField
+              control={form.control}
+              name="gstType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>GST type</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {GST_TYPE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="customerType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Type</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="regular">Regular</SelectItem>
+                      <SelectItem value="credit">Credit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             {customerType === "credit" && (
               <div className="grid grid-cols-2 gap-4">
                 <FormField
@@ -262,6 +325,37 @@ function CreateCustomerDialog() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Payment due date</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+            {/* ponytail: opening balance is create-only — editing it post-transactions would silently diverge from the posted ledger; add a guarded re-opening-balance flow if that's ever needed */}
+            {!isEdit && (
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="openingBalanceRupees"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Opening balance (₹)</FormLabel>
+                      <FormControl>
+                        <Input {...field} inputMode="decimal" placeholder="0.00" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="openingBalanceDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>As of date</FormLabel>
                       <FormControl>
                         <Input {...field} type="date" />
                       </FormControl>
@@ -324,7 +418,7 @@ export default function CustomersPage() {
         </div>
         <div className="flex gap-2">
           <ImportCustomersDialog />
-          <CreateCustomerDialog />
+          <CustomerFormDialog />
         </div>
       </div>
 
@@ -371,7 +465,7 @@ export default function CustomersPage() {
                       onClick={() => router.push(`/customers/ledgers?customerId=${c._id}`)}
                     >
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${c.name}`} checked={selection.has(c._id)} onCheckedChange={() => selection.toggle(c._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div><span>{c.name}</span><CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "customer")} values={c.customFields} /></div><DeleteRecordButton table="customers" id={c._id} name={c.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div><span>{c.name}</span><CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "customer")} values={c.customFields} /></div><div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}><CustomerFormDialog customer={c} /><DeleteRecordButton table="customers" id={c._id} name={c.name} /></div></div></TableCell>
                       <TableCell>{c.phone ?? "—"}</TableCell>
                       <TableCell>
                         <Badge variant="secondary">{CUSTOMER_TYPE_LABEL[c.customerType]}</Badge>

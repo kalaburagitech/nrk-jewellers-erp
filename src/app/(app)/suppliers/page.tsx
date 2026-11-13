@@ -13,7 +13,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Search, Truck } from "lucide-react";
+import { Plus, Search, Truck, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,11 +34,19 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
-import { supplierFormSchema, type SupplierFormValues } from "@/lib/schemas/party";
-import { formatPaise } from "@/lib/money";
+import { supplierFormSchema, GST_TYPE_OPTIONS, type SupplierFormValues } from "@/lib/schemas/party";
+import { formatPaise, rupeesToPaise, paiseToRupeesInput } from "@/lib/money";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
+import type { Doc } from "../../../../convex/_generated/dataModel";
 
 const SUPPLIER_IMPORT_HEADERS = ["Name", "Phone", "Email", "Address", "GSTIN"];
 
@@ -66,31 +74,59 @@ function ImportSuppliersDialog() {
   );
 }
 
-function CreateSupplierDialog() {
+function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
   const createSupplier = useMutation(api.suppliers.create);
-  const [customFields, setCustomFields] = useState<Record<string, string>>({});
+  const updateSupplier = useMutation(api.suppliers.update);
+  const [customFields, setCustomFields] = useState<Record<string, string>>(supplier?.customFields ?? {});
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const isEdit = !!supplier;
 
-  const form = useForm<SupplierFormValues>({
-    resolver: zodResolver(supplierFormSchema),
-    defaultValues: { name: "", phone: "", email: "", address: "", gstin: "" },
-  });
+  const defaultValues: SupplierFormValues = {
+    name: supplier?.name ?? "",
+    phone: supplier?.phone ?? "",
+    email: supplier?.email ?? "",
+    address: supplier?.address ?? "",
+    gstin: supplier?.gstin ?? "",
+    gstType: supplier?.gstType ?? "unregistered_consumer",
+    state: supplier?.state ?? "",
+    creditLimitRupees: supplier?.creditLimitPaise !== undefined ? paiseToRupeesInput(supplier.creditLimitPaise) : "",
+    openingBalanceRupees: supplier?.openingBalancePaise ? paiseToRupeesInput(supplier.openingBalancePaise) : "",
+    openingBalanceDate: supplier?.openingBalanceDateMs
+      ? new Date(supplier.openingBalanceDateMs).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10),
+  };
+
+  const form = useForm<SupplierFormValues>({ resolver: zodResolver(supplierFormSchema), defaultValues });
+
+  function resetForm() {
+    form.reset(defaultValues);
+    setCustomFields(supplier?.customFields ?? {});
+  }
 
   async function onSubmit(values: SupplierFormValues) {
     setServerError(null);
     try {
-      await createSupplier({
+      const payload = {
         name: values.name,
         phone: values.phone || undefined,
         email: values.email || undefined,
         address: values.address || undefined,
         gstin: values.gstin || undefined,
+        gstType: (values.gstType || undefined) as Doc<"suppliers">["gstType"],
+        state: values.state || undefined,
+        creditLimitPaise: values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
+        openingBalancePaise: values.openingBalanceRupees ? (rupeesToPaise(values.openingBalanceRupees) ?? undefined) : undefined,
+        openingBalanceDateMs: values.openingBalanceDate ? new Date(values.openingBalanceDate).getTime() : undefined,
         customFields,
-      });
+      };
+      if (isEdit) {
+        await updateSupplier({ id: supplier._id, ...payload });
+      } else {
+        await createSupplier(payload);
+      }
       setOpen(false);
-      form.reset();
-      setCustomFields({});
+      if (!isEdit) { form.reset(); setCustomFields({}); }
     } catch (e) {
       setServerError(getUserErrorMessage(e, "Could not save this supplier. Please try again."));
     }
@@ -101,18 +137,24 @@ function CreateSupplierDialog() {
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) { form.reset(); setCustomFields({}); }
+        if (!next) resetForm();
       }}
     >
       <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4" />
-          Add Supplier
-        </Button>
+        {isEdit ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit supplier">
+            <Pencil className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button>
+            <Plus className="h-4 w-4" />
+            Add Supplier
+          </Button>
+        )}
       </DialogTrigger>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add supplier</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit supplier" : "Add supplier"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form className="flex flex-col gap-4" onSubmit={form.handleSubmit(onSubmit)}>
@@ -183,6 +225,87 @@ function CreateSupplierDialog() {
                 </FormItem>
               )}
             />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="state"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>State</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="optional" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="creditLimitRupees"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Credit limit (₹)</FormLabel>
+                    <FormControl>
+                      <Input {...field} inputMode="decimal" placeholder="optional" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+            <FormField
+              control={form.control}
+              name="gstType"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>GST type</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {GST_TYPE_OPTIONS.map((o) => (
+                        <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            {/* ponytail: opening balance is create-only — same reasoning as the customer form */}
+            {!isEdit && (
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="openingBalanceRupees"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Opening balance (₹)</FormLabel>
+                      <FormControl>
+                        <Input {...field} inputMode="decimal" placeholder="0.00" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="openingBalanceDate"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>As of date</FormLabel>
+                      <FormControl>
+                        <Input {...field} type="date" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
             <CustomFieldInputs entity="supplier" values={customFields} onChange={setCustomFields} />
             {serverError && <p className="text-sm text-destructive">{serverError}</p>}
             <DialogFooter>
@@ -223,7 +346,7 @@ export default function SuppliersPage() {
         </div>
         <div className="flex gap-2">
           <ImportSuppliersDialog />
-          <CreateSupplierDialog />
+          <SupplierFormDialog />
         </div>
       </div>
 
@@ -270,7 +393,7 @@ export default function SuppliersPage() {
                       onClick={() => router.push(`/suppliers/history?supplierId=${s._id}`)}
                     >
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${s.name}`} checked={selection.has(s._id)} onCheckedChange={() => selection.toggle(s._id)} /></TableCell>
-                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{s.name}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "supplier")} values={s.customFields} /></div><DeleteRecordButton table="suppliers" id={s._id} name={s.name} /></div></TableCell>
+                      <TableCell className="font-medium"><div className="flex items-center justify-between gap-3"><div>{s.name}<CustomFieldSummary fields={customFieldDefinitions?.filter(field => field.entity === "supplier")} values={s.customFields} /></div><div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}><SupplierFormDialog supplier={s} /><DeleteRecordButton table="suppliers" id={s._id} name={s.name} /></div></div></TableCell>
                       <TableCell>{s.phone ?? "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{s.gstin ?? "—"}</TableCell>
                       <TableCell className="text-right">{formatPaise(s.outstandingPaise)}</TableCell>
