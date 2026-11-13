@@ -24,7 +24,7 @@ export async function requireAuthContext(ctx: QueryCtx | MutationCtx): Promise<A
   }
 
   const preference = await ctx.db.query("currentOrganizations")
-    .withIndex("by_user", (q) => q.eq("userId", userId)).unique();
+    .withIndex("by_user", (q) => q.eq("userId", userId)).order("desc").first();
   const selectedMembership = preference ? await ctx.db.query("memberships")
     .withIndex("by_user_and_org", (q) => q.eq("userId", userId).eq("organizationId", preference.organizationId))
     .filter((q) => q.eq(q.field("status"), "active"))

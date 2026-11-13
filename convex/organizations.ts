@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query } from "./_generated/server";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import { internal } from "./_generated/api";
@@ -84,7 +84,10 @@ export const createCompany = mutation({
     for (const purity of purities) await ctx.db.insert("metalPurities", { organizationId, ...purity, isActive: true });
     await ctx.db.insert("taxConfigurations", { organizationId, name: "Jewellery GST 3%", cgstBasisPoints: 150, sgstBasisPoints: 150, igstBasisPoints: 300, isActive: true });
     await ctx.db.insert("bankAccounts", { organizationId, name: "Cash in hand", type: "cash", openingBalancePaise: 0, currentBalancePaise: 0, isActive: true, createdAt: now });
-    await ctx.db.insert("currentOrganizations", { userId: auth.userId, organizationId, updatedAt: now });
+    const preference = await ctx.db.query("currentOrganizations")
+      .withIndex("by_user", (q) => q.eq("userId", auth.userId)).order("desc").first();
+    if (preference) await ctx.db.patch(preference._id, { organizationId, updatedAt: now });
+    else await ctx.db.insert("currentOrganizations", { userId: auth.userId, organizationId, updatedAt: now });
     return { organizationId };
   },
 });
@@ -300,5 +303,37 @@ export const getInvoiceLogoUrl = query({
     const org = await ctx.db.get(auth.organizationId);
     if (!org?.invoiceLogoStorageId) return null;
     return await ctx.storage.getUrl(org.invoiceLogoStorageId);
+  },
+});
+
+/**
+ * One-off data repair: `createCompany` used to always insert a new
+ * currentOrganizations row instead of patching an existing one, so any user
+ * who created more than one company ended up with duplicates — which broke
+ * every single request, since requireAuthContext expected at most one row.
+ * Keeps the most recently updated row per user and deletes the rest. Not
+ * exposed in the UI — run once via `npx convex run organizations:dedupeCurrentOrganizations`.
+ */
+export const dedupeCurrentOrganizations = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const rows = await ctx.db.query("currentOrganizations").collect();
+    const byUser = new Map<string, typeof rows>();
+    for (const row of rows) {
+      const key = String(row.userId);
+      const list = byUser.get(key) ?? [];
+      list.push(row);
+      byUser.set(key, list);
+    }
+    let deleted = 0;
+    for (const list of byUser.values()) {
+      if (list.length <= 1) continue;
+      list.sort((a, b) => b.updatedAt - a.updatedAt);
+      for (const row of list.slice(1)) {
+        await ctx.db.delete(row._id);
+        deleted++;
+      }
+    }
+    return { usersAffected: [...byUser.values()].filter((list) => list.length > 1).length, rowsDeleted: deleted };
   },
 });
