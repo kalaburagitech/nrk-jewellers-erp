@@ -21,7 +21,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import type { Id } from "../../../../convex/_generated/dataModel";
-import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
@@ -145,6 +146,121 @@ function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; labe
   );
 }
 
+const NEW_PRODUCT = "__new__";
+
+/** Put one piece straight into a box (empty or not) without recording a purchase. */
+function AddBoxItemForm({ boxId }: { boxId: Id<"boxes"> }) {
+  const products = useQuery(api.products.list);
+  const quickAddItem = useMutation(api.boxes.quickAddItem);
+  const [open, setOpen] = useState(false);
+  const [productId, setProductId] = useState("");
+  const [newProductName, setNewProductName] = useState("");
+  const [label, setLabel] = useState("");
+  const [gross, setGross] = useState("");
+  const [stone, setStone] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [added, setAdded] = useState("");
+
+  const grossMg = gramsToMg(gross || "0");
+  const stoneMg = gramsToMg(stone || "0");
+  const netMg = Math.max(0, grossMg - stoneMg);
+
+  async function add() {
+    setError("");
+    setAdded("");
+    if (!label.trim()) return setError("Enter the item name, e.g. Ring.");
+    if (!productId) return setError("Choose a product, or pick “New product”.");
+    if (productId === NEW_PRODUCT && !newProductName.trim()) return setError("Enter the new product name.");
+    if (!(Number(gross) > 0)) return setError("Enter the gross weight in grams.");
+    if (stone && !(Number(stone) >= 0)) return setError("Stone weight must be 0 or more.");
+    if (stoneMg > grossMg) return setError("Stone weight can’t be more than gross weight.");
+    setBusy(true);
+    try {
+      await quickAddItem({
+        boxId,
+        productId: productId === NEW_PRODUCT ? undefined : (productId as Id<"products">),
+        newProductName: productId === NEW_PRODUCT ? newProductName.trim() : undefined,
+        label: label.trim(),
+        grossWeightMg: grossMg,
+        stoneWeightMg: stoneMg,
+      });
+      setAdded(`${label.trim()} added.`);
+      // Keep the product selected for quickly adding several pieces of the same kind.
+      setLabel("");
+      setGross("");
+      setStone("");
+      if (productId === NEW_PRODUCT) {
+        setProductId("");
+        setNewProductName("");
+      }
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not add the item."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" className="w-full" onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" />Add item to this box
+      </Button>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void add();
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add item</p>
+        <Button type="button" variant="ghost" size="icon" className="h-6 w-6" aria-label="Close add item" onClick={() => setOpen(false)}><X className="h-3.5 w-3.5" /></Button>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-1">
+          <label className="text-xs text-muted-foreground">Product</label>
+          <Select value={productId} onValueChange={setProductId}>
+            <SelectTrigger aria-label="Product"><SelectValue placeholder={products === undefined ? "Loading…" : "Choose product"} /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NEW_PRODUCT}>+ New product…</SelectItem>
+              {products?.map((product) => <SelectItem key={product._id} value={product._id}>{product.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        {productId === NEW_PRODUCT ? (
+          <div className="grid gap-1">
+            <label htmlFor="new-product-name" className="text-xs text-muted-foreground">New product name</label>
+            <Input id="new-product-name" value={newProductName} maxLength={80} placeholder="e.g. Gold ring" onChange={(e) => setNewProductName(e.target.value)} />
+          </div>
+        ) : <span className="hidden sm:block" />}
+        <div className="grid gap-1 sm:col-span-2">
+          <label htmlFor="new-item-label" className="text-xs text-muted-foreground">Item name / label</label>
+          <Input id="new-item-label" value={label} maxLength={80} placeholder="e.g. Ring" onChange={(e) => setLabel(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <label htmlFor="new-item-gross" className="text-xs text-muted-foreground">Gross weight (g)</label>
+          <Input id="new-item-gross" inputMode="decimal" placeholder="0.000" value={gross} onChange={(e) => setGross(e.target.value)} />
+        </div>
+        <div className="grid gap-1">
+          <label htmlFor="new-item-stone" className="text-xs text-muted-foreground">Stone weight (g)</label>
+          <Input id="new-item-stone" inputMode="decimal" placeholder="0.000" value={stone} onChange={(e) => setStone(e.target.value)} />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">Net: <strong className="text-foreground">{mgToGramsDisplay(netMg)}g</strong></span>
+        <Button type="submit" disabled={busy}>{busy ? "Adding…" : "Add to box"}</Button>
+      </div>
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {added && <p role="status" className="text-xs text-success">{added}</p>}
+    </form>
+  );
+}
+
 function BoxDetailDialog({
   box,
   onClose,
@@ -156,18 +272,19 @@ function BoxDetailDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent className="max-h-[90svh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</DialogTitle>
         </DialogHeader>
         <BoxEditForm key={`${box.boxNumber}-${box.label ?? ""}`} box={box} />
+        <AddBoxItemForm boxId={box._id} />
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : items.length === 0 ? (
           <div className="flex flex-col items-center gap-2 py-8 text-center">
             <Package className="h-8 w-8 text-muted-foreground" />
             <p className="text-sm text-muted-foreground">
-              This box is empty. Add items when recording a new purchase.
+              This box is empty. Use “Add item to this box” above, or record a purchase.
             </p>
           </div>
         ) : (

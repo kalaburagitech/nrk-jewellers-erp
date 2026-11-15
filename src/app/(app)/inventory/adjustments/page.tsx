@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
-import type { Doc } from "../../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () => void }) {
@@ -105,6 +105,21 @@ function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () =>
   );
 }
 
+type AdjustmentMeta = { label?: string; boxNumber?: number; addWeightMg?: number; deductWeightMg?: number; addPieces?: number; deductPieces?: number };
+
+/** Human-readable summary of one adjustment log entry. */
+function describeAdjustment(log: Doc<"auditLogs">) {
+  const meta = (log.metadata ?? {}) as AdjustmentMeta;
+  if (log.action !== "stock.adjust_box") return meta.label ?? "Item";
+  const parts = [
+    meta.addWeightMg ? `+${mgToGramsDisplay(meta.addWeightMg)}g` : "",
+    meta.deductWeightMg ? `−${mgToGramsDisplay(meta.deductWeightMg)}g` : "",
+    meta.addPieces ? `+${meta.addPieces} pcs` : "",
+    meta.deductPieces ? `−${meta.deductPieces} pcs` : "",
+  ].filter(Boolean);
+  return `Box ${meta.boxNumber ?? "?"}${parts.length ? ` · ${parts.join(", ")}` : ""}`;
+}
+
 export default function StockAdjustmentsPage() {
   const boxes = useQuery(api.boxes.list);
   const overview = useQuery(api.boxes.getInventoryOverview);
@@ -119,18 +134,27 @@ export default function StockAdjustmentsPage() {
   const [boxError, setBoxError] = useState("");
   const [savingBox, setSavingBox] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Doc<"boxItems"> | null>(null);
+  const products = useQuery(api.products.list);
+  const [productId, setProductId] = useState("");
+  const [itemLabel, setItemLabel] = useState("");
 
   const sourceBox = useMemo(() => boxes?.find((b) => String(b._id) === boxNumberInput), [boxes, boxNumberInput]);
   const items = useQuery(api.boxes.getItems, sourceBox ? { boxId: sourceBox._id } : "skip");
+  // An empty box has no piece to copy the item type from, so ask for it when adding pieces.
+  const boxIsEmpty = Boolean(sourceBox && items && items.length === 0);
+  const needsProduct = boxIsEmpty && Number(addPieces || 0) > 0;
 
   async function submitBoxAdjustment() {
     setBoxError("");
     if (!sourceBox) { setBoxError("Choose a box first."); return; }
     if (!boxReason.trim()) { setBoxError("A reason is required for the stock history."); return; }
+    if (boxIsEmpty && Number(addWeight || 0) > 0 && !(Number(addPieces || 0) > 0)) { setBoxError("This box is empty — enter how many pieces you are adding with this weight."); return; }
+    if (needsProduct && !productId) { setBoxError("Choose the product for the pieces you are adding."); return; }
     setSavingBox(true);
     try {
-      await adjustBox({ boxId: sourceBox._id, addWeightMg: Math.round(Number(addWeight || 0) * 1000), deductWeightMg: Math.round(Number(deductWeight || 0) * 1000), addPieces: Number(addPieces || 0), deductPieces: Number(deductPieces || 0), reason: boxReason });
-      setAddWeight(""); setDeductWeight(""); setAddPieces(""); setDeductPieces(""); setBoxReason("");
+      await adjustBox({ boxId: sourceBox._id, addWeightMg: Math.round(Number(addWeight || 0) * 1000), deductWeightMg: Math.round(Number(deductWeight || 0) * 1000), addPieces: Number(addPieces || 0), deductPieces: Number(deductPieces || 0), reason: boxReason,
+        ...(needsProduct ? { productId: productId as Id<"products">, itemLabel: itemLabel.trim() || undefined } : {}) });
+      setAddWeight(""); setDeductWeight(""); setAddPieces(""); setDeductPieces(""); setBoxReason(""); setProductId(""); setItemLabel("");
     } catch (error) { setBoxError(getUserErrorMessage(error, "Could not adjust stock.")); }
     finally { setSavingBox(false); }
   }
@@ -164,6 +188,17 @@ export default function StockAdjustmentsPage() {
             <div className="grid gap-2"><Label>Add pieces</Label><Input type="number" min="0" step="1" value={addPieces} onChange={e => setAddPieces(e.target.value)} placeholder="e.g. 2" /></div>
             <div className="grid gap-2"><Label>Deduct pieces</Label><Input type="number" min="0" step="1" value={deductPieces} onChange={e => setDeductPieces(e.target.value)} placeholder="e.g. 1" /></div>
           </div>
+          {boxIsEmpty && (
+            <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+              This box is empty. To put stock in it, enter <strong>Add pieces</strong> and <strong>Add weight</strong>, then choose the product below.
+            </p>
+          )}
+          {needsProduct && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2"><Label htmlFor="adjust-product">Product</Label><select id="adjust-product" className="h-10 rounded-md border bg-background px-3 text-sm" value={productId} onChange={e => setProductId(e.target.value)}><option value="">Choose product</option>{products?.map(product => <option key={product._id} value={product._id}>{product.name}</option>)}</select></div>
+              <div className="grid gap-2"><Label htmlFor="adjust-item-label">Item name (optional)</Label><Input id="adjust-item-label" value={itemLabel} maxLength={80} onChange={e => setItemLabel(e.target.value)} placeholder="Defaults to the product name" /></div>
+            </div>
+          )}
           <div className="grid gap-2"><Label>Reason</Label><Input value={boxReason} onChange={e => setBoxReason(e.target.value)} placeholder="Required for the stock audit trail" /></div>
           <p className="text-xs text-muted-foreground">Use add and deduct values together for a combined correction. Piece additions use the item type already in the box.</p>
           {boxError && <p role="alert" className="text-sm text-destructive">{boxError}</p>}
@@ -180,8 +215,9 @@ export default function StockAdjustmentsPage() {
             <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               className="pl-9"
+              aria-label="Selected box"
               placeholder="Choose a box above"
-              value={boxNumberInput}
+              value={sourceBox ? `Box ${sourceBox.boxNumber}${sourceBox.label ? ` — ${sourceBox.label}` : ""}` : ""}
               readOnly
             />
           </div>
@@ -223,12 +259,12 @@ export default function StockAdjustmentsPage() {
             recent.map((log) => (
               <div key={log._id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
                 <div>
-                  <p>{(log.metadata as { label?: string })?.label ?? "Item"}</p>
+                  <p>{describeAdjustment(log)}</p>
                   <p className="text-xs text-muted-foreground">{(log.metadata as { reason?: string })?.reason}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge variant={log.action === "stock.write_off" ? "destructive" : "secondary"}>
-                    {log.action === "stock.write_off" ? "Write-off" : "Weight correction"}
+                    {log.action === "stock.write_off" ? "Write-off" : log.action === "stock.adjust_box" ? "Box adjustment" : "Weight correction"}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
                     {new Date(log.createdAt).toLocaleDateString("en-IN")}

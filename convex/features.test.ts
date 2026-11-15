@@ -496,3 +496,24 @@ describe("editing a box", () => {
     await expect(f.owner.mutation(api.boxes.update, { boxId: empty, boxNumber: 2.5 })).rejects.toThrow("whole");
   });
 });
+describe("stock adjustment on an empty box", () => {
+  it("needs a product, then adds the pieces with the weight split across them", async () => {
+    const f = await fixture();
+    const boxId = await f.owner.mutation(api.boxes.createNext, { boxNumber: 117 });
+    const base = { boxId, addWeightMg: 10000, deductWeightMg: 0, addPieces: 2, deductPieces: 0, reason: "Opening stock" };
+    await expect(f.owner.mutation(api.stockAdjustments.adjustBox, base)).rejects.toThrow("choose the product");
+    await f.owner.mutation(api.stockAdjustments.adjustBox, { ...base, productId: f.product, itemLabel: "Chain" });
+    const items = await f.owner.query(api.boxes.getItems, { boxId });
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.label)).toEqual(["Chain", "Chain"]);
+    expect(items.reduce((sum, item) => sum + item.netWeightMg, 0)).toBe(10000);
+    expect((await f.t.run((ctx) => ctx.db.get(boxId)))?.itemCount).toBe(2);
+  });
+  it("rejects weight without pieces on an empty box", async () => {
+    const f = await fixture();
+    const boxId = await f.owner.mutation(api.boxes.createNext, { boxNumber: 118 });
+    await expect(
+      f.owner.mutation(api.stockAdjustments.adjustBox, { boxId, addWeightMg: 5000, deductWeightMg: 0, addPieces: 0, deductPieces: 0, reason: "x" }),
+    ).rejects.toThrow("Add at least one piece");
+  });
+});

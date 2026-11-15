@@ -109,7 +109,11 @@ export const listRecent = query({
 
 /** Apply an audited box-level correction. Weight deltas are distributed across the remaining pieces. */
 export const adjustBox = mutation({
-  args: { boxId: v.id("boxes"), addWeightMg: v.number(), deductWeightMg: v.number(), addPieces: v.number(), deductPieces: v.number(), reason: v.string() },
+  args: {
+    boxId: v.id("boxes"), addWeightMg: v.number(), deductWeightMg: v.number(), addPieces: v.number(), deductPieces: v.number(), reason: v.string(),
+    // Only needed when the box has no pieces to copy the item type from (an empty box).
+    productId: v.optional(v.id("products")), itemLabel: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -137,8 +141,16 @@ export const adjustBox = mutation({
       await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: item.productId, boxItemId: item._id, boxId: box._id, direction: "out", netWeightMg: item.netWeightMg, quantity: 1, sourceTable: "stock_adjustments", sourceId: item._id, createdAt: now });
     }
     if (args.addPieces) {
-      const template = retained[0] ?? items[0];
-      if (!template) throw new Error("This box has no item type to add. Add a purchase item to the box first.");
+      let template: { productId: (typeof items)[number]["productId"]; label: string } | undefined = retained[0] ?? items[0];
+      if (!template) {
+        // Empty box: the caller says what kind of piece is being added.
+        if (!args.productId) throw new Error("This box is empty — choose the product for the pieces you are adding.");
+        const product = await ctx.db.get(args.productId);
+        if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");
+        const label = args.itemLabel?.trim() || product.name;
+        if (label.length > 80) throw new Error("Item name must be 80 characters or fewer");
+        template = { productId: product._id, label };
+      }
       const totalAddedWeight = Math.max(0, targetWeight - retained.reduce((sum, item) => sum + item.netWeightMg, 0));
       if (!totalAddedWeight && args.addPieces) throw new Error("Enter added weight when adding pieces to an empty-weight box");
       const base = Math.floor(totalAddedWeight / args.addPieces);
