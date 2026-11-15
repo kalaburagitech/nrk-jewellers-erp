@@ -180,6 +180,14 @@
 .counter-dashboard [data-slot="card-header"] { border-bottom: 1px solid var(--border); padding-bottom: 0.8rem; }
 .counter-dashboard [data-slot="card-title"] { color: var(--primary); }
 @media print { table { break-inside: auto; } tr { break-inside: avoid; } }
+/* Bills printed from inside the app shell (purchase bill, Girvi ticket): drop the
+   sidebar and its desktop spacer column, which otherwise shift the sheet right
+   and crop it — A5 landscape is wide enough to trigger the desktop layout. */
+@media print {
+  [data-slot="sidebar"], [data-slot="sidebar-gap"], [data-slot="sidebar-container"] { display: none !important; }
+  [data-slot="sidebar-wrapper"] { display: block !important; min-height: 0 !important; }
+  [data-slot="sidebar-inset"], .erp-main { margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+}
 
 /* Counter-friendly typography and a restrained navy / champagne visual system. */
 .erp-shell, [data-mobile="true"][data-sidebar="sidebar"], [data-slot="dialog-content"], [data-slot="select-content"], [data-slot="dropdown-menu-content"] {

@@ -73,10 +73,7 @@ export default function BarcodeLabelsPage() {
   );
 
   return (
-    <PrivacyLockGate
-      title="Barcode Labels are Locked"
-      description="Box labels and item barcodes are protected under Privacy Mode. Enter passcode 1968 to unlock."
-    >
+    <PrivacyLockGate>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex items-center justify-between print:hidden">
         <div>

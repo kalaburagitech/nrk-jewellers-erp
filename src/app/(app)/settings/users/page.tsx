@@ -31,6 +31,7 @@ import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const ROLE_OPTIONS: { value: Doc<"memberships">["role"]; label: string }[] = [
   { value: "owner", label: "Owner" },
+  { value: "staff", label: "Staff (view only)" },
   { value: "admin", label: "Administrator" },
   { value: "billing_operator", label: "Billing Operator" },
   { value: "inventory_manager", label: "Inventory Manager" },
@@ -46,7 +47,7 @@ function CreateStaffDialog() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [role, setRole] = useState<Doc<"memberships">["role"]>("billing_operator");
+  const [role, setRole] = useState<Doc<"memberships">["role"]>("staff");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +55,7 @@ function CreateStaffDialog() {
     setName("");
     setEmail("");
     setPassword("");
-    setRole("billing_operator");
+    setRole("staff");
     setError(null);
   }
 

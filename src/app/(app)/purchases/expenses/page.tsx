@@ -39,14 +39,6 @@ import {
 import { formatPaise, rupeesToPaise } from "@/lib/money";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-const COMMON_CATEGORIES = [
-  "Rent",
-  "Salary",
-  "Electricity",
-  "Transport",
-  "Maintenance",
-  "Other",
-];
 
 function todayDateInput(): string {
   return new Date().toISOString().slice(0, 10);
@@ -56,6 +48,7 @@ function dateInputToTimestamp(value: string): number {
 }
 
 function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
+  const expenseCategories = useQuery(api.customFields.getDropdownLists)?.expenseCategories;
   const createExpense = useMutation(api.expenses.create);
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState("");
@@ -137,7 +130,7 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
                 placeholder="e.g. Rent"
               />
               <datalist id="expense-categories">
-                {COMMON_CATEGORIES.map((c) => (
+                {(expenseCategories ?? []).map((c) => (
                   <option key={c} value={c} />
                 ))}
               </datalist>

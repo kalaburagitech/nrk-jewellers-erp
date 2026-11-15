@@ -23,6 +23,8 @@ import {
 } from "@/components/ui/sidebar";
 import { NAV_SECTIONS } from "@/lib/nav-data";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
+import { isWriteOnlyPath } from "@/components/access-context";
+import { PrivacyUnlockTrigger } from "@/components/privacy-unlock-trigger";
 const GROUPS = [
   {
     label: "Home",
@@ -43,6 +45,7 @@ export function AppSidebar({ role }: { role: string }) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const term = search.trim().toLowerCase();
+  const viewOnly = role === "staff";
   function navigate() {
     setOpenMobile(false);
   }
@@ -67,11 +70,11 @@ export function AppSidebar({ role }: { role: string }) {
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <p className="text-[15px] font-bold tracking-wide">NRK JEWELLERS</p>
             <p className="mt-1 text-xs text-sidebar-primary">
-              The Name of Purity
+              <PrivacyUnlockTrigger enabled={role === "owner"}>The Name of Purity</PrivacyUnlockTrigger>
             </p>
           </div>
         </Link>
-        <Link
+        {!viewOnly && <Link
           href="/sales/new"
           onClick={navigate}
           className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-sidebar-ring group-data-[collapsible=icon]:hidden"
@@ -81,7 +84,7 @@ export function AppSidebar({ role }: { role: string }) {
           <span className="ml-auto rounded border border-white/20 px-1.5 py-0.5 text-xs text-white/70">
             F2
           </span>
-        </Link>
+        </Link>}
         <label className="relative block group-data-[collapsible=icon]:hidden">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-sidebar-foreground/60" />
           <input
@@ -101,6 +104,7 @@ export function AppSidebar({ role }: { role: string }) {
             )
             .filter((section) => section.href !== "/girvi" || (!isLocked && (role === "owner" || role === "admin")))
             .filter((section) => section.href !== "/boxes" || !isLocked)
+            .filter((section) => !viewOnly || !isWriteOnlyPath(section.href))
             .filter(
               (section) =>
                 !term ||
@@ -128,6 +132,8 @@ export function AppSidebar({ role }: { role: string }) {
                     const isExpanded =
                       Boolean(term) || (expanded[section.href] ?? active);
                     const children = section.items?.filter(
+                      (item) => !viewOnly || !isWriteOnlyPath(item.href),
+                    ).filter(
                       (item) =>
                         !term ||
                         section.title.toLowerCase().includes(term) ||

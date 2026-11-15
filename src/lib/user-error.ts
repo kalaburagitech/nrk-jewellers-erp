@@ -2,7 +2,15 @@
 export function getUserErrorMessage(error: unknown, fallback: string): string {
   if (!(error instanceof Error)) return fallback;
 
-  let message = error.message.trim();
+  // ConvexError carries the intended user-facing text in `data`.
+  const data = (error as Error & { data?: unknown }).data;
+  let message = (typeof data === "string" ? data : error.message).trim();
+  if (/view-only access/i.test(message)) {
+    return "Your login is view only. Ask the Owner to add, edit or delete records.";
+  }
+  if (/only the owner can change this setting/i.test(message)) {
+    return "Only the Owner can change this setting.";
+  }
   const uncaught = message.match(/(?:Server Error\s+)?Uncaught Error:\s*([\s\S]*?)(?=\s+at handler\b|\s+Called by client\b|$)/i);
   if (uncaught?.[1]) message = uncaught[1].trim();
   message = message

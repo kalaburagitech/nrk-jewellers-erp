@@ -38,6 +38,7 @@ import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
+import { useAccessInfo } from "@/components/access-context";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export default function DashboardPage() {
@@ -48,6 +49,7 @@ export default function DashboardPage() {
   const boxes = useQuery(api.boxes.list);
   const access = useQuery(api.organizations.getMyAccess);
   const router = useRouter();
+  const { isViewOnly } = useAccessInfo();
 
   const latest = summary?.recentInvoices[0]?._id;
 
@@ -55,6 +57,7 @@ export default function DashboardPage() {
     const handle = (e: KeyboardEvent) => {
       if (!["F2", "F3", "F4"].includes(e.key)) return;
       e.preventDefault();
+      if (isViewOnly && e.key !== "F4") return;
       if (e.key === "F2") router.push("/sales/new");
       else if (e.key === "F3") router.push("/purchases/new");
       else if (latest)
@@ -62,7 +65,7 @@ export default function DashboardPage() {
     };
     window.addEventListener("keydown", handle);
     return () => window.removeEventListener("keydown", handle);
-  }, [router, latest]);
+  }, [router, latest, isViewOnly]);
 
   const payment = (mode: string) =>
     summary ? formatPaise(summary.todaysPaymentsByMode[mode] ?? 0) : "—";
@@ -516,18 +519,18 @@ export default function DashboardPage() {
           Quick action center
         </p>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Button asChild className="h-12 bg-emerald-700 text-white hover:bg-emerald-800">
+          {!isViewOnly && <Button asChild className="h-12 bg-emerald-700 text-white hover:bg-emerald-800">
             <Link href="/sales/new">
               <Receipt className="h-4 w-4" />
               F2 · New retail invoice
             </Link>
-          </Button>
-          <Button asChild className="h-12">
+          </Button>}
+          {!isViewOnly && <Button asChild className="h-12">
             <Link href="/purchases/new">
               <ShoppingCart className="h-4 w-4" />
               F3 · Supplier purchase
             </Link>
-          </Button>
+          </Button>}
           {latest ? (
             <Button asChild className="h-12 bg-slate-700 text-white hover:bg-slate-800">
               <Link href={`/sales/invoices/${latest}/print?autoShare=1`}>
@@ -554,12 +557,12 @@ export default function DashboardPage() {
             </Link>
           </Button>
         )}
-        <Button asChild variant="outline">
+        {!isViewOnly && <Button asChild variant="outline">
           <Link href="/backup">
             <DatabaseBackup className="h-4 w-4" />
             Backup & restore
           </Link>
-        </Button>
+        </Button>}
       </div>
     </div>
   );

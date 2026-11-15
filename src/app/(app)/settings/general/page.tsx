@@ -5,10 +5,6 @@ import Link from "next/link";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import {
-  Lock,
-  LockOpen,
-  KeyRound,
-  ShieldCheck,
   Building2,
   Receipt,
   Printer,
@@ -27,19 +23,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { useAppLock } from "@/components/app-lock-gate";
 
 const SETTINGS_NAV = [
@@ -58,12 +45,6 @@ const SETTINGS_NAV = [
 export default function GeneralSettingsPage() {
   const access = useQuery(api.organizations.getMyAccess);
   const appLock = useAppLock();
-  const { isLocked, unlock, lock: lockPrivacy } = usePrivacyLock();
-
-  // Dialog state for code 1968
-  const [unlockDialogOpen, setUnlockDialogOpen] = useState(false);
-  const [passcode, setPasscode] = useState("");
-  const [passcodeError, setPasscodeError] = useState<string | null>(null);
 
   // Settings mock toggles matching Vyapar screenshot (Page 24)
   const [enablePasscode, setEnablePasscode] = useState(true);
@@ -84,17 +65,6 @@ export default function GeneralSettingsPage() {
 
   const orgName = access?.organization?.name || "NR Karakalli Jewellers";
 
-  const handleUnlockSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (unlock(passcode)) {
-      setUnlockDialogOpen(false);
-      setPasscode("");
-      setPasscodeError(null);
-    } else {
-      setPasscodeError("Invalid passcode. Enter code 1968.");
-    }
-  };
-
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4 border-b pb-4">
@@ -103,18 +73,6 @@ export default function GeneralSettingsPage() {
           <p className="text-sm text-muted-foreground">
             Configure application security, transaction preferences, multi-firm, and workspace view.
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge
-            variant={isLocked ? "outline" : "default"}
-            className={
-              isLocked
-                ? "border-amber-500/40 text-amber-600 bg-amber-500/10 px-3 py-1"
-                : "bg-emerald-600 text-white px-3 py-1"
-            }
-          >
-            {isLocked ? "🔒 Privacy Locked" : "🔓 Privacy Unlocked"}
-          </Badge>
         </div>
       </div>
 
@@ -145,72 +103,18 @@ export default function GeneralSettingsPage() {
 
         {/* Right Content Area: GENERAL Settings Screen */}
         <div className="space-y-6">
-          {/* 1. Application & Privacy Lock Section */}
+          {/* 1. Application & Security Section */}
           <Card className="border-border/80 shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base font-semibold">Application & Security</CardTitle>
-                <div className="flex items-center gap-2">
-                  <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
-                    isLocked ? "bg-amber-500/15 text-amber-600 border border-amber-500/30" : "bg-emerald-500/15 text-emerald-600 border border-emerald-500/30"
-                  }`}>
-                    {isLocked ? <Lock className="h-3.5 w-3.5" /> : <LockOpen className="h-3.5 w-3.5" />}
-                    <span>{isLocked ? "Locked (Hidden)" : "Unlocked (Visible)"}</span>
-                  </div>
-                </div>
               </div>
               <CardDescription>
-                Manage application lock, privacy passcode, currency, and transaction validation.
+                Manage application lock, currency, and transaction validation.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Privacy Lock (Code 1968) Control Box */}
-              <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-start gap-3.5">
-                  <div className={`p-2.5 rounded-xl shrink-0 ${isLocked ? "bg-amber-500/15 text-amber-500" : "bg-emerald-500/15 text-emerald-500"}`}>
-                    {isLocked ? <Lock className="h-6 w-6" /> : <LockOpen className="h-6 w-6" />}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-semibold text-sm sm:text-base">Privacy Lock (Passcode 1968)</h3>
-                      <Badge variant="outline" className="text-[10px] tracking-wider uppercase font-mono">
-                        Code: 1968
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-xs sm:text-sm text-muted-foreground leading-relaxed">
-                      {isLocked
-                        ? "Currently LOCKED. Box Management, Girvi / Metal loans, and secondary companies (NR Karakalli Jewellers. - Gst Gold) are hidden from the menu, dashboard, and company switchers."
-                        : "Currently UNLOCKED. All companies, Box Management, and Girvi records are visible. Tap lock to hide them again instantly."}
-                    </p>
-                  </div>
-                </div>
-                <div className="shrink-0 flex items-center gap-2">
-                  {isLocked ? (
-                    <Button
-                      onClick={() => {
-                        setPasscode("");
-                        setPasscodeError(null);
-                        setUnlockDialogOpen(true);
-                      }}
-                      className="gap-2 bg-amber-500 hover:bg-amber-600 text-white font-medium"
-                    >
-                      <Lock className="h-4 w-4" />
-                      Unlock with Code 1968
-                    </Button>
-                  ) : (
-                    <Button
-                      variant="outline"
-                      onClick={lockPrivacy}
-                      className="gap-2 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 font-medium"
-                    >
-                      <LockOpen className="h-4 w-4" />
-                      Lock App Now
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Application Passcode Checkbox & Settings matching Page 24 */}
+              {/* Application Passcode Checkbox & Settings */}
               <div className="grid gap-4 pt-2">
                 <div className="flex items-center justify-between border-b pb-3">
                   <div className="flex items-center space-x-2">
@@ -498,53 +402,6 @@ export default function GeneralSettingsPage() {
       </div>
 
       {/* Unlock Passcode Modal Dialog */}
-      <Dialog open={unlockDialogOpen} onOpenChange={setUnlockDialogOpen}>
-        <DialogContent className="w-[92vw] sm:max-w-md rounded-2xl p-5 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Lock className="h-5 w-5 text-amber-500" />
-              Unlock Privacy Mode
-            </DialogTitle>
-          </DialogHeader>
-          <form onSubmit={handleUnlockSubmit} className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="dialog-passcode" className="text-sm font-medium">
-                Enter 4-digit privacy passcode
-              </Label>
-              <Input
-                id="dialog-passcode"
-                type="password"
-                inputMode="numeric"
-                autoFocus
-                maxLength={4}
-                placeholder="••••"
-                value={passcode}
-                onChange={(e) => {
-                  setPasscode(e.target.value);
-                  setPasscodeError(null);
-                }}
-                className="text-center text-xl tracking-widest font-mono h-12 rounded-xl"
-              />
-              {passcodeError && (
-                <p className="text-xs text-destructive font-medium">{passcodeError}</p>
-              )}
-            </div>
-            <DialogFooter className="flex-row justify-end gap-2 pt-2 sm:gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 sm:flex-initial"
-                onClick={() => setUnlockDialogOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1 sm:flex-initial">
-                Unlock
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

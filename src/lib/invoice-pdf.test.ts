@@ -23,6 +23,11 @@ describe("invoice PDF export", () => {
     );
     expect(half.internal.pageSize.getWidth()).toBeCloseTo(210, 1);
     expect(half.internal.pageSize.getHeight()).toBeCloseTo(148, 1);
+    const longHalf = createInvoicePdf(
+      { dataUrl: pixel, width: 2000, height: 3000 },
+      "half-a4",
+    );
+    expect(longHalf.getNumberOfPages()).toBe(1);
     const thermal = createInvoicePdf(
       { dataUrl: pixel, width: 760, height: 2000 },
       "thermal",
@@ -31,12 +36,12 @@ describe("invoice PDF export", () => {
     expect(thermal.internal.pageSize.getHeight()).toBeCloseTo(204, 1);
     expect(thermal.getNumberOfPages()).toBe(1);
   });
-  it("adds pages for long invoices without dropping the final content", () => {
+  it("keeps a long A4 bill on one page and slices without dropping content", () => {
     const pdf = createInvoicePdf(
       { dataUrl: pixel, width: 1000, height: 2500 },
       "full-a4",
     );
-    expect(pdf.getNumberOfPages()).toBe(4);
+    expect(pdf.getNumberOfPages()).toBe(1);
     const slices = invoicePageSlices(2500, 600);
     expect(slices[0].start).toBe(0);
     expect(slices.at(-1)?.end).toBe(2500);

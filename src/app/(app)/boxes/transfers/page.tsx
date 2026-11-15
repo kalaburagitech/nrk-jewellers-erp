@@ -52,10 +52,7 @@ export default function BoxTransfersPage() {
   }
 
   return (
-    <PrivacyLockGate
-      title="Box Transfers are Locked"
-      description="Stock transfers between boxes are protected under Privacy Mode. Enter passcode 1968 to unlock."
-    >
+    <PrivacyLockGate>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Box Transfers</h1>

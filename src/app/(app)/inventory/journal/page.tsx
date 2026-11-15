@@ -20,10 +20,7 @@ export default function StockJournalPage() {
   const journal = useQuery(api.reports.getStockJournal);
 
   return (
-    <PrivacyLockGate
-      title="Stock Journal is Locked"
-      description="Stock movement logs and audit journals are protected under Privacy Mode. Enter passcode 1968 to unlock."
-    >
+    <PrivacyLockGate>
       <div className="mx-auto flex max-w-full flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Journal</h1>

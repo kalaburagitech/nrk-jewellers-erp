@@ -171,10 +171,7 @@ export default function BoxOverviewPage() {
   }
 
   return (
-    <PrivacyLockGate
-      title="Box Management is Locked"
-      description="Physical box stock tracking and serialized inventory are hidden under Privacy Mode. Enter passcode 1968 to unlock."
-    >
+    <PrivacyLockGate>
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

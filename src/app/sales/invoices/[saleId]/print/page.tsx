@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
@@ -18,6 +18,7 @@ import { amountInWordsFromPaise } from "@/lib/amount-in-words";
 import { BUSINESS_PROFILE_DEFAULTS } from "@/lib/business-profile-defaults";
 import { withGstStateCode } from "@/lib/gst-state-codes";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
+import { PAPER, PrintPageStyle, useFitToPaper } from "@/components/print-sheet";
 
 const PAYMENT_MODE_LABEL: Record<string, string> = {
   cash: "Cash",
@@ -72,6 +73,7 @@ async function renderInvoicePdf(
   node: HTMLElement,
   invoiceNumber: string,
   template: Template,
+  fitZoom: number,
 ) {
   const [{ default: html2canvas }, { createInvoicePdf }] = await Promise.all([
     import("html2canvas-pro"),
@@ -79,7 +81,8 @@ async function renderInvoicePdf(
   ]);
   const widthMm =
     template === "full-a4" ? 289 : template === "half-a4" ? 200 : 76;
-  const widthPx = (widthMm * 96) / 25.4;
+  // Capture at the same widened layout the printer gets, so PDF and paper match.
+  const widthPx = ((template === "thermal" ? widthMm : widthMm / fitZoom) * 96) / 25.4;
   const protectedRanges: Array<{ start: number; end: number }> = [];
   await document.fonts.ready;
   await Promise.all(
@@ -140,8 +143,9 @@ export default function PrintInvoicePage({
   const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
-  // Fit the layout to the selected paper's printable height to avoid splitting a bill.
-  const [fitZoom, setFitZoom] = useState(1);
+  const paper = template === "thermal" ? null : template === "half-a4" ? PAPER.a5 : PAPER.a4;
+  // Keeps the whole bill on one A5 (or A4) sheet at full paper width.
+  const fit = useFitToPaper(invoiceRef, paper, [data]);
 
   // Browsers only allow opening a share sheet / popup from a real user gesture, so coming here
   // from the "WhatsApp Share [F4]" shortcut can't fire the share itself — it focuses the button
@@ -154,35 +158,6 @@ export default function PrintInvoicePage({
     setUseHighResolutionLogo(false);
   }, [data?.logoUrl]);
 
-  // Keep the entire full-A4 invoice on one landscape page. The whole layout
-  // scales together when more rows are added so the totals and footer stay with it.
-  useLayoutEffect(() => {
-    if (template === "thermal" || !data) return;
-    const node = invoiceRef.current;
-    if (!node) return;
-    // Measure an unconstrained copy so min-height/flex sizing cannot hide
-    // overflow from the item rows being added to the invoice.
-    const measureNode = node.cloneNode(true) as HTMLDivElement;
-    measureNode.style.position = "fixed";
-    measureNode.style.left = "-10000px";
-    measureNode.style.top = "0";
-    measureNode.style.visibility = "hidden";
-    measureNode.style.zoom = "1";
-    measureNode.style.minHeight = "0";
-    measureNode.style.height = "auto";
-    measureNode.style.maxHeight = "none";
-    measureNode.style.justifyContent = "flex-start";
-    document.body.appendChild(measureNode);
-    const naturalHeightPx = Math.max(
-      measureNode.scrollHeight,
-      measureNode.getBoundingClientRect().height,
-    );
-    measureNode.remove();
-    // Leave a few millimetres of safety for browser/printer printable-area
-    // differences so the note and signature don't get pushed onto page two.
-    const printableHeightPx = (template === "half-a4" ? 132 : 194) * (96 / 25.4);
-    setFitZoom(Math.min(1, printableHeightPx / naturalHeightPx));
-  }, [template, data]);
 
   if (data === undefined) {
     return <p className="p-8 text-sm text-gray-500">Loading…</p>;
@@ -238,6 +213,7 @@ export default function PrintInvoicePage({
         invoiceRef.current,
         sale.invoiceNumber,
         template,
+        fit.zoom,
       );
       const message = `Hello, here is your invoice ${sale.invoiceNumber} for ${formatPaise(sale.totalPaise)} from NRK Jewellers. Thank you for your business!`;
       if (supportsFileShare && navigator.canShare?.({ files: [file] })) {
@@ -285,7 +261,6 @@ export default function PrintInvoicePage({
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
           [data-invoice-sheet] {
             box-sizing: border-box;
-            width: ${template === "half-a4" ? "200mm" : "289mm"} !important;
             min-height: 0 !important;
             max-height: none !important;
             margin: 0 auto;
@@ -305,8 +280,9 @@ export default function PrintInvoicePage({
         [data-invoice-compact="true"] [data-pdf-keep-together] > div {
           padding: 1.2mm !important;
         }
-        @page { size: ${template === "thermal" ? "80mm auto" : template === "half-a4" ? "A5 landscape" : "A4 landscape"}; margin: ${template === "thermal" ? "2mm" : template === "half-a4" ? "5mm" : "4mm"}; }
+        ${template === "thermal" ? "@page { size: 80mm auto; margin: 2mm; }" : ""}
       `}</style>
+      {paper && <PrintPageStyle paper={paper} />}
 
       <div className="mx-auto flex max-w-[297mm] items-center justify-between px-4 pb-4 print:hidden">
         <Select
@@ -347,8 +323,9 @@ export default function PrintInvoicePage({
           <div
             ref={invoiceRef}
             data-invoice-sheet
+            data-print-sheet
             data-invoice-compact={template === "half-a4" ? "true" : undefined}
-            style={{ zoom: fitZoom }}
+            style={fit.style}
             className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
             <h1 className={`-mb-1 text-center font-bold tracking-[0.3em] text-[#13253f] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
@@ -628,7 +605,7 @@ export default function PrintInvoicePage({
           <div
             ref={invoiceRef}
             data-invoice-sheet
-            style={{ zoom: template === "thermal" ? 1 : fitZoom }}
+            style={fit.style}
             className={`mx-auto flex flex-col gap-4 bg-white p-6 text-gray-900 shadow-sm print:shadow-none ${widthClass}`}
           >
             <div className="flex items-start justify-between border-b border-gray-200 pb-3">

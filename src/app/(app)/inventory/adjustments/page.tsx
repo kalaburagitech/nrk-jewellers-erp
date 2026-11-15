@@ -136,10 +136,7 @@ export default function StockAdjustmentsPage() {
   }
 
   return (
-    <PrivacyLockGate
-      title="Stock Adjustments are Locked"
-      description="Stock adjustments and physical weight corrections are protected under Privacy Mode. Enter passcode 1968 to unlock."
-    >
+    <PrivacyLockGate>
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>

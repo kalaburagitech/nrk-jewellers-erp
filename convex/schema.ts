@@ -16,6 +16,8 @@ export const ROLES = v.union(
   v.literal("inventory_manager"),
   v.literal("purchase_manager"),
   v.literal("accountant"),
+  // View-only staff: can open every screen but every write is rejected server-side (see requireAuthContext).
+  v.literal("staff"),
 );
 
 // GST registration status of a customer/supplier — drives invoice wording, not tax computation (tax rates are picked per line via taxConfigurations).
