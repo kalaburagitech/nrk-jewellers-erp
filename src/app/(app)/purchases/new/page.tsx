@@ -43,7 +43,9 @@ const PAYMENT_MODES = [
 function emptyLine() {
   return {
     productId: "",
+    manualProductName: "",
     boxId: "",
+    manualBoxNumber: "",
     label: "",
     metalPurityId: "",
     grossWeightGrams: "",
@@ -81,15 +83,28 @@ export default function NewPurchasePage() {
   const currentRates = useQuery(api.metalRates.getCurrent);
   const createPurchase = useMutation(api.purchases.create);
   const updatePurchase = useMutation(api.purchases.update);
+  const createSupplier = useMutation(api.suppliers.create);
+  const createProduct = useMutation(api.products.create);
+  const createBox = useMutation(api.boxes.createNext);
 
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [serverError, setServerError] = useState<string | null>(null);
   const [prefilled, setPrefilled] = useState(false);
 
+  const [isNewSupplier, setIsNewSupplier] = useState(false);
+  const [manualProductFlags, setManualProductFlags] = useState<Record<number, boolean>>({});
+  const [manualBoxFlags, setManualBoxFlags] = useState<Record<number, boolean>>({});
+  const [quickIsManualProduct, setQuickIsManualProduct] = useState(false);
+  const [quickManualProductName, setQuickManualProductName] = useState("");
+  const [quickIsManualBox, setQuickIsManualBox] = useState(false);
+  const [quickManualBoxNumber, setQuickManualBoxNumber] = useState("");
+
   const form = useForm<PurchaseFormValues>({
     resolver: zodResolver(purchaseFormSchema),
     defaultValues: {
       supplierId: "",
+      manualSupplierName: "",
+      manualSupplierPhone: "",
       billDate: todayDateInput(),
       gstPercent: "",
       amountPaidRupees: "",
@@ -135,21 +150,36 @@ export default function NewPurchasePage() {
   const [quickQuantity, setQuickQuantity] = useState("1");
   function handleQuickAdd() {
     const product = products?.find((p) => p._id === quickProductId);
-    if (!product) return;
+    const prodName = product ? product.name : quickManualProductName.trim();
+    if (!prodName) return;
     const quantity = Math.max(1, Math.min(50, Math.round(Number(quickQuantity)) || 1));
-    const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
+    const latestRate = product?.metalPurityId
+      ? currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise
+      : undefined;
     const existingCount = fields.length;
     append(
       Array.from({ length: quantity }, (_, i) => ({
         ...emptyLine(),
-        productId: quickProductId,
-        boxId: quickBoxId,
-        label: `${product.name} ${existingCount + i + 1}`,
-        metalPurityId: product.metalPurityId ?? "",
+        productId: quickProductId || "",
+        manualProductName: quickIsManualProduct ? prodName : "",
+        boxId: quickBoxId || "",
+        manualBoxNumber: quickIsManualBox ? quickManualBoxNumber.trim() : "",
+        label: `${prodName} ${existingCount + i + 1}`,
+        metalPurityId: product?.metalPurityId ?? "",
         ratePerGramRupees: latestRate ? (latestRate / 100).toFixed(2) : "",
       })),
     );
     setQuickQuantity("1");
+    if (quickIsManualProduct) {
+      for (let k = existingCount; k < existingCount + quantity; k++) {
+        setManualProductFlags((prev) => ({ ...prev, [k]: true }));
+      }
+    }
+    if (quickIsManualBox) {
+      for (let k = existingCount; k < existingCount + quantity; k++) {
+        setManualBoxFlags((prev) => ({ ...prev, [k]: true }));
+      }
+    }
   }
 
   const watchedItems = useWatch({ control: form.control, name: "items" });
@@ -176,39 +206,134 @@ export default function NewPurchasePage() {
 
   async function onSubmit(values: PurchaseFormValues) {
     setServerError(null);
-    const amountPaidPaise = rupeesToPaise(values.amountPaidRupees || "0") ?? 0;
-    const items = values.items.map((item) => ({
-      productId: item.productId as Id<"products">,
-      boxId: item.boxId as Id<"boxes">,
-      label: item.label,
-      metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
-      grossWeightMg: gramsToMg(item.grossWeightGrams),
-      stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
-      ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees) ?? 0,
-      makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
-      stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
-    }));
     try {
+      // 1. Resolve supplierId
+      let resolvedSupplierId: Id<"suppliers">;
+      if (isNewSupplier || !values.supplierId) {
+        const manualName = values.manualSupplierName?.trim() || "";
+        if (!manualName) {
+          setServerError("Please select a supplier or enter a supplier name.");
+          return;
+        }
+        const existing = suppliers?.find(
+          (s) => s.name.trim().toLowerCase() === manualName.toLowerCase()
+        );
+        if (existing) {
+          resolvedSupplierId = existing._id;
+        } else {
+          resolvedSupplierId = await createSupplier({
+            name: manualName,
+            phone: values.manualSupplierPhone?.trim() || undefined,
+          });
+        }
+      } else {
+        resolvedSupplierId = values.supplierId as Id<"suppliers">;
+      }
+
+      // 2. Resolve items
+      const resolvedItems: Array<{
+        productId: Id<"products">;
+        boxId: Id<"boxes">;
+        label: string;
+        metalPurityId?: Id<"metalPurities">;
+        grossWeightMg: number;
+        stoneWeightMg: number;
+        ratePerGramPaise: number;
+        makingChargePaise: number;
+        stoneChargePaise: number;
+      }> = [];
+
+      for (let i = 0; i < values.items.length; i++) {
+        const item = values.items[i];
+
+        // Resolve Product
+        let resolvedProductId: Id<"products">;
+        if (item.manualProductName?.trim()) {
+          const manualProd = item.manualProductName.trim();
+          const existingProd = products?.find(
+            (p) => p.name.trim().toLowerCase() === manualProd.toLowerCase()
+          );
+          if (existingProd) {
+            resolvedProductId = existingProd._id;
+          } else {
+            resolvedProductId = await createProduct({
+              name: manualProd,
+              unit: "piece",
+              itemType: "product",
+              metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
+            });
+          }
+        } else if (item.productId) {
+          resolvedProductId = item.productId as Id<"products">;
+        } else {
+          setServerError(`Item ${i + 1}: Please select or type a product name.`);
+          return;
+        }
+
+        // Resolve Box
+        let resolvedBoxId: Id<"boxes">;
+        if (item.manualBoxNumber?.trim()) {
+          const boxNum = Number(item.manualBoxNumber.trim());
+          if (!Number.isSafeInteger(boxNum) || boxNum < 1) {
+            setServerError(`Item ${i + 1}: Please enter a valid box number (e.g. 101).`);
+            return;
+          }
+          const existingBox = boxes?.find((b) => b.boxNumber === boxNum);
+          if (existingBox) {
+            resolvedBoxId = existingBox._id;
+          } else {
+            resolvedBoxId = await createBox({
+              boxNumber: boxNum,
+              label: item.manualProductName || item.label || `Box ${boxNum}`,
+            });
+          }
+        } else if (item.boxId) {
+          resolvedBoxId = item.boxId as Id<"boxes">;
+        } else {
+          if (boxes && boxes.length > 0) {
+            resolvedBoxId = boxes[0]._id;
+          } else {
+            resolvedBoxId = await createBox({ label: "Main Counter Box" });
+          }
+        }
+
+        const label = item.label?.trim() || item.manualProductName?.trim() || `Item ${i + 1}`;
+
+        resolvedItems.push({
+          productId: resolvedProductId,
+          boxId: resolvedBoxId,
+          label,
+          metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
+          grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
+          stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
+          ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
+          makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
+          stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
+        });
+      }
+
+      const amountPaidPaise = rupeesToPaise(values.amountPaidRupees || "0") ?? 0;
+
       if (editPurchaseId) {
         await updatePurchase({
           purchaseId: editPurchaseId,
-          supplierId: values.supplierId as Id<"suppliers">,
+          supplierId: resolvedSupplierId,
           gstBasisPoints: percentToBasisPoints(values.gstPercent || "0") ?? 0,
           amountPaidPaise,
           paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
           billDate: dateInputToTimestamp(values.billDate),
-          items,
+          items: resolvedItems,
         });
         router.push(`/purchases/invoices?updated=${editPurchaseId}`);
       } else {
         const result = await createPurchase({
-          supplierId: values.supplierId as Id<"suppliers">,
+          supplierId: resolvedSupplierId,
           gstBasisPoints: percentToBasisPoints(values.gstPercent || "0") ?? 0,
           amountPaidPaise,
           paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
           billDate: dateInputToTimestamp(values.billDate),
           idempotencyKey,
-          items,
+          items: resolvedItems,
         });
         router.push(`/purchases/invoices?created=${result.purchaseId}`);
       }
@@ -244,35 +369,85 @@ export default function NewPurchasePage() {
         <Form {...form}>
           <form className="flex flex-col gap-6" onSubmit={form.handleSubmit(onSubmit)}>
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Supplier</CardTitle>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Supplier Details</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">Select an existing supplier or add a new supplier manually.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsNewSupplier((prev) => !prev);
+                    if (!isNewSupplier) {
+                      form.setValue("supplierId", "");
+                    } else {
+                      form.setValue("manualSupplierName", "");
+                      form.setValue("manualSupplierPhone", "");
+                    }
+                  }}
+                >
+                  {isNewSupplier ? "Select Existing Supplier" : "+ Manual / New Supplier"}
+                </Button>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-4">
-                  <FormField
-                    control={form.control}
-                    name="supplierId"
-                    render={({ field }) => (
-                      <FormItem className="max-w-sm flex-1">
-                        <FormLabel>Supplier</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger className="w-full">
-                              <SelectValue placeholder="Select supplier" />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {suppliers?.map((s) => (
-                              <SelectItem key={s._id} value={s._id}>
-                                {s.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                <div className="flex flex-wrap gap-4 items-start">
+                  {!isNewSupplier ? (
+                    <FormField
+                      control={form.control}
+                      name="supplierId"
+                      render={({ field }) => (
+                        <FormItem className="max-w-sm flex-1">
+                          <FormLabel>Select Supplier</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger className="w-full">
+                                <SelectValue placeholder="Select supplier" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {suppliers?.map((s) => (
+                                <SelectItem key={s._id} value={s._id}>
+                                  {s.name} {s.phone ? `(${s.phone})` : ""}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="manualSupplierName"
+                        render={({ field }) => (
+                          <FormItem className="max-w-sm flex-1">
+                            <FormLabel>Supplier Name *</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g. Balaji Ornaments, Raj Jewellers" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="manualSupplierPhone"
+                        render={({ field }) => (
+                          <FormItem className="w-48">
+                            <FormLabel>Phone Number</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="e.g. 9876543210" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </>
+                  )}
                   <FormField
                     control={form.control}
                     name="billDate"
@@ -292,45 +467,83 @@ export default function NewPurchasePage() {
 
             <section className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-                <div>
-                  <h2 className="font-semibold">Receiving multiple pieces of the same design?</h2>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Pick the product, box and quantity once — each piece still gets its own line to enter its actual weight.
-                  </p>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className="font-semibold">Receiving multiple pieces of the same design?</h2>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Pick or type the product, box and quantity — each piece gets its own line to enter actual weight.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setQuickIsManualProduct((p) => !p)}
+                    >
+                      {quickIsManualProduct ? "Select Product from list" : "+ Type custom product"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setQuickIsManualBox((p) => !p)}
+                    >
+                      {quickIsManualBox ? "Select Box from list" : "+ Type box number"}
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="grid min-w-[12rem] flex-1 gap-2">
-                    <label className="text-sm font-medium">Product</label>
-                    <Select value={quickProductId} onValueChange={setQuickProductId}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products?.map((p) => (
-                          <SelectItem key={p._id} value={p._id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid min-w-[12rem] flex-1 gap-1.5">
+                    <label className="text-xs font-medium">Product</label>
+                    {quickIsManualProduct ? (
+                      <Input
+                        placeholder="e.g. Silver Chain, Gold Bangle"
+                        value={quickManualProductName}
+                        onChange={(e) => setQuickManualProductName(e.target.value)}
+                      />
+                    ) : (
+                      <Select value={quickProductId} onValueChange={setQuickProductId}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select product" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products?.map((p) => (
+                            <SelectItem key={p._id} value={p._id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
-                  <div className="grid min-w-[10rem] flex-1 gap-2">
-                    <label className="text-sm font-medium">Destination box</label>
-                    <Select value={quickBoxId} onValueChange={setQuickBoxId}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select box" />
-                      </SelectTrigger>
-                      <SelectContent className="max-h-64">
-                        {boxes?.map((b) => (
-                          <SelectItem key={b._id} value={b._id}>
-                            Box {b.boxNumber}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="grid min-w-[10rem] flex-1 gap-1.5">
+                    <label className="text-xs font-medium">Destination box</label>
+                    {quickIsManualBox ? (
+                      <Input
+                        placeholder="Box #, e.g. 101, 102"
+                        value={quickManualBoxNumber}
+                        onChange={(e) => setQuickManualBoxNumber(e.target.value)}
+                      />
+                    ) : (
+                      <Select value={quickBoxId} onValueChange={setQuickBoxId}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select box" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-64">
+                          {boxes?.map((b) => (
+                            <SelectItem key={b._id} value={b._id}>
+                              Box {b.boxNumber}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </div>
-                  <div className="grid w-24 gap-2">
-                    <label className="text-sm font-medium">Quantity</label>
+                  <div className="grid w-24 gap-1.5">
+                    <label className="text-xs font-medium">Quantity</label>
                     <Input
                       type="number"
                       min="1"
@@ -339,8 +552,15 @@ export default function NewPurchasePage() {
                       onChange={(e) => setQuickQuantity(e.target.value)}
                     />
                   </div>
-                  <Button type="button" disabled={!quickProductId || !quickBoxId} onClick={handleQuickAdd}>
-                    <Plus className="h-4 w-4" /> Add {quickQuantity || "1"} piece{Number(quickQuantity) === 1 ? "" : "s"}
+                  <Button
+                    type="button"
+                    disabled={
+                      (quickIsManualProduct ? !quickManualProductName.trim() : !quickProductId) ||
+                      (quickIsManualBox ? !quickManualBoxNumber.trim() : !quickBoxId)
+                    }
+                    onClick={handleQuickAdd}
+                  >
+                    <Plus className="h-4 w-4 mr-1" /> Add {quickQuantity || "1"} piece{Number(quickQuantity) === 1 ? "" : "s"}
                   </Button>
                 </div>
               </div>
@@ -374,62 +594,145 @@ export default function NewPurchasePage() {
                     </CardHeader>
                     <CardContent className="flex flex-col gap-4">
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.productId`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Product</FormLabel>
-                              <Select value={field.value} onValueChange={(productId) => {
-                                field.onChange(productId);
-                                const product = products?.find((item) => item._id === productId);
-                                if (!product) return;
-                                form.setValue(`items.${index}.label`, product.name, { shouldDirty: true });
-                                form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", { shouldDirty: true });
-                                const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
-                                if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), { shouldDirty: true });
-                              }}>
-                                <FormControl>
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select product" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {products?.map((p) => (
-                                    <SelectItem key={p._id} value={p._id}>
-                                      {p.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
+                        {/* Product Column */}
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium">Product</span>
+                            <button
+                              type="button"
+                              className="text-[11px] text-primary hover:underline"
+                              onClick={() => {
+                                setManualProductFlags((prev) => ({
+                                  ...prev,
+                                  [index]: !prev[index],
+                                }));
+                              }}
+                            >
+                              {manualProductFlags[index] ? "Select list" : "+ Type manual"}
+                            </button>
+                          </div>
+                          {manualProductFlags[index] ? (
+                            <FormField
+                              control={form.control}
+                              name={`items.${index}.manualProductName`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      placeholder="e.g. Silver Chain, Gold Ring"
+                                      onChange={(e) => {
+                                        field.onChange(e);
+                                        if (!form.getValues(`items.${index}.label`)) {
+                                          form.setValue(`items.${index}.label`, e.target.value);
+                                        }
+                                      }}
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          ) : (
+                            <FormField
+                              control={form.control}
+                              name={`items.${index}.productId`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <Select
+                                    value={field.value}
+                                    onValueChange={(productId) => {
+                                      field.onChange(productId);
+                                      const product = products?.find((item) => item._id === productId);
+                                      if (!product) return;
+                                      form.setValue(`items.${index}.label`, product.name, { shouldDirty: true });
+                                      form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", { shouldDirty: true });
+                                      const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
+                                      if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), { shouldDirty: true });
+                                    }}
+                                  >
+                                    <FormControl>
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select product" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent>
+                                      {products?.map((p) => (
+                                        <SelectItem key={p._id} value={p._id}>
+                                          {p.name}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
                           )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.boxId`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Destination box</FormLabel>
-                              <Select value={field.value} onValueChange={field.onChange}>
-                                <FormControl>
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="Select box" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent className="max-h-64">
-                                  {boxes?.map((b) => (
-                                    <SelectItem key={b._id} value={b._id}>
-                                      Box {b.boxNumber}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
+                        </div>
+
+                        {/* Box Column */}
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium">Destination Box</span>
+                            <button
+                              type="button"
+                              className="text-[11px] text-primary hover:underline"
+                              onClick={() => {
+                                setManualBoxFlags((prev) => ({
+                                  ...prev,
+                                  [index]: !prev[index],
+                                }));
+                              }}
+                            >
+                              {manualBoxFlags[index] ? "Select list" : "+ Type box #"}
+                            </button>
+                          </div>
+                          {manualBoxFlags[index] ? (
+                            <FormField
+                              control={form.control}
+                              name={`items.${index}.manualBoxNumber`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormControl>
+                                    <Input
+                                      {...field}
+                                      type="number"
+                                      placeholder="e.g. 101, 102"
+                                    />
+                                  </FormControl>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          ) : (
+                            <FormField
+                              control={form.control}
+                              name={`items.${index}.boxId`}
+                              render={({ field }) => (
+                                <FormItem>
+                                  <Select value={field.value} onValueChange={field.onChange}>
+                                    <FormControl>
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Select box" />
+                                      </SelectTrigger>
+                                    </FormControl>
+                                    <SelectContent className="max-h-64">
+                                      {boxes?.map((b) => (
+                                        <SelectItem key={b._id} value={b._id}>
+                                          Box {b.boxNumber}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
                           )}
-                        />
+                        </div>
+
+                        {/* Purity Column */}
                         <FormField
                           control={form.control}
                           name={`items.${index}.metalPurityId`}
@@ -554,19 +857,42 @@ export default function NewPurchasePage() {
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <FormField
-                    control={form.control}
-                    name="gstPercent"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>GST (%)</FormLabel>
-                        <FormControl>
-                          <Input {...field} inputMode="decimal" placeholder="0" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="space-y-1.5">
+                    <FormField
+                      control={form.control}
+                      name="gstPercent"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>GST (%)</FormLabel>
+                          <FormControl>
+                            <Input {...field} inputMode="decimal" placeholder="0" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {[
+                        { label: "0% Non-GST", val: "0" },
+                        { label: "3% Jewellery", val: "3" },
+                        { label: "5%", val: "5" },
+                        { label: "18%", val: "18" },
+                      ].map((item) => (
+                        <button
+                          key={item.val}
+                          type="button"
+                          onClick={() => form.setValue("gstPercent", item.val, { shouldDirty: true })}
+                          className={`rounded px-2 py-0.5 text-[11px] font-medium border transition-colors ${
+                            watchedGst === item.val
+                              ? "bg-amber-500 text-white border-amber-600 shadow-sm"
+                              : "bg-muted/60 text-muted-foreground border-border hover:bg-muted"
+                          }`}
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <FormField
                     control={form.control}
                     name="amountPaidRupees"

@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
   const renameItem = useMutation(api.boxes.renameItem);
@@ -170,7 +171,11 @@ export default function BoxOverviewPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
+    <PrivacyLockGate
+      title="Box Management is Locked"
+      description="Physical box stock tracking and serialized inventory are hidden under Privacy Mode. Enter passcode 1968 to unlock."
+    >
+      <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -305,6 +310,7 @@ export default function BoxOverviewPage() {
           onClose={() => setSelectedBox(null)}
         />
       )}
-    </div>
+      </div>
+    </PrivacyLockGate>
   );
 }

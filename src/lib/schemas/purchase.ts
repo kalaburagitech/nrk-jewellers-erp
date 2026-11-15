@@ -14,27 +14,45 @@ const nonNegativeNumberString = (message: string) =>
     .refine((v) => v === "" || (Number.isFinite(Number(v)) && Number(v) >= 0), message)
     .optional();
 
-export const purchaseLineFormSchema = z.object({
-  productId: z.string().min(1, "Select a product"),
-  boxId: z.string().min(1, "Select a destination box"),
-  label: z.string().trim().min(1, "Item label is required"),
-  metalPurityId: z.string().optional(),
-  grossWeightGrams: positiveNumberString("Gross weight is required"),
-  stoneWeightGrams: nonNegativeNumberString("Invalid stone weight"),
-  ratePerGramRupees: positiveNumberString("Rate per gram is required"),
-  makingChargeRupees: nonNegativeNumberString("Invalid making charge"),
-  stoneChargeRupees: nonNegativeNumberString("Invalid stone charge"),
-});
+export const purchaseLineFormSchema = z
+  .object({
+    productId: z.string().optional(),
+    manualProductName: z.string().optional(),
+    boxId: z.string().optional(),
+    manualBoxNumber: z.string().optional(),
+    label: z.string().trim().min(1, "Item label is required"),
+    metalPurityId: z.string().optional(),
+    grossWeightGrams: positiveNumberString("Gross weight is required"),
+    stoneWeightGrams: nonNegativeNumberString("Invalid stone weight"),
+    ratePerGramRupees: positiveNumberString("Rate per gram is required"),
+    makingChargeRupees: nonNegativeNumberString("Invalid making charge"),
+    stoneChargeRupees: nonNegativeNumberString("Invalid stone charge"),
+  })
+  .refine((data) => Boolean(data.productId || data.manualProductName?.trim()), {
+    message: "Select or type a product name",
+    path: ["productId"],
+  })
+  .refine((data) => Boolean(data.boxId || data.manualBoxNumber?.trim()), {
+    message: "Select or enter a destination box",
+    path: ["boxId"],
+  });
 
 export type PurchaseLineFormValues = z.infer<typeof purchaseLineFormSchema>;
 
-export const purchaseFormSchema = z.object({
-  supplierId: z.string().min(1, "Select a supplier"),
-  billDate: z.string().min(1, "Select a bill date"),
-  gstPercent: nonNegativeNumberString("Invalid GST percentage"),
-  amountPaidRupees: nonNegativeNumberString("Invalid amount"),
-  paymentMode: z.enum(["cash", "upi", "card", "cheque", "bank_transfer"]).optional(),
-  items: z.array(purchaseLineFormSchema).min(1, "Add at least one item"),
-});
+export const purchaseFormSchema = z
+  .object({
+    supplierId: z.string().optional(),
+    manualSupplierName: z.string().optional(),
+    manualSupplierPhone: z.string().optional(),
+    billDate: z.string().min(1, "Select a bill date"),
+    gstPercent: nonNegativeNumberString("Invalid GST percentage"),
+    amountPaidRupees: nonNegativeNumberString("Invalid amount"),
+    paymentMode: z.enum(["cash", "upi", "card", "cheque", "bank_transfer"]).optional(),
+    items: z.array(purchaseLineFormSchema).min(1, "Add at least one item"),
+  })
+  .refine((data) => Boolean(data.supplierId || data.manualSupplierName?.trim()), {
+    message: "Select or enter a supplier",
+    path: ["supplierId"],
+  });
 
 export type PurchaseFormValues = z.infer<typeof purchaseFormSchema>;

@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
+import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () => void }) {
   const correctWeight = useMutation(api.stockAdjustments.correctWeight);
@@ -135,13 +136,17 @@ export default function StockAdjustmentsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>
-        <p className="text-sm text-muted-foreground">
-          Correct a weight after a physical audit, or write off a lost/damaged item — both are logged with a reason.
-        </p>
-      </div>
+    <PrivacyLockGate
+      title="Stock Adjustments are Locked"
+      description="Stock adjustments and physical weight corrections are protected under Privacy Mode. Enter passcode 1968 to unlock."
+    >
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>
+          <p className="text-sm text-muted-foreground">
+            Correct a weight after a physical audit, or write off a lost/damaged item — both are logged with a reason.
+          </p>
+        </div>
 
       <Card>
         <CardHeader><CardTitle className="text-base">Inventory overview</CardTitle></CardHeader>
@@ -239,6 +244,7 @@ export default function StockAdjustmentsPage() {
       </Card>
 
       {selectedItem && <AdjustDialog item={selectedItem} onClose={() => setSelectedItem(null)} />}
-    </div>
+      </div>
+    </PrivacyLockGate>
   );
 }

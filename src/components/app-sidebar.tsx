@@ -100,6 +100,7 @@ export function AppSidebar({ role }: { role: string }) {
               NAV_SECTIONS.filter((section) => section.href === path),
             )
             .filter((section) => section.href !== "/girvi" || (!isLocked && (role === "owner" || role === "admin")))
+            .filter((section) => section.href !== "/boxes" || !isLocked)
             .filter(
               (section) =>
                 !term ||

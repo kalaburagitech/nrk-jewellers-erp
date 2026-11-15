@@ -468,45 +468,47 @@ export default function DashboardPage() {
       </div>
 
       {/* Serialized Box Inventory System */}
-      <Card className="gap-4 shadow-sm">
-        <CardHeader className="flex items-center justify-between">
-          <CardTitle className="text-sm uppercase tracking-wide">Box management system</CardTitle>
-          <Button asChild variant="ghost" size="sm">
-            <Link href="/boxes">
-              Manage boxes
-              <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {boxes === undefined ? (
-            <p className="text-sm text-muted-foreground">Loading boxes…</p>
-          ) : boxes.length === 0 ? (
-            <Link href="/boxes" className="text-sm text-primary underline">
-              Create your first stock box
-            </Link>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
-              {boxes.slice(0, 16).map((box) => (
-                <Link
-                  href="/boxes"
-                  key={box._id}
-                  className="group flex items-center gap-2 rounded-lg border bg-muted/25 p-3 transition hover:border-primary/50 hover:bg-accent"
-                >
-                  <Boxes className="h-7 w-7 shrink-0 text-primary" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold">Box {box.boxNumber}</p>
-                    <p className="text-xs text-muted-foreground">{box.itemCount ?? 0} pieces</p>
-                    {box.label && (
-                      <p className="truncate text-xs text-muted-foreground">{box.label}</p>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {!isLocked && (
+        <Card className="gap-4 shadow-sm">
+          <CardHeader className="flex items-center justify-between">
+            <CardTitle className="text-sm uppercase tracking-wide">Box management system</CardTitle>
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/boxes">
+                Manage boxes
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {boxes === undefined ? (
+              <p className="text-sm text-muted-foreground">Loading boxes…</p>
+            ) : boxes.length === 0 ? (
+              <Link href="/boxes" className="text-sm text-primary underline">
+                Create your first stock box
+              </Link>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-8">
+                {boxes.slice(0, 16).map((box) => (
+                  <Link
+                    href="/boxes"
+                    key={box._id}
+                    className="group flex items-center gap-2 rounded-lg border bg-muted/25 p-3 transition hover:border-primary/50 hover:bg-accent"
+                  >
+                    <Boxes className="h-7 w-7 shrink-0 text-primary" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">Box {box.boxNumber}</p>
+                      <p className="text-xs text-muted-foreground">{box.itemCount ?? 0} pieces</p>
+                      {box.label && (
+                        <p className="truncate text-xs text-muted-foreground">{box.label}</p>
+                      )}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Action Shortcuts (F2, F3, F4) */}
       <div className="rounded-xl border bg-card p-4 shadow-sm">

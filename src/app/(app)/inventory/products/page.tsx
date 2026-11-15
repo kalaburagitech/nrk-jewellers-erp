@@ -46,6 +46,7 @@ import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { DeleteRecordButton } from "@/components/delete-record-button";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
 import { getUserErrorMessage } from "@/lib/user-error";
+import { usePrivacyLock } from "@/components/privacy-lock-context";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const UNITS = [
@@ -649,6 +650,7 @@ function ProductDetailView({
 
 // Main 2-Pane Items / Products Screen (Page 10 Layout)
 export default function ProductsPage() {
+  const { isLocked } = usePrivacyLock();
   const products = useQuery(api.products.list);
   const purities = useQuery(api.metalPurities.list);
   const boxes = useQuery(api.boxes.list);
@@ -656,6 +658,7 @@ export default function ProductsPage() {
   const recentSales = useQuery(api.sales.list);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("products");
+  const tabToUse = isLocked && activeTab === "boxes" ? "products" : activeTab;
   const [selectedBoxId, setSelectedBoxId] = useState<Id<"boxes"> | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<Id<"products"> | null>(null);
 
@@ -736,17 +739,19 @@ export default function ProductsPage() {
           >
             Products ({products?.length ?? 0})
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("boxes")}
-            className={`pb-2.5 border-b-2 transition ${
-              activeTab === "boxes"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Boxes & Physical Stock ({boxOverview?.boxes?.length ?? boxes?.length ?? 0})
-          </button>
+          {!isLocked && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("boxes")}
+              className={`pb-2.5 border-b-2 transition ${
+                activeTab === "boxes"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Boxes & Physical Stock ({boxOverview?.boxes?.length ?? boxes?.length ?? 0})
+            </button>
+          )}
           <Link
             href="/inventory/categories"
             className="pb-2.5 border-b-2 border-transparent text-muted-foreground hover:text-foreground"
@@ -771,7 +776,7 @@ export default function ProductsPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 aria-label="Search Items"
-                placeholder={activeTab === "boxes" ? "Search Box No / Label" : "Search Item / SKU"}
+                placeholder={tabToUse === "boxes" ? "Search Box No / Label" : "Search Item / SKU"}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-8.5 h-9 text-xs rounded-lg"
@@ -784,7 +789,7 @@ export default function ProductsPage() {
           </div>
 
           <div className="max-h-[650px] overflow-y-auto divide-y divide-border/60">
-            {activeTab === "boxes" ? (
+            {tabToUse === "boxes" ? (
               filteredBoxes === undefined ? (
                 <p className="p-5 text-xs text-muted-foreground text-center">Loading boxes…</p>
               ) : filteredBoxes.length === 0 ? (
@@ -873,7 +878,7 @@ export default function ProductsPage() {
 
         {/* Right Pane: Selected Item / Box Details & Transactions (Page 10) */}
         <div className="min-w-0 space-y-5">
-          {activeTab === "boxes" && activeBox ? (
+          {tabToUse === "boxes" && activeBox ? (
             <div className="space-y-5">
               {/* Box Header & Controls matching Page 10 */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">

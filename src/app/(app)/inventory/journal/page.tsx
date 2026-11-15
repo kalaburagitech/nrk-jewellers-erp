@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 const SOURCE_LABEL: Record<string, string> = {
   purchases: "Purchase",
@@ -19,13 +20,17 @@ export default function StockJournalPage() {
   const journal = useQuery(api.reports.getStockJournal);
 
   return (
-    <div className="mx-auto flex max-w-full flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock Journal</h1>
-        <p className="text-sm text-muted-foreground">
-          Every stock movement, newest first — the append-only trail behind every weight in stock.
-        </p>
-      </div>
+    <PrivacyLockGate
+      title="Stock Journal is Locked"
+      description="Stock movement logs and audit journals are protected under Privacy Mode. Enter passcode 1968 to unlock."
+    >
+      <div className="mx-auto flex max-w-full flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Stock Journal</h1>
+          <p className="text-sm text-muted-foreground">
+            Every stock movement, newest first — the append-only trail behind every weight in stock.
+          </p>
+        </div>
 
       <Card>
         <CardContent className="p-0">
@@ -70,6 +75,7 @@ export default function StockJournalPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PrivacyLockGate>
   );
 }

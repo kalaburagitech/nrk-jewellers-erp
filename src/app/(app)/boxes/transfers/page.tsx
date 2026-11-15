@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
+import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 export default function BoxTransfersPage() {
   const boxes = useQuery(api.boxes.list);
@@ -51,11 +52,15 @@ export default function BoxTransfersPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Box Transfers</h1>
-        <p className="text-sm text-muted-foreground">Move an item from one box to another.</p>
-      </div>
+    <PrivacyLockGate
+      title="Box Transfers are Locked"
+      description="Stock transfers between boxes are protected under Privacy Mode. Enter passcode 1968 to unlock."
+    >
+      <div className="mx-auto flex max-w-3xl flex-col gap-6">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Box Transfers</h1>
+          <p className="text-sm text-muted-foreground">Move an item from one box to another.</p>
+        </div>
 
       <Card>
         <CardHeader>
@@ -125,6 +130,7 @@ export default function BoxTransfersPage() {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </PrivacyLockGate>
   );
 }

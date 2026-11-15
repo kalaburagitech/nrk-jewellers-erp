@@ -179,8 +179,8 @@ export default function GeneralSettingsPage() {
                     </div>
                     <p className="mt-1 text-xs sm:text-sm text-muted-foreground leading-relaxed">
                       {isLocked
-                        ? "Currently LOCKED. Girvi / Metal loans and secondary companies (NR Karakalli Jewellers. - Gst Gold) are hidden from the menu, dashboard, and company switchers."
-                        : "Currently UNLOCKED. All companies and Girvi records are visible. Tap lock to hide them again instantly."}
+                        ? "Currently LOCKED. Box Management, Girvi / Metal loans, and secondary companies (NR Karakalli Jewellers. - Gst Gold) are hidden from the menu, dashboard, and company switchers."
+                        : "Currently UNLOCKED. All companies, Box Management, and Girvi records are visible. Tap lock to hide them again instantly."}
                     </p>
                   </div>
                 </div>

@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
+import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 function Label({
   item,
@@ -72,7 +73,11 @@ export default function BarcodeLabelsPage() {
   );
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <PrivacyLockGate
+      title="Barcode Labels are Locked"
+      description="Box labels and item barcodes are protected under Privacy Mode. Enter passcode 1968 to unlock."
+    >
+      <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex items-center justify-between print:hidden">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -150,6 +155,7 @@ export default function BarcodeLabelsPage() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </PrivacyLockGate>
   );
 }
