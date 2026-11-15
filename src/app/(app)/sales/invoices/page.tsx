@@ -1,35 +1,59 @@
 "use client";
-import { getUserErrorMessage } from "@/lib/user-error";
-
-import { useRecordSelection } from "@/hooks/use-record-selection";
-import { BulkRecordActions } from "@/components/bulk-record-actions";
-import { Checkbox } from "@/components/ui/checkbox";
 
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Eye, Pencil, Plus, Printer, Receipt, Truck } from "lucide-react";
+import {
+  Eye,
+  Pencil,
+  Plus,
+  Printer,
+  Receipt,
+  Search,
+  Filter,
+  Calendar,
+  Building2,
+  FileSpreadsheet,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { TransactionReportDialog } from "@/components/transaction-report-dialog";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { getUserErrorMessage } from "@/lib/user-error";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
-function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: () => void }) {
+function SaleDetailDialog({
+  saleId,
+  onClose,
+}: {
+  saleId: Id<"sales">;
+  onClose: () => void;
+}) {
   const cancel = useMutation(api.sales.cancel);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
   const items = useQuery(api.sales.getItems, { saleId });
   const oldGoldExchange = useQuery(api.sales.getOldGoldExchange, { saleId });
   const access = useQuery(api.organizations.getMyAccess);
-  const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
+  const canEdit =
+    access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -37,12 +61,30 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
         <DialogHeader className="flex flex-row items-center justify-between pr-6">
           <DialogTitle>Sale items</DialogTitle>
           <div className="flex flex-wrap gap-2">
-            {canEdit && <Button variant="destructive" size="sm" disabled={deleting} onClick={async () => {
-              const reason = window.prompt("Delete invoice and reverse its stock and payments. Enter a reason:");
-              if (!reason?.trim()) return;
-              setDeleting(true);
-              try { await cancel({ saleId, reason }); onClose(); } catch (e) { setError(getUserErrorMessage(e, "Delete failed")); } finally { setDeleting(false); }
-            }}>Delete</Button>}
+            {canEdit && (
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleting}
+                onClick={async () => {
+                  const reason = window.prompt(
+                    "Delete invoice and reverse its stock and payments. Enter a reason:",
+                  );
+                  if (!reason?.trim()) return;
+                  setDeleting(true);
+                  try {
+                    await cancel({ saleId, reason });
+                    onClose();
+                  } catch (e) {
+                    setError(getUserErrorMessage(e, "Delete failed"));
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+              >
+                Delete
+              </Button>
+            )}
             {canEdit && (
               <Button variant="outline" size="sm" asChild>
                 <Link href={`/sales/new?edit=${saleId}`}>
@@ -57,43 +99,31 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
                 Print / Share
               </Link>
             </Button>
-            <Button variant="outline" size="sm" asChild>
-              <Link href={`/sales/invoices/${saleId}/eway-bill`} target="_blank">
-                <Truck className="h-4 w-4" />
-                E-Way Bill
-              </Link>
-            </Button>
           </div>
         </DialogHeader>
-        {error && <p role="alert" className="text-destructive">{error}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No items</p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Gross wt (g)</TableHead>
-                  <TableHead>Net wt (g)</TableHead>
-                  <TableHead>Rate / g</TableHead>
-                  <TableHead>Wastage</TableHead>
-                  <TableHead>Tax</TableHead>
-                  <TableHead className="text-right">Line total</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.map((item) => (
-                  <TableRow key={item._id}>
-                    <TableCell>{mgToGramsDisplay(item.grossWeightMg)}</TableCell>
-                    <TableCell>{mgToGramsDisplay(item.netWeightMg)}</TableCell>
-                    <TableCell>{formatPaise(item.ratePerGramPaise)}</TableCell>
-                    <TableCell>{(item.wastageBasisPoints / 100).toFixed(2)}%</TableCell>
-                    <TableCell>{formatPaise(item.lineTaxPaise)}</TableCell>
-                    <TableCell className="text-right">{formatPaise(item.lineTotalPaise)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+          <div className="space-y-3">
+            {items.map((i) => (
+              <div
+                key={i._id}
+                className="flex items-center justify-between border-b pb-2 text-sm"
+              >
+                <div>
+                  <p className="font-medium">Jewellery Item · {mgToGramsDisplay(i.netWeightMg)}g</p>
+                  <p className="text-xs text-muted-foreground">
+                    Gross {mgToGramsDisplay(i.grossWeightMg)}g
+                    {i.stoneWeightMg ? ` (${mgToGramsDisplay(i.stoneWeightMg)}g stone)` : ""} @{" "}
+                    {formatPaise(i.ratePerGramPaise)}/g
+                  </p>
+                </div>
+                <p className="font-medium">{formatPaise(i.lineTotalPaise)}</p>
+              </div>
+            ))}
           </div>
         )}
         {oldGoldExchange && (
@@ -103,7 +133,9 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
               {mgToGramsDisplay(oldGoldExchange.netWeightMg)}g net (after{" "}
               {(oldGoldExchange.meltingDeductionBasisPoints / 100).toFixed(2)}% melting deduction) @{" "}
               {formatPaise(oldGoldExchange.ratePerGramPaise)}/g ={" "}
-              <span className="font-medium text-foreground">{formatPaise(oldGoldExchange.exchangeValuePaise)}</span>
+              <span className="font-medium text-foreground">
+                {formatPaise(oldGoldExchange.exchangeValuePaise)}
+              </span>
             </p>
           </div>
         )}
@@ -112,6 +144,7 @@ function SaleDetailDialog({ saleId, onClose }: { saleId: Id<"sales">; onClose: (
   );
 }
 
+// Sale Invoices matching Page 16 of Client PDF
 export default function SalesInvoicesPage() {
   const sales = useQuery(api.sales.list);
   const customers = useQuery(api.customers.list);
@@ -120,7 +153,11 @@ export default function SalesInvoicesPage() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
+  const [timePeriod, setTimePeriod] = useState("this-month");
+  const [firmFilter, setFirmFilter] = useState("all");
+
+  const canEdit =
+    access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const customerName = useMemo(() => {
     const map = new Map<string, string>();
@@ -128,115 +165,325 @@ export default function SalesInvoicesPage() {
     return map;
   }, [customers]);
 
-  const filteredSales = useMemo(() => sales?.filter(row => {
-    const q = search.trim().toLowerCase();
-    const customer = customerName.get(row.customerId)?.toLowerCase() ?? "";
-    const day = new Date(row.createdAt).toISOString().slice(0, 10);
-    return (!q || row.invoiceNumber.toLowerCase().includes(q) || customer.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
-  }), [sales, search, dateFrom, dateTo, customerName]);
-  const selection = useRecordSelection(filteredSales?.map(row => row._id) ?? [], `sales:${search}:${dateFrom}:${dateTo}`);
-  const totals = filteredSales?.reduce((sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }), { total: 0, paid: 0 });
+  const filteredSales = useMemo(() => {
+    return sales?.filter((row) => {
+      const q = search.trim().toLowerCase();
+      const customer = customerName.get(row.customerId)?.toLowerCase() ?? "";
+      const day = new Date(row.createdAt).toISOString().slice(0, 10);
+      return (
+        (!q || row.invoiceNumber.toLowerCase().includes(q) || customer.includes(q)) &&
+        (!dateFrom || day >= dateFrom) &&
+        (!dateTo || day <= dateTo)
+      );
+    });
+  }, [sales, search, dateFrom, dateTo, customerName]);
+
+  const selection = useRecordSelection(
+    filteredSales?.map((row) => row._id) ?? [],
+    `sales:${search}:${dateFrom}:${dateTo}`,
+  );
+
+  const totals = filteredSales?.reduce(
+    (sum, row) => ({
+      total: sum.total + row.totalPaise,
+      paid: sum.paid + row.amountPaidPaise,
+    }),
+    { total: 0, paid: 0 },
+  );
+
+  const totalAmount = totals?.total ?? 0;
+  const receivedAmount = totals?.paid ?? 0;
+  const balanceAmount = Math.max(0, totalAmount - receivedAmount);
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto flex max-w-7xl flex-col gap-5">
+      {/* Top Header & New Bill Button */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Sales Invoices</h1>
-          <p className="text-sm text-muted-foreground">{sales?.length ?? 0} invoices recorded</p>
+          <h1 className="text-2xl font-bold tracking-tight">Sale Invoices</h1>
+          <p className="text-xs text-muted-foreground">
+            Manage sales bills, invoices, received amounts, and outstanding customer balances.
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {sales && (
             <TransactionReportDialog
-              label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
+              label={selection.count ? `Export ${selection.count} selected` : "Export Excel / CSV"}
               filename="sales-invoices"
-              rows={(selection.count ? (filteredSales ?? []).filter(row => selection.has(row._id)) : (filteredSales ?? []))}
+              rows={
+                selection.count
+                  ? (filteredSales ?? []).filter((row) => selection.has(row._id))
+                  : filteredSales ?? []
+              }
               fields={[
-                { id: "date", label: "Date", value: (s) => new Date(s.createdAt).toLocaleDateString("en-IN") },
+                {
+                  id: "date",
+                  label: "Date",
+                  value: (s) => new Date(s.createdAt).toLocaleDateString("en-IN"),
+                },
                 { id: "invoice", label: "Invoice No.", value: (s) => s.invoiceNumber },
-                { id: "party", label: "Party Name", value: (s) => customerName.get(s.customerId) ?? "—" },
+                {
+                  id: "party",
+                  label: "Party Name",
+                  value: (s) => customerName.get(s.customerId) ?? "—",
+                },
                 { id: "total", label: "Total", value: (s) => formatPaise(s.totalPaise) },
                 { id: "paid", label: "Received / Paid", value: (s) => formatPaise(s.amountPaidPaise) },
-                { id: "balance", label: "Balance Due", value: (s) => formatPaise(Math.max(0, s.totalPaise - s.amountPaidPaise)) },
-                { id: "gst", label: "GST Type", value: (s) => s.isGst ? "GST" : "Non-GST" },
-                { id: "payment", label: "Payment Status", value: (s) => s.amountPaidPaise >= s.totalPaise ? "Paid" : s.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
-                { id: "phone", label: "Party's Phone No.", value: (s) => customers?.find((party) => party._id === s.customerId)?.phone ?? "—" },
-                { id: "gstin", label: "Party's GSTIN", value: (s) => customers?.find((party) => party._id === s.customerId)?.gstin ?? "—" },
-                { id: "items", label: "Item Details", value: (s) => s.reportItemDetails },
-                { id: "description", label: "Description", value: (s) => s.reportDescription },
-                { id: "paymentType", label: "Payment Type", value: (s) => s.reportPaymentType },
-                { id: "paymentBreakup", label: "Show Payment Breakup", value: (s) => s.reportPaymentBreakup },
+                {
+                  id: "balance",
+                  label: "Balance Due",
+                  value: (s) => formatPaise(Math.max(0, s.totalPaise - s.amountPaidPaise)),
+                },
+                { id: "gst", label: "GST Type", value: (s) => (s.isGst ? "GST" : "Non-GST") },
+                {
+                  id: "payment",
+                  label: "Payment Status",
+                  value: (s) =>
+                    s.amountPaidPaise >= s.totalPaise
+                      ? "Paid"
+                      : s.amountPaidPaise > 0
+                        ? "Partly paid"
+                        : "Unpaid",
+                },
               ]}
             />
           )}
-          <Button asChild>
+          <Button
+            asChild
+            className="bg-[#d93025] hover:bg-[#b3261e] text-white font-medium shadow-sm"
+          >
             <Link href="/sales/new">
               <Plus className="h-4 w-4" />
-              New Bill
+              Add Sale
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3"><Input placeholder="Search invoice or customer" value={search} onChange={e => setSearch(e.target.value)} /><Input aria-label="From date" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /><Input aria-label="To date" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
-      <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total sales</p><p className="text-xl font-semibold">{formatPaise(totals?.total ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Paid</p><p className="text-xl font-semibold">{formatPaise(totals?.paid ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Balance due</p><p className="text-xl font-semibold">{formatPaise((totals?.total ?? 0) - (totals?.paid ?? 0))}</p></CardContent></Card></div>
+      {/* Filter Bar matching Page 16 (Filter by: [This Month] [Date Range] [All Firms]) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4 shadow-xs">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <span className="text-xs font-semibold text-muted-foreground">Filter by :</span>
+          <Select value={timePeriod} onValueChange={setTimePeriod}>
+            <SelectTrigger className="h-8.5 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="this-month">This Month</SelectItem>
+              <SelectItem value="last-month">Last Month</SelectItem>
+              <SelectItem value="this-quarter">This Quarter</SelectItem>
+              <SelectItem value="this-year">This Year</SelectItem>
+              <SelectItem value="all-time">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center gap-1.5">
+            <Input
+              type="date"
+              aria-label="From date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="h-8.5 text-xs w-32"
+            />
+            <span className="text-xs text-muted-foreground">To</span>
+            <Input
+              type="date"
+              aria-label="To date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="h-8.5 text-xs w-32"
+            />
+          </div>
+
+          <Select value={firmFilter} onValueChange={setFirmFilter}>
+            <SelectTrigger className="h-8.5 w-28 text-xs">
+              <SelectValue placeholder="All Firms" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Firms</SelectItem>
+              <SelectItem value="primary">Primary Firm</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="relative w-full sm:w-64">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search invoice or customer"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-8.5 h-8.5 text-xs rounded-lg"
+          />
+        </div>
+      </div>
+
+      {/* 3 Summary Cards matching Page 16 (Total Sales Amount / Received / Balance) */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Card className="border-border/80 shadow-xs">
+          <CardContent className="p-4 sm:p-5">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Sales Amount
+              </p>
+              <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
+                0% ↗ vs last month
+              </span>
+            </div>
+            <h2 className="mt-2 text-2xl font-bold text-foreground tabular-nums">
+              {formatPaise(totalAmount)}
+            </h2>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-xs">
+          <CardContent className="p-4 sm:p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Received
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-emerald-600 tabular-nums">
+              {formatPaise(receivedAmount)}
+            </h2>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/80 shadow-xs">
+          <CardContent className="p-4 sm:p-5">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Balance Due
+            </p>
+            <h2 className="mt-2 text-2xl font-bold text-rose-600 tabular-nums">
+              {formatPaise(balanceAmount)}
+            </h2>
+          </CardContent>
+        </Card>
+      </div>
 
       <BulkRecordActions selection={selection} table="sales" />
 
-      <Card>
+      {/* Transactions Table matching Page 16 */}
+      <Card className="border-border/80 shadow-xs">
+        <div className="flex items-center justify-between border-b px-5 py-3.5 bg-muted/10">
+          <h3 className="font-semibold text-sm">Transactions</h3>
+          <span className="text-xs text-muted-foreground">
+            {filteredSales ? `${filteredSales.length} Invoices` : "Loading…"}
+          </span>
+        </div>
         <CardContent className="p-0">
           {sales === undefined ? (
-            <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+            <p className="p-6 text-sm text-muted-foreground text-center">Loading invoices…</p>
           ) : filteredSales?.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-12 text-center">
-              <Receipt className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No bills recorded yet.</p>
+            <div className="flex flex-col items-center gap-2 py-14 text-center">
+              <Receipt className="h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-medium text-foreground">No Transaction Found</p>
+              <p className="text-xs text-muted-foreground">We could not find any transactions.</p>
+              <Button
+                asChild
+                size="sm"
+                className="mt-2 bg-[#d93025] hover:bg-[#b3261e] text-white"
+              >
+                <Link href="/sales/new">Add Sale</Link>
+              </Button>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
-                    <TableHead>Invoice #</TableHead>
+                  <TableRow className="border-b bg-muted/30 text-xs text-muted-foreground">
+                    <TableHead className="w-10">
+                      <Checkbox
+                        aria-label="Select all"
+                        checked={
+                          selection.all ? true : selection.partial ? "indeterminate" : false
+                        }
+                        onCheckedChange={(checked) => selection.selectAll(checked === true)}
+                      />
+                    </TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>GST</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-28 text-right">Actions</TableHead>
+                    <TableHead>Invoice no</TableHead>
+                    <TableHead>Party Name</TableHead>
+                    <TableHead>Transaction</TableHead>
+                    <TableHead>Payment Type</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="w-24 text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredSales?.map((s) => (
-                    <TableRow key={s._id} data-state={selection.has(s._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(s._id)}>
-                      <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${s.invoiceNumber}`} checked={selection.has(s._id)} onCheckedChange={() => selection.toggle(s._id)} /></TableCell>
-                      <TableCell className="font-medium">{s.invoiceNumber}</TableCell>
-                      <TableCell>{new Date(s.createdAt).toLocaleDateString("en-IN")}</TableCell>
-                      <TableCell>{customerName.get(s.customerId) ?? "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{s.isGst ? "GST" : "Non-GST"}</Badge>
+                    <TableRow
+                      key={s._id}
+                      data-state={selection.has(s._id) ? "selected" : undefined}
+                      className="cursor-pointer hover:bg-muted/30"
+                      onClick={() => setSelected(s._id)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          aria-label={`Select ${s.invoiceNumber}`}
+                          checked={selection.has(s._id)}
+                          onCheckedChange={() => selection.toggle(s._id)}
+                        />
                       </TableCell>
-                      <TableCell className="text-right">{formatPaise(s.totalPaise)}</TableCell>
-                      <TableCell className="text-right">{formatPaise(s.amountPaidPaise)}</TableCell>
-                      <TableCell>
-                        <Badge variant={s.status === "finalized" ? "secondary" : "destructive"} className="capitalize">
-                          {s.status}
+                      <TableCell className="text-xs text-muted-foreground">
+                        {new Date(s.createdAt).toLocaleDateString("en-IN")}
+                      </TableCell>
+                      <TableCell className="font-semibold text-xs text-primary">
+                        {s.invoiceNumber}
+                      </TableCell>
+                      <TableCell className="font-medium text-xs">
+                        {customerName.get(s.customerId) ?? "Cash Customer"}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <Badge variant="outline" className="text-[11px] font-normal">
+                          {s.isGst ? "GST Sale" : "Retail Sale"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
+                      <TableCell className="text-xs capitalize text-muted-foreground">
+                        {s.reportPaymentType || "Cash / Mixed"}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-xs tabular-nums text-foreground">
+                        {formatPaise(s.totalPaise)}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-xs tabular-nums">
+                        {s.totalPaise - s.amountPaidPaise > 0 ? (
+                          <span className="text-rose-600">
+                            {formatPaise(s.totalPaise - s.amountPaidPaise)}
+                          </span>
+                        ) : (
+                          <span className="text-emerald-600">₹ 0.00</span>
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className="text-right"
+                        onClick={(event) => event.stopPropagation()}
+                      >
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" title={`View ${s.invoiceNumber}`} aria-label={`View ${s.invoiceNumber}`} onClick={() => setSelected(s._id)}>
-                            <Eye className="h-4 w-4" />
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title={`View ${s.invoiceNumber}`}
+                            onClick={() => setSelected(s._id)}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button asChild variant="ghost" size="icon" className="h-7 w-7">
+                            <Link href={`/sales/invoices/${s._id}/print`} target="_blank">
+                              <Printer className="h-3.5 w-3.5" />
+                            </Link>
                           </Button>
                           {canEdit && s.status === "finalized" && (
                             <>
-                              <Button asChild variant="ghost" size="icon" title={`Edit ${s.invoiceNumber}`} aria-label={`Edit ${s.invoiceNumber}`}>
+                              <Button asChild variant="ghost" size="icon" className="h-7 w-7">
                                 <Link href={`/sales/new?edit=${s._id}`}>
-                                  <Pencil className="h-4 w-4" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </Link>
                               </Button>
-                              <DeleteDocumentButton compact table="sales" id={s._id} name={s.invoiceNumber} />
+                              <DeleteDocumentButton
+                                compact
+                                table="sales"
+                                id={s._id}
+                                name={s.invoiceNumber}
+                              />
                             </>
                           )}
                         </div>

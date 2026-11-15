@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import { v } from "convex/values";
 import { requireAuthContext } from "./lib/auth";
 
 /**
@@ -6,18 +7,45 @@ import { requireAuthContext } from "./lib/auth";
  * per card. "Today" follows the shop's Asia/Kolkata calendar day.
  */
 export const getSummary = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    timeframe: v.optional(
+      v.union(
+        v.literal("week"),
+        v.literal("month"),
+        v.literal("quarter"),
+        v.literal("half_year"),
+        v.literal("year"),
+      ),
+    ),
+  },
+  handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const orgId = auth.organizationId;
+    const timeframe = args.timeframe ?? "week";
 
     const todayStart = Math.floor((Date.now() + 19_800_000) / 86_400_000) * 86_400_000 - 19_800_000;
     const dayMs = 24 * 60 * 60 * 1000;
-    // The dashboard only ever needs "today" plus the 7-day trend window, so
-    // range-query that window directly instead of taking the N most recent
-    // rows org-wide — a `take(500)` cap would silently under-count once the
-    // org's *total* history (not just this week's) passes 500/1000 rows.
-    const windowStart = todayStart - 6 * dayMs;
+
+    let daysCount = 7;
+    let timeframeLabel = "last 7 days";
+    if (timeframe === "week") {
+      daysCount = 7;
+      timeframeLabel = "last 7 days";
+    } else if (timeframe === "month") {
+      daysCount = 30;
+      timeframeLabel = "this month";
+    } else if (timeframe === "quarter") {
+      daysCount = 90;
+      timeframeLabel = "this quarter";
+    } else if (timeframe === "half_year") {
+      daysCount = 180;
+      timeframeLabel = "this half-year";
+    } else if (timeframe === "year") {
+      daysCount = 365;
+      timeframeLabel = "this year";
+    }
+
+    const windowStart = todayStart - (daysCount - 1) * dayMs;
     const windowEnd = todayStart + dayMs;
 
     const [
@@ -83,6 +111,10 @@ export const getSummary = query({
       .filter((p) => p.createdAt >= todayStart && p.status === "finalized" && (!p.documentType || p.documentType === "purchase_invoice"))
       .reduce((sum, p) => sum + p.totalPaise, 0);
 
+    const timeframeSalesPaise = recentSales
+      .filter((s) => s.createdAt >= windowStart && s.status === "finalized" && s.documentType === "sales_invoice")
+      .reduce((sum, s) => sum + s.totalPaise, 0);
+
     // Net cash position derived from recorded payments — not a full
     // accounting ledger (that's Stage 2 Accounting Engine, out of Phase 1
     // scope). Old gold exchange is a trade-in, not cash, so it's excluded.
@@ -92,32 +124,34 @@ export const getSummary = query({
       return sum + signed;
     }, 0);
 
-    // Last 7 calendar days (oldest first) — drives the dashboard sparklines
-    // and the Sales Overview chart. "Today vs yesterday" % deltas read off
-    // the last two entries of this same array, so there's one source of truth.
-    const trend = Array.from({ length: 7 }, (_, i) => {
-      const dayStart = todayStart - (6 - i) * dayMs;
-      const dayEnd = dayStart + dayMs;
+    // Calendar days or intervals (oldest first) — drives the dashboard sparklines
+    // and the Sales Overview chart.
+    const pointCount = timeframe === "week" ? 7 : timeframe === "month" ? 15 : 12;
+    const intervalMs = pointCount > 1 ? Math.floor(((daysCount - 1) * dayMs) / (pointCount - 1)) : dayMs;
+
+    const trend = Array.from({ length: pointCount }, (_, i) => {
+      const bucketStart = windowStart + i * intervalMs;
+      const bucketEnd = i === pointCount - 1 ? windowEnd : bucketStart + intervalMs;
       const salesPaise = recentSales
-        .filter((s) => s.createdAt >= dayStart && s.createdAt < dayEnd && s.status === "finalized" && s.documentType === "sales_invoice")
+        .filter((s) => s.createdAt >= bucketStart && s.createdAt < bucketEnd && s.status === "finalized" && s.documentType === "sales_invoice")
         .reduce((sum, s) => sum + s.totalPaise, 0);
       const purchasesPaise = recentPurchases
-        .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.status === "finalized" && (!p.documentType || p.documentType === "purchase_invoice"))
+        .filter((p) => p.createdAt >= bucketStart && p.createdAt < bucketEnd && p.status === "finalized" && (!p.documentType || p.documentType === "purchase_invoice"))
         .reduce((sum, p) => sum + p.totalPaise, 0);
       const cashPaise = payments
-        .filter((p) => p.createdAt >= dayStart && p.createdAt < dayEnd && p.mode !== "old_gold_exchange")
+        .filter((p) => p.createdAt >= bucketStart && p.createdAt < bucketEnd && p.mode !== "old_gold_exchange")
         .reduce((sum, p) => sum + (p.direction === "receipt" ? p.amountPaise : -p.amountPaise), 0);
-      return { date: dayStart, salesPaise, purchasesPaise, cashPaise };
+      return { date: bucketStart, salesPaise, purchasesPaise, cashPaise };
     });
 
     function deltaPercent(today: number, yesterday: number): number | null {
       if (yesterday === 0) return today === 0 ? 0 : null;
       return Math.round(((today - yesterday) / Math.abs(yesterday)) * 100);
     }
-    const yesterday = trend[trend.length - 2];
-    const salesDeltaPercent = deltaPercent(todaysSalesPaise, yesterday.salesPaise);
-    const purchasesDeltaPercent = deltaPercent(todaysPurchasesPaise, yesterday.purchasesPaise);
-    const netCashDeltaPercent = deltaPercent(netCashPaise, yesterday.cashPaise);
+    const yesterday = trend.length >= 2 ? trend[trend.length - 2] : trend[0];
+    const salesDeltaPercent = yesterday ? deltaPercent(todaysSalesPaise, yesterday.salesPaise) : 0;
+    const purchasesDeltaPercent = yesterday ? deltaPercent(todaysPurchasesPaise, yesterday.purchasesPaise) : 0;
+    const netCashDeltaPercent = yesterday ? deltaPercent(netCashPaise, yesterday.cashPaise) : 0;
 
     const totalReceivablesPaise = customers.reduce((sum, c) => {
       const balance = c.currentBalancePaise ?? c.openingBalancePaise;
@@ -181,6 +215,8 @@ export const getSummary = query({
     return {
       todaysSalesPaise,
       todaysPurchasesPaise,
+      timeframeSalesPaise,
+      timeframeLabel,
       netCashPaise,
       totalReceivablesPaise,
       totalPayablesPaise,

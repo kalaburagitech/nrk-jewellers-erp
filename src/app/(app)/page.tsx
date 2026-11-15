@@ -1,5 +1,6 @@
 "use client";
-import { useEffect } from "react";
+
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,25 +12,45 @@ import {
   ShoppingCart,
   MessageCircle,
   ArrowUpRight,
+  ArrowDownRight,
   Landmark,
   DatabaseBackup,
+  PhoneCall,
+  Headphones,
+  Plus,
+  Printer,
+  ChevronRight,
+  FileText,
+  Calendar,
+  Layers,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
-import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from "recharts";
+import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export default function DashboardPage() {
   const { isLocked } = usePrivacyLock();
-  const summary = useQuery(api.dashboard.getSummary);
+  const [timeframe, setTimeframe] = useState<"week" | "month" | "quarter" | "half_year" | "year">("week");
+  const summary = useQuery(api.dashboard.getSummary, { timeframe });
   const rates = useQuery(api.metalRates.getCurrent);
   const boxes = useQuery(api.boxes.list);
   const access = useQuery(api.organizations.getMyAccess);
   const router = useRouter();
+
   const latest = summary?.recentInvoices[0]?._id;
+
   useEffect(() => {
     const handle = (e: KeyboardEvent) => {
       if (!["F2", "F3", "F4"].includes(e.key)) return;
@@ -42,21 +63,86 @@ export default function DashboardPage() {
     window.addEventListener("keydown", handle);
     return () => window.removeEventListener("keydown", handle);
   }, [router, latest]);
+
   const payment = (mode: string) =>
     summary ? formatPaise(summary.todaysPaymentsByMode[mode] ?? 0) : "—";
-  const istHour = Number(new Intl.DateTimeFormat("en-IN", { hour: "numeric", hour12: false, timeZone: "Asia/Kolkata" }).format(new Date()));
+
+  const istHour = Number(
+    new Intl.DateTimeFormat("en-IN", {
+      hour: "numeric",
+      hour12: false,
+      timeZone: "Asia/Kolkata",
+    }).format(new Date()),
+  );
   const greeting = istHour < 12 ? "Good morning" : istHour < 17 ? "Good afternoon" : "Good evening";
   const firstName = access?.user?.name?.trim().split(/\s+/)[0];
+
+  const totalReceivables = summary?.totalReceivablesPaise ?? 0;
+  const totalPayables = summary?.totalPayablesPaise ?? 0;
+  const totalSales = summary?.todaysSalesPaise ?? 0;
+
   return (
     <div className="counter-dashboard mx-auto flex max-w-7xl flex-col gap-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-xl border bg-card p-4 sm:p-5">
+      {/* Vyapar Customer Support & Quick Actions Header Line (Page 5) */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 text-xs text-muted-foreground border-b pb-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+          <span className="flex items-center gap-1 font-medium text-foreground">
+            <PhoneCall className="h-3.5 w-3.5 text-primary" />
+            Customer Support:
+          </span>
+          <a href="tel:+919333911911" className="hover:underline font-mono text-primary font-medium">
+            +91-9333911911
+          </a>
+          <span>·</span>
+          <a href="tel:+917795687633" className="hover:underline font-mono text-primary font-medium">
+            +917795687633
+          </a>
+          <span className="hidden md:inline">|</span>
+          <span className="hidden md:flex items-center gap-1 text-emerald-600 font-medium">
+            <Headphones className="h-3.5 w-3.5" />
+            Instant Online Support Active
+          </span>
+        </div>
+
+        {/* Vyapar + Add Sale / + Add Purchase Buttons (Page 5) */}
+        <div className="flex items-center gap-2">
+          <Button
+            asChild
+            size="sm"
+            className="h-8 bg-[#d93025] hover:bg-[#b3261e] text-white font-medium shadow-sm"
+          >
+            <Link href="/sales/new">
+              <Plus className="h-3.5 w-3.5" />
+              Add Sale
+            </Link>
+          </Button>
+          <Button
+            asChild
+            size="sm"
+            className="h-8 bg-[#1a73e8] hover:bg-[#1557b0] text-white font-medium shadow-sm"
+          >
+            <Link href="/purchases/new">
+              <Plus className="h-3.5 w-3.5" />
+              Add Purchase
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="h-8 w-8 p-0">
+            <Link href="/reports/sales" title="Print Reports">
+              <Printer className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        </div>
+      </div>
+
+      {/* Shop Identity Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-xl border bg-card p-4 sm:p-5 shadow-sm">
         <div className="flex items-center gap-3 sm:gap-5">
           <Image
             src="/nrk-logo-gold.png"
             width={116}
             height={72}
             alt="NRK Jewellers"
-            className="h-12 w-20 sm:h-auto sm:w-auto rounded bg-white object-contain"
+            className="h-12 w-20 sm:h-auto sm:w-auto rounded bg-white object-contain shadow-xs"
             priority
           />
           <div>
@@ -67,7 +153,8 @@ export default function DashboardPage() {
               {access?.organization?.name || "NR Karakalli Jewellers"}
             </h1>
             <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm font-medium text-primary">
-              {greeting}{firstName ? `, ${firstName}` : ""} · Your daily counter overview
+              {greeting}
+              {firstName ? `, ${firstName}` : ""} · Your daily counter overview
             </p>
           </div>
         </div>
@@ -84,20 +171,230 @@ export default function DashboardPage() {
           <p className="mt-0.5 sm:mt-1 text-muted-foreground">Gold & Silver Merchants</p>
         </div>
       </div>
+
+      {/* Live Gold/Silver Metal Rates Bar */}
       <MetalRateTicker currentRates={rates} />
-      <div className="grid items-stretch gap-5 lg:grid-cols-[1fr_1.2fr]">
-        <Card className="gap-4">
-          <CardHeader>
-            <CardTitle className="text-sm uppercase tracking-wide">
-              Daily sales overview
+
+      {/* Vyapar Key Financial Overview: Total Receivable & Total Payable (Pages 5 & 6) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {/* Total Receivable Card */}
+        <Card className="border-border/80 shadow-sm transition hover:border-primary/40">
+          <CardContent className="p-5 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Receivable
+              </p>
+              <h2 className="mt-1.5 text-2xl sm:text-3xl font-bold text-foreground tabular-nums">
+                {formatPaise(totalReceivables)}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {totalReceivables === 0
+                  ? "You don't have any receivables as of now."
+                  : "Outstanding payments due from customers."}
+              </p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600">
+              <ArrowDownRight className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Total Payable Card */}
+        <Card className="border-border/80 shadow-sm transition hover:border-primary/40">
+          <CardContent className="p-5 flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Payable
+              </p>
+              <h2 className="mt-1.5 text-2xl sm:text-3xl font-bold text-foreground tabular-nums">
+                {formatPaise(totalPayables)}
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {totalPayables === 0
+                  ? "You don't have any payables as of now."
+                  : "Pending supplier purchase balances."}
+              </p>
+            </div>
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-rose-500/10 text-rose-600">
+              <ArrowUpRight className="h-6 w-6" />
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Vyapar Sales Trend Graph with Date Filter (Pages 5, 6, 7 & User Reference) */}
+      <Card className="border-border/80 shadow-sm">
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between pb-2 gap-3">
+          <div>
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-[#b8860b] dark:text-[#e0b84c]">
+              Sales · {summary?.timeframeLabel ?? (timeframe === "week" ? "last 7 days" : timeframe === "month" ? "this month" : timeframe === "quarter" ? "this quarter" : timeframe === "half_year" ? "this half-year" : "this year")}
             </CardTitle>
+            <p className="text-2xl font-bold text-foreground mt-1 tabular-nums">
+              {formatPaise(summary?.timeframeSalesPaise ?? totalSales)}
+            </p>
+          </div>
+          {/* Time Filter Dropdown: Week, Month, Quarter, Half Year, Year */}
+          <div className="w-48">
+            <Select value={timeframe} onValueChange={(v) => setTimeframe(v as any)}>
+              <SelectTrigger className="h-9 text-xs font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="week">Week (Last 7 Days)</SelectItem>
+                <SelectItem value="month">Month (This Month)</SelectItem>
+                <SelectItem value="quarter">Quarter (This Quarter)</SelectItem>
+                <SelectItem value="half_year">Half Quarter / Half Year</SelectItem>
+                <SelectItem value="year">Year (This Year)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-2">
+          <div className="h-56 w-full">
+            {summary && (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={
+                    summary.trend.length > 0
+                      ? summary.trend.map((t) => {
+                          const d = new Date(t.date);
+                          const label =
+                            timeframe === "week"
+                              ? d.toLocaleDateString("en-IN", { weekday: "short" })
+                              : d.toLocaleDateString("en-IN", {
+                                  day: "numeric",
+                                  month: "short",
+                                });
+                          return {
+                            date: label,
+                            sales: t.salesPaise / 100,
+                          };
+                        })
+                      : [
+                          { date: "Mon", sales: 0 },
+                          { date: "Tue", sales: 0 },
+                          { date: "Wed", sales: 0 },
+                          { date: "Thu", sales: totalSales / 100 },
+                          { date: "Fri", sales: 0 },
+                          { date: "Sat", sales: 0 },
+                          { date: "Sun", sales: 0 },
+                        ]
+                  }
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="saleColor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#b8860b" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#b8860b" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} fontSize={11} />
+                  <YAxis tickLine={false} axisLine={false} fontSize={11} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="rounded border border-[#b8860b]/40 bg-card px-3 py-2 text-xs shadow-md">
+                            <p className="font-semibold text-foreground">{label}</p>
+                            <p className="font-bold text-[#b8860b] mt-0.5">
+                              Sales : ₹{Number(payload[0].value).toLocaleString("en-IN")}
+                            </p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="sales"
+                    stroke="#b8860b"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#saleColor)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Vyapar Most Used Reports Section (Page 5 & 6) */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold tracking-wide text-foreground">Most Used Reports</h2>
+          <Link
+            href="/reports/sales"
+            className="text-xs font-semibold text-primary hover:underline"
+          >
+            View All
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Link
+            href="/reports/sales"
+            className="flex items-center justify-between rounded-xl border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <FileText className="h-4 w-4" />
+              </div>
+              <span className="text-sm font-medium">Sale Report</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+
+          <Link
+            href="/sales/invoices"
+            className="flex items-center justify-between rounded-xl border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Receipt className="h-4 w-4" />
+              </div>
+              <span className="text-sm font-medium">All Transactions</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+
+          <Link
+            href="/reports/sales"
+            className="flex items-center justify-between rounded-xl border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Calendar className="h-4 w-4" />
+              </div>
+              <span className="text-sm font-medium">Daybook Report</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+
+          <Link
+            href="/customers/ledgers"
+            className="flex items-center justify-between rounded-xl border bg-card p-4 transition-all hover:border-primary/50 hover:shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Layers className="h-4 w-4" />
+              </div>
+              <span className="text-sm font-medium">Party Statement</span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
+        </div>
+      </div>
+
+      {/* Jewellery ERP Domain Modules: Real-time Weight & Daily Counter Breakdown */}
+      <div className="grid items-stretch gap-5 lg:grid-cols-[1fr_1.2fr]">
+        <Card className="gap-4 shadow-sm">
+          <CardHeader>
+            <CardTitle className="text-sm uppercase tracking-wide">Daily sales overview</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
             {[
-              [
-                "Total sales today",
-                summary ? formatPaise(summary.todaysSalesPaise) : "—",
-              ],
+              ["Total sales today", summary ? formatPaise(summary.todaysSalesPaise) : "—"],
               ["Cash receipts", payment("cash")],
               ["UPI / Scan", payment("upi")],
               [
@@ -115,7 +412,8 @@ export default function DashboardPage() {
             ))}
           </CardContent>
         </Card>
-        <Card className="gap-4">
+
+        <Card className="gap-4 shadow-sm">
           <CardHeader>
             <CardTitle className="text-sm uppercase tracking-wide">
               Real-time weight-based stock
@@ -151,9 +449,7 @@ export default function DashboardPage() {
                   {summary?.stockByPurity.map((row) => (
                     <tr key={row.purityId} className="border-t">
                       <td className="py-2 font-medium">{row.label}</td>
-                      <td className="capitalize text-muted-foreground">
-                        {row.metal}
-                      </td>
+                      <td className="capitalize text-muted-foreground">{row.metal}</td>
                       <td className="text-right font-medium tabular-nums">
                         {mgToGramsDisplay(row.netWeightMg)}
                       </td>
@@ -170,11 +466,11 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-      <Card className="gap-4">
+
+      {/* Serialized Box Inventory System */}
+      <Card className="gap-4 shadow-sm">
         <CardHeader className="flex items-center justify-between">
-          <CardTitle className="text-sm uppercase tracking-wide">
-            Box management system
-          </CardTitle>
+          <CardTitle className="text-sm uppercase tracking-wide">Box management system</CardTitle>
           <Button asChild variant="ghost" size="sm">
             <Link href="/boxes">
               Manage boxes
@@ -200,13 +496,9 @@ export default function DashboardPage() {
                   <Boxes className="h-7 w-7 shrink-0 text-primary" />
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">Box {box.boxNumber}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {box.itemCount ?? 0} pieces
-                    </p>
+                    <p className="text-xs text-muted-foreground">{box.itemCount ?? 0} pieces</p>
                     {box.label && (
-                      <p className="truncate text-xs text-muted-foreground">
-                        {box.label}
-                      </p>
+                      <p className="truncate text-xs text-muted-foreground">{box.label}</p>
                     )}
                   </div>
                 </Link>
@@ -215,15 +507,14 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
-      <div className="rounded-xl border bg-card p-4">
+
+      {/* Quick Action Shortcuts (F2, F3, F4) */}
+      <div className="rounded-xl border bg-card p-4 shadow-sm">
         <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Quick action center
         </p>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Button
-            asChild
-            className="h-12 bg-emerald-700 text-white hover:bg-emerald-800"
-          >
+          <Button asChild className="h-12 bg-emerald-700 text-white hover:bg-emerald-800">
             <Link href="/sales/new">
               <Receipt className="h-4 w-4" />
               F2 · New retail invoice
@@ -236,10 +527,7 @@ export default function DashboardPage() {
             </Link>
           </Button>
           {latest ? (
-            <Button
-              asChild
-              className="h-12 bg-slate-700 text-white hover:bg-slate-800"
-            >
+            <Button asChild className="h-12 bg-slate-700 text-white hover:bg-slate-800">
               <Link href={`/sales/invoices/${latest}/print?autoShare=1`}>
                 <MessageCircle className="h-4 w-4" />
                 F4 · Share via WhatsApp
@@ -253,115 +541,8 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ["Customer receivables", summary?.totalReceivablesPaise],
-          ["Supplier payables", summary?.totalPayablesPaise],
-          ["Today's purchases", summary?.todaysPurchasesPaise],
-          ["Net cash from payments", summary?.netCashPaise],
-        ].map(([label, value]) => (
-          <Card key={String(label)}>
-            <CardContent>
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums">
-                {typeof value === "number" ? formatPaise(value) : "—"}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      {summary && summary.lowStockCount > 0 && (
-        <Link
-          href="/inventory/products"
-          className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"
-        >
-          {summary.lowStockCount} products are below their reorder level. Review
-          stock →
-        </Link>
-      )}
-      <div className="grid gap-5 lg:grid-cols-[1fr_1.3fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Sales · last 7 days</CardTitle>
-          </CardHeader>
-          <CardContent className="h-48">
-            {summary && (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={summary.trend.map((t) => ({
-                    date: new Date(t.date).toLocaleDateString("en-IN", {
-                      weekday: "short",
-                    }),
-                    sales: t.salesPaise / 100,
-                  }))}
-                >
-                  <XAxis
-                    dataKey="date"
-                    tickLine={false}
-                    axisLine={false}
-                    fontSize={11}
-                  />
-                  <Tooltip
-                    formatter={(value) => [
-                      `₹${Number(value).toLocaleString("en-IN")}`,
-                      "Sales",
-                    ]}
-                  />
-                  <Area
-                    dataKey="sales"
-                    type="monotone"
-                    stroke="var(--chart-1)"
-                    fill="var(--chart-3)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex items-center justify-between">
-            <CardTitle className="text-sm">Recent invoices</CardTitle>
-            <Link href="/sales/invoices" className="text-xs text-primary">
-              View all →
-            </Link>
-          </CardHeader>
-          <CardContent className="overflow-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="text-xs text-muted-foreground">
-                  <th className="pb-3">Invoice</th>
-                  <th>Customer</th>
-                  <th className="text-right">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary?.recentInvoices.slice(0, 5).map((inv) => (
-                  <tr key={inv._id} className="border-t">
-                    <td className="py-3 font-medium">
-                      <Link
-                        href={`/sales/invoices/${inv._id}/print`}
-                        className="text-primary"
-                      >
-                        {inv.invoiceNumber}
-                      </Link>
-                    </td>
-                    <td>{inv.customerName}</td>
-                    <td className="text-right font-medium">
-                      {formatPaise(inv.totalPaise)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {summary?.recentInvoices.length === 0 && (
-              <p className="py-5 text-sm text-muted-foreground">
-                No invoices yet. Create a retail invoice to get started.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+
+      {/* Bottom Shortcuts: Girvi and Backup */}
       <div className="flex flex-wrap gap-3">
         {!isLocked && (
           <Button asChild variant="outline">
