@@ -458,7 +458,7 @@ export default function PrintInvoicePage({
                       {item.purityLabel ?? "—"}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                      1
+                      {item.pieces ?? 1}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.grossWeightMg)}
@@ -544,7 +544,7 @@ export default function PrintInvoicePage({
                 <tr>
                   <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
                   <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
-                    Old Item Deduction
+                    Old Item Deduction{sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}
                   </td>
                   <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                     -{formatPaise(sale.oldItemDeductionPaise ?? 0)}
@@ -707,7 +707,7 @@ export default function PrintInvoicePage({
                 <span>-{formatPaise(sale.discountPaise)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Old item deduction</span>
+                <span className="text-gray-500">Old item deduction{sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}</span>
                 <span>-{formatPaise(sale.oldItemDeductionPaise ?? 0)}</span>
               </div>
               {sale.isGst && (

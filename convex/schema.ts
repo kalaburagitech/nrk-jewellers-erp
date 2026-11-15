@@ -236,6 +236,20 @@ export default defineSchema({
     .index("by_org", ["organizationId"])
     .index("by_org_and_sku", ["organizationId", "sku"]),
 
+  // ---------- GST item stock ----------
+  // GST companies don't use boxes: stock is kept per item (product) as a
+  // running weight + piece balance. Every change is also written to
+  // stockMovements (with no boxId) for history. See convex/lib/itemStock.ts.
+  productStock: defineTable({
+    organizationId: v.id("organizations"),
+    productId: v.id("products"),
+    weightMg: v.number(),
+    pieces: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_org", ["organizationId"])
+    .index("by_org_and_product", ["organizationId", "productId"]),
+
   // ---------- Box management ----------
   boxes: defineTable({
     deletedAt: v.optional(v.number()),
@@ -383,6 +397,9 @@ export default defineSchema({
     makingChargePaise: v.number(),
     stoneChargePaise: v.number(),
     lineTotalPaise: v.number(),
+    // GST company line: added to item stock (productStock) instead of a box.
+    toItemStock: v.optional(v.boolean()),
+    pieces: v.optional(v.number()),
   }).index("by_purchase", ["purchaseId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Sales ----------
@@ -406,6 +423,8 @@ export default defineSchema({
     subtotalPaise: v.number(),
     discountPaise: v.number(),
     oldItemDeductionPaise: v.optional(v.number()),
+    // What the old item deduction was for (e.g. "old ring"), printed beside the amount.
+    oldItemDeductionNote: v.optional(v.string()),
     taxPaise: v.number(),
     roundOffPaise: v.number(),
     totalPaise: v.number(),
@@ -440,6 +459,9 @@ export default defineSchema({
     taxConfigurationId: v.optional(v.id("taxConfigurations")),
     lineTaxPaise: v.number(),
     lineTotalPaise: v.number(),
+    // GST company line: typed in manually and deducted from item stock (productStock), not a box piece.
+    fromItemStock: v.optional(v.boolean()),
+    pieces: v.optional(v.number()),
   }).index("by_sale", ["saleId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Payments & ledgers ----------

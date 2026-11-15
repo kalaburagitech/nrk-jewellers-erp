@@ -28,7 +28,7 @@ export default function StockReportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Report</h1>
           <p className="text-sm text-muted-foreground">Current in-stock weight and piece count by purity.</p>

@@ -85,7 +85,7 @@ export default function GstConfigurationPage() {
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">GST Configuration</h1>
           <p className="text-sm text-muted-foreground">
@@ -115,7 +115,7 @@ export default function GstConfigurationPage() {
                 <Label>Name</Label>
                 <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="GST 3%" />
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-3 gap-2 sm:gap-4">
                 <div className="grid gap-2">
                   <Label>CGST %</Label>
                   <Input value={cgst} onChange={(e) => setCgst(e.target.value)} placeholder="1.5" inputMode="decimal" />

@@ -79,6 +79,9 @@ export default function NewPurchasePage() {
   const suppliers = useQuery(api.suppliers.list);
   const products = useQuery(api.products.list);
   const boxes = useQuery(api.boxes.list);
+  const access = useQuery(api.organizations.getMyAccess);
+  // GST companies keep item-wise stock: purchased lines go there, not into boxes.
+  const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
   const purities = useQuery(api.metalPurities.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
   const createPurchase = useMutation(api.purchases.create);
@@ -140,6 +143,12 @@ export default function NewPurchasePage() {
   }, [editPurchaseId, existingPurchase, prefilled, form]);
   /* eslint-enable react-hooks/set-state-in-effect */
   const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
+
+  // Mark every line as "item stock" in a GST company so the box rule doesn't apply.
+  const lineCount = fields.length;
+  useEffect(() => {
+    for (let i = 0; i < lineCount; i++) form.setValue(`items.${i}.toItemStock`, gstCompany);
+  }, [gstCompany, lineCount, form]);
 
   // Quick-add: pick a product/box/rate once and generate that many pre-filled
   // lines at once — the operator still enters each piece's actual weight
@@ -233,7 +242,8 @@ export default function NewPurchasePage() {
       // 2. Resolve items
       const resolvedItems: Array<{
         productId: Id<"products">;
-        boxId: Id<"boxes">;
+        boxId?: Id<"boxes">;
+        pieces?: number;
         label: string;
         metalPurityId?: Id<"metalPurities">;
         grossWeightMg: number;
@@ -270,9 +280,11 @@ export default function NewPurchasePage() {
           return;
         }
 
-        // Resolve Box
-        let resolvedBoxId: Id<"boxes">;
-        if (item.manualBoxNumber?.trim()) {
+        // Resolve Box (Daily Sales only; GST lines go into item stock)
+        let resolvedBoxId: Id<"boxes"> | undefined;
+        if (gstCompany) {
+          resolvedBoxId = undefined;
+        } else if (item.manualBoxNumber?.trim()) {
           const boxNum = Number(item.manualBoxNumber.trim());
           if (!Number.isSafeInteger(boxNum) || boxNum < 1) {
             setServerError(`Item ${i + 1}: Please enter a valid box number (e.g. 101).`);
@@ -302,6 +314,7 @@ export default function NewPurchasePage() {
         resolvedItems.push({
           productId: resolvedProductId,
           boxId: resolvedBoxId,
+          ...(gstCompany ? { pieces: 1 } : {}),
           label,
           metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
           grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
@@ -471,7 +484,9 @@ export default function NewPurchasePage() {
                   <div>
                     <h2 className="font-semibold">Receiving multiple pieces of the same design?</h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Pick or type the product, box and quantity — each piece gets its own line to enter actual weight.
+                      {gstCompany
+                        ? "Pick or type the product and quantity — each piece gets its own line and goes into GST item stock."
+                        : "Pick or type the product, box and quantity — each piece gets its own line to enter actual weight."}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
@@ -484,15 +499,17 @@ export default function NewPurchasePage() {
                     >
                       {quickIsManualProduct ? "Select Product from list" : "+ Type custom product"}
                     </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => setQuickIsManualBox((p) => !p)}
-                    >
-                      {quickIsManualBox ? "Select Box from list" : "+ Type box number"}
-                    </Button>
+                    {!gstCompany && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-xs h-7"
+                        onClick={() => setQuickIsManualBox((p) => !p)}
+                      >
+                        {quickIsManualBox ? "Select Box from list" : "+ Type box number"}
+                      </Button>
+                    )}
                   </div>
                 </div>
                 <div className="flex flex-wrap items-end gap-3">
@@ -519,7 +536,7 @@ export default function NewPurchasePage() {
                       </Select>
                     )}
                   </div>
-                  <div className="grid min-w-[10rem] flex-1 gap-1.5">
+                  {!gstCompany && <div className="grid min-w-[10rem] flex-1 gap-1.5">
                     <label className="text-xs font-medium">Destination box</label>
                     {quickIsManualBox ? (
                       <Input
@@ -541,7 +558,7 @@ export default function NewPurchasePage() {
                         </SelectContent>
                       </Select>
                     )}
-                  </div>
+                  </div>}
                   <div className="grid w-24 gap-1.5">
                     <label className="text-xs font-medium">Quantity</label>
                     <Input
@@ -556,7 +573,7 @@ export default function NewPurchasePage() {
                     type="button"
                     disabled={
                       (quickIsManualProduct ? !quickManualProductName.trim() : !quickProductId) ||
-                      (quickIsManualBox ? !quickManualBoxNumber.trim() : !quickBoxId)
+                      (!gstCompany && (quickIsManualBox ? !quickManualBoxNumber.trim() : !quickBoxId))
                     }
                     onClick={handleQuickAdd}
                   >
@@ -671,7 +688,13 @@ export default function NewPurchasePage() {
                           )}
                         </div>
 
-                        {/* Box Column */}
+                        {/* Box Column (Daily Sales only) */}
+                        {gstCompany ? (
+                          <div className="flex flex-col gap-1.5">
+                            <span className="text-xs font-medium">Stock</span>
+                            <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Goes into GST item stock</p>
+                          </div>
+                        ) : (
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-medium">Destination Box</span>
@@ -731,6 +754,7 @@ export default function NewPurchasePage() {
                             />
                           )}
                         </div>
+                        )}
 
                         {/* Purity Column */}
                         <FormField

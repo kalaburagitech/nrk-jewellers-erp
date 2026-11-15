@@ -55,7 +55,7 @@ export default function StockGroupsPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Groups</h1>
           <p className="text-sm text-muted-foreground">Group ornaments for reporting and catalog organization.</p>

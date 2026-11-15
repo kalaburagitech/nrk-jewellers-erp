@@ -75,7 +75,7 @@ export default function BarcodeLabelsPage() {
   return (
     <PrivacyLockGate>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div className="flex items-center justify-between print:hidden">
+      <div className="flex flex-wrap items-center justify-between print:hidden gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
             Barcode Labels

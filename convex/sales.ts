@@ -6,6 +6,7 @@ import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBookingYearOpen } from "./lib/accountingYears";
+import { changeItemStock, isGstCompanyType } from "./lib/itemStock";
 
 /** Sales invoices only — quotations, proforma invoices, returns and credit notes each have their own dedicated list page/query. */
 export const list = query({
@@ -206,8 +207,14 @@ export const listByCustomer = query({
   },
 });
 
+// A line is either a box piece (Daily Sales company: boxItemId) or a manually
+// typed item (GST company: productId + weights + pieces, taken from item stock).
 const saleLineValidator = v.object({
-  boxItemId: v.id("boxItems"),
+  boxItemId: v.optional(v.id("boxItems")),
+  productId: v.optional(v.id("products")),
+  grossWeightMg: v.optional(v.number()),
+  stoneWeightMg: v.optional(v.number()),
+  pieces: v.optional(v.number()),
   metalPurityId: v.optional(v.id("metalPurities")),
   otherDeductionMg: v.number(),
   ratePerGramPaise: v.number(),
@@ -233,7 +240,11 @@ type SaleTransactionArgs = {
   customerId: Id<"customers">;
   isGst: boolean;
   items: Array<{
-    boxItemId: Id<"boxItems">;
+    boxItemId?: Id<"boxItems">;
+    productId?: Id<"products">;
+    grossWeightMg?: number;
+    stoneWeightMg?: number;
+    pieces?: number;
     metalPurityId?: Id<"metalPurities">;
     otherDeductionMg: number;
     ratePerGramPaise: number;
@@ -245,6 +256,7 @@ type SaleTransactionArgs = {
   discountMode: "percent" | "fixed" | "none";
   discountValue: number;
   oldItemDeductionPaise?: number;
+  oldItemDeductionNote?: string;
   payments: Array<{ mode: Doc<"payments">["mode"]; amountPaise: number }>;
   oldGoldExchange?: {
     metalPurityId: Id<"metalPurities">;
@@ -276,19 +288,53 @@ async function applySaleTransaction(
   // org, and still be in stock — prevents selling the same physical item
   // twice under concurrent billing.
   const taxConfigs = new Map<Id<"taxConfigurations">, number>();
+  const company = await ctx.db.get(auth.organizationId);
+  const gstCompany = isGstCompanyType(company?.companyType);
   const computedLines: Array<{
     item: SaleTransactionArgs["items"][number];
-    boxItem: Doc<"boxItems">;
+    // Box line: the physical piece. Manual (GST item stock) line: null.
+    boxItem: Doc<"boxItems"> | null;
+    productId: Id<"products">;
+    grossWeightMg: number;
+    stoneWeightMg: number;
+    pieces: number;
     computed: ReturnType<typeof computeSaleLine>;
   }> = [];
 
   for (const item of args.items) {
     if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
-    const boxItem = await ctx.db.get(item.boxItemId);
-    if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
-    if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);
-    if (!Number.isSafeInteger(item.otherDeductionMg) || item.otherDeductionMg < 0 || item.otherDeductionMg > boxItem.netWeightMg) {
-      throw new Error(`Other deduction for "${boxItem.label}" must be between 0 and its available net weight.`);
+    let boxItem: Doc<"boxItems"> | null = null;
+    let productId: Id<"products">;
+    let grossWeightMg: number;
+    let stoneWeightMg: number;
+    let pieces = 1;
+    let label: string;
+    if (item.boxItemId) {
+      if (gstCompany) throw new Error("GST bills use items from GST stock, not boxes. Add the item manually.");
+      boxItem = await ctx.db.get(item.boxItemId);
+      if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
+      if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);
+      productId = boxItem.productId;
+      grossWeightMg = boxItem.grossWeightMg;
+      stoneWeightMg = boxItem.stoneWeightMg;
+      label = boxItem.label;
+    } else {
+      if (!gstCompany) throw new Error("Daily Sales bills must pick each piece from a box.");
+      if (!item.productId) throw new Error("Choose the item for every bill line.");
+      const product = await ctx.db.get(item.productId);
+      if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Item not found");
+      productId = product._id;
+      grossWeightMg = item.grossWeightMg ?? 0;
+      stoneWeightMg = item.stoneWeightMg ?? 0;
+      pieces = item.pieces ?? 1;
+      label = product.name;
+      if (!Number.isSafeInteger(grossWeightMg) || grossWeightMg <= 0) throw new Error(`Enter the gross weight for "${label}".`);
+      if (!Number.isSafeInteger(stoneWeightMg) || stoneWeightMg < 0 || stoneWeightMg > grossWeightMg) throw new Error(`Stone weight for "${label}" must be between 0 and its gross weight.`);
+      if (!Number.isSafeInteger(pieces) || pieces < 1) throw new Error(`Pieces for "${label}" must be 1 or more.`);
+    }
+    const availableNetMg = grossWeightMg - stoneWeightMg;
+    if (!Number.isSafeInteger(item.otherDeductionMg) || item.otherDeductionMg < 0 || item.otherDeductionMg > availableNetMg) {
+      throw new Error(`Other deduction for "${label}" must be between 0 and its available net weight.`);
     }
 
     let gstBasisPoints = 0;
@@ -302,9 +348,9 @@ async function applySaleTransaction(
     }
 
     const computed = computeSaleLine({
-      grossWeightMg: boxItem.grossWeightMg,
-      stoneWeightMg: boxItem.stoneWeightMg,
-      stockNetWeightMg: boxItem.netWeightMg,
+      grossWeightMg,
+      stoneWeightMg,
+      stockNetWeightMg: boxItem ? boxItem.netWeightMg : availableNetMg,
       otherDeductionMg: item.otherDeductionMg,
       ratePerGramPaise: item.ratePerGramPaise,
       wastageBasisPoints: item.wastageBasisPoints,
@@ -312,7 +358,7 @@ async function applySaleTransaction(
       stoneChargePaise: item.stoneChargePaise,
       gstBasisPoints,
     });
-    computedLines.push({ item, boxItem, computed });
+    computedLines.push({ item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, computed });
   }
 
   let oldGoldComputed: ReturnType<typeof computeOldGoldExchange> | null = null;
@@ -367,6 +413,7 @@ async function applySaleTransaction(
     subtotalPaise: itemsSubtotalPaise,
     discountPaise,
     oldItemDeductionPaise,
+    oldItemDeductionNote: oldItemDeductionPaise > 0 ? args.oldItemDeductionNote?.trim().slice(0, 80) || undefined : undefined,
     taxPaise: itemsTaxPaise,
     roundOffPaise,
     totalPaise: roundedTotalPaise,
@@ -375,15 +422,16 @@ async function applySaleTransaction(
   });
 
   const boxDeltas = new Map<Id<"boxes">, number>();
-  for (const { item, boxItem, computed } of computedLines) {
+  for (const { item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, computed } of computedLines) {
     await ctx.db.insert("saleItems", {
       organizationId: auth.organizationId,
       saleId,
-      productId: boxItem.productId,
-      boxItemId: item.boxItemId,
+      productId,
+      boxItemId: boxItem ? boxItem._id : undefined,
+      ...(boxItem ? {} : { fromItemStock: true, pieces }),
       metalPurityId: item.metalPurityId,
-      grossWeightMg: boxItem.grossWeightMg,
-      stoneWeightMg: boxItem.stoneWeightMg,
+      grossWeightMg,
+      stoneWeightMg,
       otherDeductionMg: item.otherDeductionMg,
       netWeightMg: computed.netWeightMg,
       ratePerGramPaise: item.ratePerGramPaise,
@@ -395,13 +443,19 @@ async function applySaleTransaction(
       lineTotalPaise: computed.lineTotalPaise,
     });
 
-    await ctx.db.patch(item.boxItemId, { status: "sold" });
+    if (!boxItem) {
+      // GST line: take the sold net weight and pieces out of item stock.
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId, weightDeltaMg: -computed.netWeightMg, piecesDelta: -pieces, sourceTable: "sales", sourceId: saleId, at: billDate });
+      continue;
+    }
+
+    await ctx.db.patch(boxItem._id, { status: "sold" });
     boxDeltas.set(boxItem.boxId, (boxDeltas.get(boxItem.boxId) ?? 0) + 1);
 
     await ctx.db.insert("stockMovements", {
       organizationId: auth.organizationId,
       productId: boxItem.productId,
-      boxItemId: item.boxItemId,
+      boxItemId: boxItem._id,
       boxId: boxItem.boxId,
       direction: "out",
       netWeightMg: boxItem.netWeightMg,
@@ -515,6 +569,10 @@ async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale:
         });
       }
     }
+    if (item.fromItemStock) {
+      // GST line: put the sold weight and pieces back into item stock.
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: item.netWeightMg, piecesDelta: item.pieces ?? 1, sourceTable: "sales", sourceId: sale._id, at: reversedAt });
+    }
     if (!retainLines) await ctx.db.patch(item._id, { deletedAt: reversedAt });
   }
   for (const [boxId, delta] of boxDeltas) {
@@ -573,6 +631,7 @@ export const create = mutation({
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(), // basis points if percent, paise if fixed
     oldItemDeductionPaise: v.optional(v.number()),
+    oldItemDeductionNote: v.optional(v.string()),
     payments: v.array(paymentSplitValidator),
     oldGoldExchange: v.optional(oldGoldExchangeValidator),
     billDate: v.optional(v.number()),
@@ -669,6 +728,7 @@ export const update = mutation({
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(),
     oldItemDeductionPaise: v.optional(v.number()),
+    oldItemDeductionNote: v.optional(v.string()),
     payments: v.array(paymentSplitValidator),
     oldGoldExchange: v.optional(oldGoldExchangeValidator),
     billDate: v.number(),

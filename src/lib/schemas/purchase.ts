@@ -20,6 +20,8 @@ export const purchaseLineFormSchema = z
     manualProductName: z.string().optional(),
     boxId: z.string().optional(),
     manualBoxNumber: z.string().optional(),
+    // GST company: the line goes into item-wise stock, so no box is needed.
+    toItemStock: z.boolean().optional(),
     label: z.string().trim().min(1, "Item label is required"),
     metalPurityId: z.string().optional(),
     grossWeightGrams: positiveNumberString("Gross weight is required"),
@@ -32,7 +34,7 @@ export const purchaseLineFormSchema = z
     message: "Select or type a product name",
     path: ["productId"],
   })
-  .refine((data) => Boolean(data.boxId || data.manualBoxNumber?.trim()), {
+  .refine((data) => Boolean(data.toItemStock || data.boxId || data.manualBoxNumber?.trim()), {
     message: "Select or enter a destination box",
     path: ["boxId"],
   });

@@ -33,7 +33,7 @@ export function SalesReturnListPage({
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{heading}</h1>
           <p className="text-sm text-muted-foreground">{description}</p>

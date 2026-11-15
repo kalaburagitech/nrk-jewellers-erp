@@ -69,7 +69,12 @@ function numberFieldError(raw: string, opts?: { max?: number }): string | null {
 }
 
 type BillLine = {
-  boxItemId: Id<"boxItems">;
+  /** Stable row key: the box piece id, or a generated id for a manual GST line. */
+  key: string;
+  /** Daily Sales: the box piece sold. Unset for a GST line typed in manually (taken from item stock). */
+  boxItemId?: Id<"boxItems">;
+  productId?: string;
+  pieces?: number;
   boxNumber?: number;
   label: string;
   productName: string;
@@ -218,6 +223,75 @@ function QuickAddItemForm({
         {saving ? "Adding…" : "Add item to box and bill"}
       </Button>
     </div>
+  );
+}
+
+/**
+ * GST companies don't use boxes: the operator picks an item, types its
+ * weight and pieces, and the sold weight is deducted from GST item stock.
+ */
+function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: string; metalPurityId?: string; grossWeightMg: number; stoneWeightMg: number; pieces: number }) => void }) {
+  const stock = useQuery(api.itemStock.list);
+  const products = useQuery(api.products.list);
+  const [productId, setProductId] = useState("");
+  const [gross, setGross] = useState("");
+  const [stone, setStone] = useState("");
+  const [pieces, setPieces] = useState("1");
+  const [error, setError] = useState<string | null>(null);
+  const selected = stock?.find((s) => s.productId === productId);
+
+  function add() {
+    const grossWeightMg = gramsToMg(gross || "0");
+    const stoneWeightMg = gramsToMg(stone || "0");
+    const pcs = Number(pieces || "1");
+    if (!selected) return setError("Choose an item.");
+    if (grossWeightMg <= 0) return setError("Enter the gross weight.");
+    if (stoneWeightMg > grossWeightMg) return setError("Stone weight cannot be more than gross weight.");
+    if (!Number.isInteger(pcs) || pcs < 1) return setError("Pieces must be 1 or more.");
+    if (grossWeightMg - stoneWeightMg > selected.weightMg) return setError(`Only ${mgToGramsDisplay(selected.weightMg)} g of ${selected.name} is in GST stock.`);
+    setError(null);
+    const product = products?.find((p) => p._id === productId);
+    onAdd({ productId, name: selected.name, metalPurityId: product?.metalPurityId, grossWeightMg, stoneWeightMg, pieces: pcs });
+    setGross("");
+    setStone("");
+    setPieces("1");
+  }
+
+  return (
+    <Card className="border-border/80 shadow-xs">
+      <CardHeader className="p-4 pb-2">
+        <CardTitle className="text-sm font-bold uppercase tracking-wide">Add item (GST stock)</CardTitle>
+        <p className="text-xs text-muted-foreground">Pick the item and type its weight. The net weight is deducted from GST item stock.</p>
+      </CardHeader>
+      <CardContent className="grid grid-cols-2 gap-2 p-4 pt-0 sm:grid-cols-[2fr_1fr_1fr_0.7fr_auto] sm:items-end">
+        <div className="col-span-2 sm:col-span-1">
+          <Label className="text-[10px] text-muted-foreground">Item</Label>
+          <Select value={productId || undefined} onValueChange={setProductId}>
+            <SelectTrigger className="h-9 w-full text-xs"><SelectValue placeholder={stock === undefined ? "Loading…" : "Choose item"} /></SelectTrigger>
+            <SelectContent>
+              {stock?.map((s) => (
+                <SelectItem key={s.productId} value={s.productId}>{s.name} · {mgToGramsDisplay(s.weightMg)} g · {s.pieces} pcs</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label htmlFor="gst-gross" className="text-[10px] text-muted-foreground">Gross wt (g)</Label>
+          <Input id="gst-gross" inputMode="decimal" placeholder="0.000" value={gross} onChange={(e) => setGross(e.target.value)} className="h-9 text-xs" />
+        </div>
+        <div>
+          <Label htmlFor="gst-stone" className="text-[10px] text-muted-foreground">Stone wt (g)</Label>
+          <Input id="gst-stone" inputMode="decimal" placeholder="0.000" value={stone} onChange={(e) => setStone(e.target.value)} className="h-9 text-xs" />
+        </div>
+        <div>
+          <Label htmlFor="gst-pcs" className="text-[10px] text-muted-foreground">Pieces</Label>
+          <Input id="gst-pcs" inputMode="numeric" value={pieces} onChange={(e) => setPieces(e.target.value)} className="h-9 text-xs" />
+        </div>
+        <Button type="button" className="h-9" onClick={add}><Plus className="h-4 w-4" />Add</Button>
+        {error && <p className="col-span-2 text-xs font-medium text-destructive sm:col-span-5">{error}</p>}
+        {stock?.length === 0 && <p className="col-span-2 text-xs text-muted-foreground sm:col-span-5">No items yet. Add items under Items → Item List, then add stock under Stock → GST Purpose.</p>}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -462,6 +536,8 @@ export default function NewBillPage() {
   const [isGst, setIsGst] = useState(false);
   const [lines, setLines] = useState<BillLine[]>([]);
   const [oldItemDeductionRupees, setOldItemDeductionRupees] = useState("0");
+  const [oldItemEnabled, setOldItemEnabled] = useState(false);
+  const [oldItemDeductionNote, setOldItemDeductionNote] = useState("");
   const [discountMode, setDiscountMode] = useState<"none" | "percent" | "fixed">("none");
   const [discountValue, setDiscountValue] = useState("");
   const [payments, setPayments] = useState<{ mode: PaymentMode; amountRupees: string }[]>([
@@ -486,6 +562,7 @@ export default function NewBillPage() {
   const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the company type once it loads; the operator can still toggle.
     if (!editSaleId) setIsGst(gstCompany);
   }, [editSaleId, gstCompany]);
 
@@ -502,9 +579,14 @@ export default function NewBillPage() {
     setCustomerPhoneInput(customer?.phone ?? "");
     setIsGst(sale.isGst);
     setOldItemDeductionRupees(((sale.oldItemDeductionPaise ?? 0) / 100).toFixed(2));
+    setOldItemEnabled((sale.oldItemDeductionPaise ?? 0) > 0);
+    setOldItemDeductionNote(sale.oldItemDeductionNote ?? "");
     setLines(
       items.map((item) => ({
-        boxItemId: item.boxItemId as Id<"boxItems">,
+        key: item.boxItemId ?? item._id,
+        boxItemId: item.boxItemId,
+        productId: item.fromItemStock ? item.productId : undefined,
+        pieces: item.pieces,
         label: item.label,
         productName: item.productName,
         grossWeightMg: item.grossWeightMg,
@@ -599,6 +681,7 @@ export default function NewBillPage() {
     setLines((prev) => [
       ...prev,
       {
+        key: boxItem._id,
         boxItemId: boxItem._id,
         boxNumber: box?.boxNumber,
         label: boxItem.label,
@@ -606,6 +689,31 @@ export default function NewBillPage() {
         grossWeightMg: boxItem.grossWeightMg,
         stoneWeightMg: boxItem.stoneWeightMg,
         stockNetWeightMg: boxItem.netWeightMg,
+        metalPurityId: purityId,
+        otherDeductionGrams: "",
+        ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
+        wastagePercent: "",
+        makingChargeRupees: "",
+        stoneChargeRupees: "",
+        taxConfigurationId: taxConfigs?.[0]?._id ?? "",
+      },
+    ]);
+  }
+
+  function addManualLine(item: { productId: string; name: string; metalPurityId?: string; grossWeightMg: number; stoneWeightMg: number; pieces: number }) {
+    const purityId = item.metalPurityId ?? "";
+    const defaultRatePaise = purityId ? rateByPurity.get(purityId) : undefined;
+    setLines((prev) => [
+      ...prev,
+      {
+        key: crypto.randomUUID(),
+        productId: item.productId,
+        pieces: item.pieces,
+        label: item.name,
+        productName: "GST stock",
+        grossWeightMg: item.grossWeightMg,
+        stoneWeightMg: item.stoneWeightMg,
+        stockNetWeightMg: item.grossWeightMg - item.stoneWeightMg,
         metalPurityId: purityId,
         otherDeductionGrams: "",
         ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
@@ -748,6 +856,8 @@ export default function NewBillPage() {
     setCustomerPhoneInput("");
     setLines([]);
     setOldItemDeductionRupees("0");
+    setOldItemEnabled(false);
+    setOldItemDeductionNote("");
     setDiscountMode("none");
     setDiscountValue("");
     setPayments([{ mode: "cash", amountRupees: "" }]);
@@ -830,6 +940,9 @@ export default function NewBillPage() {
           }
           return {
             boxItemId: line.boxItemId,
+            ...(line.boxItemId
+              ? {}
+              : { productId: line.productId as Id<"products">, grossWeightMg: line.grossWeightMg, stoneWeightMg: line.stoneWeightMg, pieces: line.pieces ?? 1 }),
             metalPurityId: line.metalPurityId
               ? (line.metalPurityId as Id<"metalPurities">)
               : undefined,
@@ -872,6 +985,7 @@ export default function NewBillPage() {
           discountMode,
           discountValue: discountValuePaiseOrBp,
           oldItemDeductionPaise,
+          oldItemDeductionNote: oldItemDeductionNote.trim() || undefined,
           payments: paymentSplits,
           oldGoldExchange: oldGoldExchangeArg,
           billDate: dateInputToTimestamp(billDate),
@@ -888,6 +1002,7 @@ export default function NewBillPage() {
         discountMode,
         discountValue: discountValuePaiseOrBp,
         oldItemDeductionPaise,
+        oldItemDeductionNote: oldItemDeductionNote.trim() || undefined,
         payments: paymentSplits,
         oldGoldExchange: oldGoldExchangeArg,
         billDate: dateInputToTimestamp(billDate),
@@ -1145,28 +1260,34 @@ export default function NewBillPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Box Picker - Add Pieces Directly from Box */}
-        <BoxItemPicker
-          boxes={boxes}
-          products={products}
-          onAdd={addLine}
-          alreadyAddedIds={new Set(lines.map((l) => l.boxItemId))}
-        />
+        {/* Daily Sales: pick pieces from boxes. GST company: type items in manually from GST item stock. */}
+        {gstCompany ? (
+          <ManualItemForm onAdd={addManualLine} />
+        ) : (
+          <BoxItemPicker
+            boxes={boxes}
+            products={products}
+            onAdd={addLine}
+            alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [l.boxItemId] : [])))}
+          />
+        )}
 
         {/* Vyapar Items Table matching Page 17 */}
         <Card className="border-border/80 shadow-xs overflow-hidden">
-          <CardHeader className="p-4 border-b bg-muted/20 flex flex-row items-center justify-between">
+          <CardHeader className="p-4 border-b bg-muted/20 flex flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-sm font-bold uppercase tracking-wide">
               Items in this bill ({lines.length})
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Selling deducts pieces and weight straight from the assigned physical box.
+              {gstCompany
+                ? "Selling deducts the net weight and pieces from GST item stock."
+                : "Selling deducts pieces and weight straight from the assigned physical box."}
             </p>
           </CardHeader>
           <CardContent className="p-0">
             {lines.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground">
-                <p>No items added yet. Pick an item from a box above or add a new piece to a box.</p>
+                <p>{gstCompany ? "No items added yet. Choose an item above and enter its weight." : "No items added yet. Pick an item from a box above or add a new piece to a box."}</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1191,7 +1312,7 @@ export default function NewBillPage() {
                       const computed = computedLines[index];
                       const error = lineErrors[index];
                       return (
-                        <tr key={line.boxItemId} className="hover:bg-muted/20">
+                        <tr key={line.key} className="hover:bg-muted/20">
                           <td className="py-2.5 px-3 font-mono text-muted-foreground">{index + 1}</td>
                           <td className="py-2.5 px-3">
                             <p className="font-semibold text-foreground">{line.label}</p>
@@ -1220,7 +1341,7 @@ export default function NewBillPage() {
                               className="h-8 w-20 text-xs text-right"
                             />
                           </td>
-                          <td className="py-2.5 px-3 font-medium">1 Pc</td>
+                          <td className="py-2.5 px-3 font-medium">{line.pieces ?? 1} Pc</td>
                           <td className="py-2.5 px-3">
                             <Input
                               inputMode="decimal"
@@ -1327,6 +1448,15 @@ export default function NewBillPage() {
               >
                 {oldGoldEnabled ? "✓ Old Gold Added" : "+ Old Gold Exchange"}
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs font-medium text-amber-600 dark:text-amber-400"
+                onClick={() => setOldItemEnabled(!oldItemEnabled)}
+              >
+                {oldItemEnabled ? "✓ Old Item Deduction Added" : "+ Old Item Deduction"}
+              </Button>
             </div>
 
             {showNotes && (
@@ -1413,6 +1543,59 @@ export default function NewBillPage() {
                     <p className="col-span-2 sm:col-span-4 text-[11px] text-amber-700 dark:text-amber-300 font-medium mt-1">
                       Value: {formatPaise(oldGoldComputed.exchangeValuePaise)} credited against bill
                     </p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Old Item Deduction Drawer: amount only (no weight/purity/rate), with what it was for. */}
+            {oldItemEnabled && (
+              <Card className="border-amber-500/30 bg-amber-500/5">
+                <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    Old Item Deduction
+                  </CardTitle>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs text-muted-foreground"
+                    aria-label="Remove old item deduction"
+                    onClick={() => {
+                      setOldItemEnabled(false);
+                      setOldItemDeductionRupees("0");
+                      setOldItemDeductionNote("");
+                    }}
+                  >
+                    ×
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-3 pt-0 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-2">
+                  <div>
+                    <Label htmlFor="old-item-deduction" className="text-[10px] text-muted-foreground">Amount (₹)</Label>
+                    <Input
+                      id="old-item-deduction"
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      value={oldItemDeductionRupees === "0" ? "" : oldItemDeductionRupees}
+                      onChange={(e) => setOldItemDeductionRupees(e.target.value)}
+                      aria-invalid={Boolean(oldItemDeductionError)}
+                      className="h-8 text-right font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="old-item-note" className="text-[10px] text-muted-foreground">Description (printed on bill)</Label>
+                    <Input
+                      id="old-item-note"
+                      placeholder="e.g. Old ring"
+                      maxLength={80}
+                      value={oldItemDeductionNote}
+                      onChange={(e) => setOldItemDeductionNote(e.target.value)}
+                      className="h-8 text-xs"
+                    />
+                  </div>
+                  {oldItemDeductionError && (
+                    <p className="sm:col-span-2 text-[11px] font-medium text-destructive">{oldItemDeductionError}</p>
                   )}
                 </CardContent>
               </Card>
@@ -1506,23 +1689,11 @@ export default function NewBillPage() {
                 </div>
               )}
 
-              {/* Amount-only old item deduction: no weight/purity/rate, just ₹ taken off the bill. */}
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <Label htmlFor="old-item-deduction" className="text-xs font-medium text-amber-700 dark:text-amber-300">
-                  Old item deduction (₹)
-                </Label>
-                <Input
-                  id="old-item-deduction"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={oldItemDeductionRupees === "0" ? "" : oldItemDeductionRupees}
-                  onChange={(e) => setOldItemDeductionRupees(e.target.value)}
-                  aria-invalid={Boolean(oldItemDeductionError)}
-                  className="h-8 w-32 text-right font-mono text-xs"
-                />
-              </div>
-              {oldItemDeductionError && (
-                <p className="text-right text-[11px] font-medium text-destructive">{oldItemDeductionError}</p>
+              {totals.oldItemDeductionPaise > 0 && (
+                <div className="flex justify-between text-xs text-amber-600">
+                  <span>Old item deduction{oldItemDeductionNote.trim() ? ` (${oldItemDeductionNote.trim()})` : ""}</span>
+                  <span className="font-mono">-{formatPaise(totals.oldItemDeductionPaise)}</span>
+                </div>
               )}
 
               {totals.oldGoldValuePaise > 0 && (

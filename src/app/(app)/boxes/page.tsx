@@ -9,7 +9,7 @@ import { DeleteRecordButton } from "@/components/delete-record-button";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { Check, Package, Pencil, Plus, Search, X } from "lucide-react";
+import { Check, Package, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,7 +27,10 @@ import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
   const renameItem = useMutation(api.boxes.renameItem);
+  const writeOff = useMutation(api.stockAdjustments.writeOff);
   const [editing, setEditing] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteReason, setDeleteReason] = useState("Removed from box");
   const [draft, setDraft] = useState(item.label);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -43,6 +46,32 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
     } finally {
       setSaving(false);
     }
+  }
+
+  // Removal is an audited write-off (stock movement + log), not a silent delete.
+  async function remove() {
+    setSaving(true);
+    setError("");
+    try {
+      await writeOff({ boxItemId: item._id, reason: deleteReason.trim() || "Removed from box" });
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not remove this item"));
+      setSaving(false);
+    }
+  }
+
+  if (confirmingDelete) {
+    return (
+      <li className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
+        <p className="font-medium">Remove {item.label} ({(item.netWeightMg / 1000).toFixed(3)}g) from this box?</p>
+        <Input aria-label="Reason for removing" value={deleteReason} maxLength={200} onChange={(e) => setDeleteReason(e.target.value)} className="h-8" />
+        <div className="flex justify-end gap-2">
+          <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => { setConfirmingDelete(false); setError(""); }}>Cancel</Button>
+          <Button type="button" size="sm" variant="destructive" disabled={saving} onClick={remove}><Trash2 className="h-3.5 w-3.5" />{saving ? "Removing…" : "Remove"}</Button>
+        </div>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+      </li>
+    );
   }
 
   if (editing) {
@@ -84,9 +113,14 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
       <span>
         {item.label} — {(item.netWeightMg / 1000).toFixed(3)}g net
       </span>
+      <span className="flex shrink-0 items-center gap-1">
       <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setEditing(true)} aria-label={`Rename ${item.label}`}>
         <Pencil className="h-3.5 w-3.5" />
       </Button>
+      <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={() => setConfirmingDelete(true)} aria-label={`Remove ${item.label}`} title="Remove from box">
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+      </span>
     </li>
   );
 }

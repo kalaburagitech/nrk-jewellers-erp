@@ -69,7 +69,8 @@ export function AccessGate({ children }: { children: ReactNode }) {
       <PrivacyLockProvider>
         <SidebarProvider defaultOpen={true} className="erp-shell">
           <AppSidebar role={access.membership.role} />
-          <SidebarInset>
+          {/* min-w-0: let wide tables scroll inside their own box instead of widening the whole page. */}
+          <SidebarInset className="min-w-0">
             <AppTopbar
               organizationName={access.organization?.name}
               userName={access.user?.name ?? access.user?.email}

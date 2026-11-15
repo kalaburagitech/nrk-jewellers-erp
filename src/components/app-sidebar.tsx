@@ -62,8 +62,12 @@ export function AppSidebar({ role }: { role: string }) {
       .filter((key) => preferences && !preferences.documents[key])
       .flatMap((key) => OPTIONAL_DOCUMENT_PATHS[key]),
   );
+  const access = useQuery(api.organizations.getMyAccess);
+  const companyType = access?.organization?.companyType;
+  // Boxes are only for the Daily Sales company; GST companies keep item-wise stock.
+  const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
   // Private (non-GST box) screens disappear from the menu while the privacy lock is on.
-  if (isLocked) disabledPaths.add("/reports/boxes");
+  if (isLocked || gstCompany) disabledPaths.add("/reports/boxes");
   function navigate() {
     setOpenMobile(false);
   }
@@ -121,7 +125,7 @@ export function AppSidebar({ role }: { role: string }) {
               NAV_SECTIONS.filter((section) => section.href === path),
             )
             .filter((section) => section.href !== "/girvi" || (!isLocked && (role === "owner" || role === "admin")))
-            .filter((section) => section.href !== "/boxes" || !isLocked)
+            .filter((section) => section.href !== "/boxes" || (!isLocked && !gstCompany))
             .filter((section) => !viewOnly || !isWriteOnlyPath(section.href))
             .filter(
               (section) =>
