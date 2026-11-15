@@ -19,9 +19,11 @@ import { Button } from "@/components/ui/button";
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from "recharts";
 
 export default function DashboardPage() {
+  const { isLocked } = usePrivacyLock();
   const summary = useQuery(api.dashboard.getSummary);
   const rates = useQuery(api.metalRates.getCurrent);
   const boxes = useQuery(api.boxes.list);
@@ -47,29 +49,29 @@ export default function DashboardPage() {
   const firstName = access?.user?.name?.trim().split(/\s+/)[0];
   return (
     <div className="counter-dashboard mx-auto flex max-w-7xl flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-5">
-        <div className="flex items-center gap-5">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-xl border bg-card p-4 sm:p-5">
+        <div className="flex items-center gap-3 sm:gap-5">
           <Image
             src="/nrk-logo-gold.png"
             width={116}
             height={72}
             alt="NRK Jewellers"
-            className="rounded bg-white object-contain"
+            className="h-12 w-20 sm:h-auto sm:w-auto rounded bg-white object-contain"
             priority
           />
           <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-primary">
+            <p className="mb-0.5 sm:mb-1 text-[11px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-primary">
               The Name of Purity
             </p>
-            <h1 className="text-xl font-bold sm:text-2xl">
+            <h1 className="text-lg sm:text-2xl font-bold">
               {access?.organization?.name || "NR Karakalli Jewellers"}
             </h1>
-            <p className="mt-1 text-sm font-medium text-primary">
+            <p className="mt-0.5 sm:mt-1 text-xs sm:text-sm font-medium text-primary">
               {greeting}{firstName ? `, ${firstName}` : ""} · Your daily counter overview
             </p>
           </div>
         </div>
-        <div className="text-right text-sm">
+        <div className="text-left sm:text-right text-xs sm:text-sm border-t sm:border-t-0 pt-2 sm:pt-0 border-border/50">
           <p className="font-medium">
             {new Date().toLocaleDateString("en-IN", {
               weekday: "long",
@@ -79,7 +81,7 @@ export default function DashboardPage() {
               timeZone: "Asia/Kolkata",
             })}
           </p>
-          <p className="mt-1 text-muted-foreground">Gold & Silver Merchants</p>
+          <p className="mt-0.5 sm:mt-1 text-muted-foreground">Gold & Silver Merchants</p>
         </div>
       </div>
       <MetalRateTicker currentRates={rates} />
@@ -361,12 +363,14 @@ export default function DashboardPage() {
         </Card>
       </div>
       <div className="flex flex-wrap gap-3">
-        <Button asChild variant="outline">
-          <Link href="/girvi">
-            <Landmark className="h-4 w-4" />
-            Girvi metal loans
-          </Link>
-        </Button>
+        {!isLocked && (
+          <Button asChild variant="outline">
+            <Link href="/girvi">
+              <Landmark className="h-4 w-4" />
+              Girvi metal loans
+            </Link>
+          </Button>
+        )}
         <Button asChild variant="outline">
           <Link href="/backup">
             <DatabaseBackup className="h-4 w-4" />

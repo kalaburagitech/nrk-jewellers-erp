@@ -21,7 +21,8 @@ import {
 import { formatPaise } from "@/lib/money";
 import { rupeesToPaise } from "@/lib/money";
 import { girviInterestPaise } from "@/lib/girvi-interest";
-import { Landmark, Plus, Printer, Search } from "lucide-react";
+import { Landmark, Lock, Plus, Printer, Search } from "lucide-react";
+import { usePrivacyLock } from "@/components/privacy-lock-context";
 
 function RepayDialog({
   loan,
@@ -159,6 +160,9 @@ function RepayDialog({
   );
 }
 export default function GirviPage() {
+  const { isLocked, unlock } = usePrivacyLock();
+  const [privacyPasscode, setPrivacyPasscode] = useState("");
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
   const access = useQuery(api.organizations.getMyAccess);
   const allowed = ["owner", "admin"].includes(access?.membership?.role ?? "");
   const accounts = useQuery(api.cashBank.list, allowed ? {} : "skip");
@@ -186,6 +190,45 @@ export default function GirviPage() {
     visibleLoans?.map((row) => row._id) ?? [],
     `girvi:${status}:${search}`,
   );
+
+  if (isLocked) {
+    return (
+      <div className="mx-auto mt-6 sm:mt-12 w-full max-w-md rounded-2xl border border-border/80 bg-card p-6 sm:p-8 text-center shadow-lg">
+        <div className="mx-auto flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500 mb-4">
+          <Lock className="h-6 w-6 sm:h-7 sm:w-7" />
+        </div>
+        <h1 className="text-lg sm:text-xl font-bold tracking-tight">Girvi is Locked</h1>
+        <p className="mt-2 text-xs sm:text-sm text-muted-foreground">
+          This section is hidden under Privacy Mode. Enter code 1968 to unlock.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!unlock(privacyPasscode)) {
+              setPrivacyError("Invalid passcode. Enter code 1968.");
+            }
+          }}
+          className="mt-5 space-y-4"
+        >
+          <Input
+            type="password"
+            inputMode="numeric"
+            autoFocus
+            maxLength={4}
+            placeholder="••••"
+            value={privacyPasscode}
+            onChange={(e) => {
+              setPrivacyPasscode(e.target.value);
+              setPrivacyError(null);
+            }}
+            className="text-center text-xl tracking-widest font-mono h-12 rounded-xl"
+          />
+          {privacyError && <p className="text-xs text-destructive font-medium">{privacyError}</p>}
+          <Button type="submit" className="w-full h-11">Unlock Girvi</Button>
+        </form>
+      </div>
+    );
+  }
 
   if (access && !allowed) return <div className="mx-auto max-w-2xl rounded-xl border p-6"><h1 className="text-xl font-semibold">Girvi is owner-only</h1><p className="mt-2 text-sm text-muted-foreground">Ask the owner to open the Girvi workspace for you.</p></div>;
 

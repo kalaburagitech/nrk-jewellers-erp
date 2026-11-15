@@ -8,6 +8,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { AppLockGate } from "@/components/app-lock-gate";
+import { PrivacyLockProvider } from "@/components/privacy-lock-context";
 
 function CenteredState({ children }: { children: ReactNode }) {
   return (
@@ -57,19 +58,21 @@ export function AccessGate({ children }: { children: ReactNode }) {
 
   return (
     <AppLockGate userId={access.membership.userId}>
-      <SidebarProvider defaultOpen={true} className="erp-shell">
-        <AppSidebar role={access.membership.role} />
-        <SidebarInset>
-          <AppTopbar
-            organizationName={access.organization?.name}
-            userName={access.user?.name ?? access.user?.email}
-            role={access.membership.role}
-            companies={access.companies}
-            activeOrganizationId={access.organization?._id}
-          />
-          <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">{children}</main>
-        </SidebarInset>
-      </SidebarProvider>
+      <PrivacyLockProvider>
+        <SidebarProvider defaultOpen={true} className="erp-shell">
+          <AppSidebar role={access.membership.role} />
+          <SidebarInset>
+            <AppTopbar
+              organizationName={access.organization?.name}
+              userName={access.user?.name ?? access.user?.email}
+              role={access.membership.role}
+              companies={access.companies}
+              activeOrganizationId={access.organization?._id}
+            />
+            <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">{children}</main>
+          </SidebarInset>
+        </SidebarProvider>
+      </PrivacyLockProvider>
     </AppLockGate>
   );
 }

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { ArrowLeft, Bell, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
+import { ArrowLeft, Bell, Building2, KeyRound, Lock, LockKeyhole, LockOpen, LogOut, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -18,6 +18,7 @@ import { ColorThemePicker } from "@/components/color-theme-picker";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { Button } from "@/components/ui/button";
 import { useAppLock } from "@/components/app-lock-gate";
+import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -196,6 +197,15 @@ export function AppTopbar({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
+  const { isLocked, unlock, lock: lockPrivacy } = usePrivacyLock();
+  const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
+  const [privacyCode, setPrivacyCode] = useState("");
+  const [privacyError, setPrivacyError] = useState<string | null>(null);
+
+  const visibleCompanies = useMemo(() => {
+    if (!isLocked) return companies;
+    return companies.filter((c) => c.organizationId === activeOrganizationId);
+  }, [companies, isLocked, activeOrganizationId]);
   const pathname = usePathname();
   const router = useRouter();
   const page = NAV_SECTIONS.flatMap((section) => [
@@ -205,13 +215,13 @@ export function AppTopbar({
   const pageTitle = page?.title ?? "Workspace";
 
   return (
-    <header className="sticky top-0 z-30 flex h-20 shrink-0 items-center justify-between gap-3 border-b border-border/70 bg-card/95 px-4 backdrop-blur-xl sm:gap-5 lg:px-8 print:hidden">
-      <div className="flex min-w-0 items-center gap-2">
+    <header className="sticky top-0 z-30 flex h-16 sm:h-20 shrink-0 items-center justify-between gap-1.5 sm:gap-5 border-b border-border/70 bg-card/95 px-2.5 sm:px-4 backdrop-blur-xl lg:px-8 print:hidden">
+      <div className="flex min-w-0 items-center gap-1 sm:gap-2">
         <SidebarTrigger aria-label="Expand or collapse navigation" title="Expand or collapse navigation" />
-        {pathname !== "/" && <Button variant="ghost" size="icon" aria-label="Go back" title="Go back" onClick={() => window.history.length > 1 ? router.back() : router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>}
+        {pathname !== "/" && <Button variant="ghost" size="icon" aria-label="Go back" title="Go back" className="h-8 w-8 sm:h-9 sm:w-9" onClick={() => window.history.length > 1 ? router.back() : router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>}
         <Separator orientation="vertical" className="h-5" />
         <div className="min-w-0">
-          <p className="truncate text-base font-semibold tracking-tight">
+          <p className="truncate text-sm sm:text-base font-semibold tracking-tight">
             {pageTitle}
           </p>
           <p className="mt-0.5 hidden max-w-52 truncate text-xs text-muted-foreground sm:block">
@@ -222,12 +232,17 @@ export function AppTopbar({
       <div className="hidden min-w-0 flex-1 justify-center md:flex">
         <GlobalSearch />
       </div>
-      <div className="flex items-center gap-2">
-        {companies.length > 1 && <DropdownMenu>
-          <DropdownMenuTrigger asChild><Button variant="outline" size="sm" className="max-w-56"><Building2 className="h-4 w-4" /><span className="truncate">{organizationName ?? "Company"}</span></Button></DropdownMenuTrigger>
+      <div className="flex items-center gap-1 sm:gap-2">
+        {visibleCompanies.length > 1 && <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3 max-w-32 sm:max-w-56 text-xs sm:text-sm">
+              <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+              <span className="truncate">{organizationName ?? "Company"}</span>
+            </Button>
+          </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Switch company</p>
-            {companies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })} className="items-start py-2">
+            {visibleCompanies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })} className="items-start py-2">
               <Building2 className="mt-0.5 h-4 w-4" /><span className="min-w-0 flex-1"><span className="block truncate">{company.name}</span><span className="block text-xs capitalize text-muted-foreground">{company.companyType?.replaceAll("_", " ") ?? company.role.replaceAll("_", " ")}</span></span>{company.organizationId === activeOrganizationId && <span className="text-xs text-muted-foreground">Current</span>}
             </DropdownMenuItem>)}
           </DropdownMenuContent>
@@ -237,13 +252,37 @@ export function AppTopbar({
             {role.replace("_", " ")}
           </Badge>
         )}
-        <TextSizeToggle />
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`h-8 w-8 sm:h-10 sm:w-10 rounded-md transition-colors ${
+            isLocked
+              ? "text-amber-500 hover:bg-amber-500/10 hover:text-amber-600"
+              : "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-600"
+          }`}
+          aria-label={isLocked ? "Privacy lock (click to unlock with code 1968)" : "Privacy unlocked (click to lock)"}
+          title={isLocked ? "Privacy lock (click to unlock)" : "Privacy unlocked (click to lock)"}
+          onClick={() => {
+            if (isLocked) {
+              setPrivacyCode("");
+              setPrivacyError(null);
+              setPrivacyModalOpen(true);
+            } else {
+              lockPrivacy();
+            }
+          }}
+        >
+          {isLocked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
+        </Button>
+        <div className="hidden md:flex items-center gap-1 sm:gap-2">
+          <TextSizeToggle />
+          <ColorThemePicker />
+        </div>
         <ThemeToggle />
-        <ColorThemePicker />
         <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
-            <Avatar className="h-10 w-10 border border-border">
+            <Avatar className="h-8 w-8 sm:h-10 sm:w-10 border border-border">
               <AvatarFallback className="bg-accent text-accent-foreground text-xs font-semibold">
                 {initials(userName)}
               </AvatarFallback>
@@ -323,6 +362,61 @@ export function AppTopbar({
               }
             }}>{savingPassword ? "Updating…" : passwordSaved ? "Updated" : "Update password"}</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={privacyModalOpen} onOpenChange={setPrivacyModalOpen}>
+        <DialogContent className="w-[92vw] sm:max-w-md rounded-2xl p-5 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Lock className="h-5 w-5 text-amber-500" />
+              Unlock Privacy Mode
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (unlock(privacyCode)) {
+                setPrivacyModalOpen(false);
+                setPrivacyCode("");
+                setPrivacyError(null);
+              } else {
+                setPrivacyError("Invalid passcode. Please enter code 1968.");
+              }
+            }}
+            className="space-y-4 py-2"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="privacy-code" className="text-sm font-medium">Enter 4-digit code</Label>
+              <Input
+                id="privacy-code"
+                type="password"
+                inputMode="numeric"
+                autoFocus
+                maxLength={4}
+                placeholder="••••"
+                value={privacyCode}
+                onChange={(e) => {
+                  setPrivacyCode(e.target.value);
+                  setPrivacyError(null);
+                }}
+                className="text-center text-xl tracking-widest font-mono h-12 rounded-xl"
+              />
+              {privacyError && (
+                <p className="text-xs text-destructive font-medium">{privacyError}</p>
+              )}
+            </div>
+            <DialogFooter className="flex-row justify-end gap-2 pt-2 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1 sm:flex-initial"
+                onClick={() => setPrivacyModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" className="flex-1 sm:flex-initial">Unlock</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </header>

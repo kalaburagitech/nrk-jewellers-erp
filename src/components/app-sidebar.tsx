@@ -22,6 +22,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { NAV_SECTIONS } from "@/lib/nav-data";
+import { usePrivacyLock } from "@/components/privacy-lock-context";
 const GROUPS = [
   {
     label: "Home",
@@ -37,6 +38,7 @@ const GROUPS = [
 ];
 export function AppSidebar({ role }: { role: string }) {
   const pathname = usePathname();
+  const { isLocked } = usePrivacyLock();
   const { setOpenMobile, state, setOpen } = useSidebar();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
@@ -97,7 +99,7 @@ export function AppSidebar({ role }: { role: string }) {
             .flatMap((path) =>
               NAV_SECTIONS.filter((section) => section.href === path),
             )
-            .filter((section) => section.href !== "/girvi" || role === "owner" || role === "admin")
+            .filter((section) => section.href !== "/girvi" || (!isLocked && (role === "owner" || role === "admin")))
             .filter(
               (section) =>
                 !term ||
