@@ -25,6 +25,16 @@ import { NAV_SECTIONS } from "@/lib/nav-data";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { isWriteOnlyPath } from "@/components/access-context";
 import { PrivacyUnlockTrigger } from "@/components/privacy-unlock-trigger";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
+
+// Menu entries the Owner can switch off in Settings → General → Transaction.
+const OPTIONAL_DOCUMENT_PATHS = {
+  quotations: ["/sales/quotations"],
+  proforma: ["/sales/proforma"],
+  orders: ["/sales/orders", "/purchases/orders"],
+  challans: ["/sales/challans"],
+} as const;
 const GROUPS = [
   {
     label: "Home",
@@ -46,6 +56,14 @@ export function AppSidebar({ role }: { role: string }) {
   const [search, setSearch] = useState("");
   const term = search.trim().toLowerCase();
   const viewOnly = role === "staff";
+  const preferences = useQuery(api.appPreferences.get);
+  const disabledPaths = new Set<string>(
+    (Object.keys(OPTIONAL_DOCUMENT_PATHS) as (keyof typeof OPTIONAL_DOCUMENT_PATHS)[])
+      .filter((key) => preferences && !preferences.documents[key])
+      .flatMap((key) => OPTIONAL_DOCUMENT_PATHS[key]),
+  );
+  // Private (non-GST box) screens disappear from the menu while the privacy lock is on.
+  if (isLocked) disabledPaths.add("/reports/boxes");
   function navigate() {
     setOpenMobile(false);
   }
@@ -132,7 +150,7 @@ export function AppSidebar({ role }: { role: string }) {
                     const isExpanded =
                       Boolean(term) || (expanded[section.href] ?? active);
                     const children = section.items?.filter(
-                      (item) => !viewOnly || !isWriteOnlyPath(item.href),
+                      (item) => (!viewOnly || !isWriteOnlyPath(item.href)) && !disabledPaths.has(item.href),
                     ).filter(
                       (item) =>
                         !term ||

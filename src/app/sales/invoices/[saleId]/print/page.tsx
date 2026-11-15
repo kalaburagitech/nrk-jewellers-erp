@@ -138,9 +138,15 @@ export default function PrintInvoicePage({
   const data = useQuery(api.sales.getInvoiceData, {
     saleId: saleId as Id<"sales">,
   });
-  const [template, setTemplate] = useState<Template>("half-a4");
+  const preferences = useQuery(api.appPreferences.get);
+  // Until the user picks a size here, follow the shop default from Settings → Print.
+  const [chosenTemplate, setTemplate] = useState<Template | null>(null);
+  const template: Template = chosenTemplate ?? preferences?.defaultPrintTemplate ?? "half-a4";
   const [sharing, setSharing] = useState(false);
-  const [useHighResolutionLogo, setUseHighResolutionLogo] = useState(false);
+  // Which uploaded logo URL fell back to the bundled high-res logo; a new logo URL starts fresh automatically.
+  const [logoFallbackFor, setLogoFallbackFor] = useState<string | null>(null);
+  const useHighResolutionLogo = logoFallbackFor !== null && logoFallbackFor === (data?.logoUrl ?? "");
+  const setUseHighResolutionLogo = (value: boolean) => setLogoFallbackFor(value ? (data?.logoUrl ?? "") : null);
   const invoiceRef = useRef<HTMLDivElement>(null);
   const shareButtonRef = useRef<HTMLButtonElement>(null);
   const paper = template === "thermal" ? null : template === "half-a4" ? PAPER.a5 : PAPER.a4;
@@ -154,9 +160,6 @@ export default function PrintInvoicePage({
     if (autoShare && data) shareButtonRef.current?.focus();
   }, [autoShare, data]);
 
-  useEffect(() => {
-    setUseHighResolutionLogo(false);
-  }, [data?.logoUrl]);
 
 
   if (data === undefined) {

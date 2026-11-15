@@ -179,6 +179,8 @@
 .counter-dashboard [data-slot="card"] { box-shadow: 0 3px 14px rgb(23 60 104 / 4%); }
 .counter-dashboard [data-slot="card-header"] { border-bottom: 1px solid var(--border); padding-bottom: 0.8rem; }
 .counter-dashboard [data-slot="card-title"] { color: var(--primary); }
+/* Settings → General "screen zoom" (per device). Screen only, so printed bills keep their exact size. */
+@media screen { html { font-size: calc(16px * var(--nrk-view-scale, 1)); } }
 @media print { table { break-inside: auto; } tr { break-inside: avoid; } }
 /* Bills printed from inside the app shell (purchase bill, Girvi ticket): drop the
    sidebar and its desktop spacer column, which otherwise shift the sheet right

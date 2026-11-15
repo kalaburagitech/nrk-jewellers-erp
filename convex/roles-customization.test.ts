@@ -73,3 +73,16 @@ describe("custom field customisation", () => {
     expect((await owner.query(api.customFields.getDropdownLists, {})).expenseCategories).toEqual(["Polishing", "Rent"]);
   });
 });
+
+describe("app preferences", () => {
+  it("defaults on, saves for the owner only", async () => {
+    const { owner, admin, staff } = await fixture();
+    const initial = await staff.query(api.appPreferences.get, {});
+    expect(initial).toEqual({ documents: { quotations: true, proforma: true, orders: true, challans: true }, defaultPrintTemplate: "half-a4" });
+    const next = { documents: { ...initial.documents, challans: false }, defaultPrintTemplate: "full-a4" as const };
+    await expect(admin.mutation(api.appPreferences.save, { preferences: next })).rejects.toThrow(/only the owner/i);
+    await expect(staff.mutation(api.appPreferences.save, { preferences: next })).rejects.toThrow(/view-only/i);
+    await owner.mutation(api.appPreferences.save, { preferences: next });
+    expect(await staff.query(api.appPreferences.get, {})).toEqual(next);
+  });
+});

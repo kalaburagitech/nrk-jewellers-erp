@@ -109,7 +109,7 @@ describe("manual numbering and soft deletion", () => {
     expect((await f.t.run((ctx) => ctx.db.get(id)))?.boxNumber).toBe(888);
     await expect(
       f.owner.mutation(api.boxes.createNext, { boxNumber: 17 }),
-    ).rejects.toThrow("already exists");
+    ).rejects.toThrow("already in use");
     await expect(
       f.owner.mutation(api.boxes.createNext, { boxNumber: 1.2 }),
     ).rejects.toThrow("whole");
@@ -283,6 +283,11 @@ describe("backup restore", () => {
     await expect(
       f.owner.mutation(api.dataManagement.restore, {
         json: JSON.stringify({ ...backup, tables: {} }),
+      }),
+    ).rejects.toThrow("Missing table");
+    await expect(
+      f.owner.mutation(api.dataManagement.restore, {
+        json: JSON.stringify({ ...backup, tables: undefined }),
       }),
     ).rejects.toThrow("Incomplete");
   });

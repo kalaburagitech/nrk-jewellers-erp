@@ -33,6 +33,8 @@ const THEME_INIT_SCRIPT = `
     var colorTheme = localStorage.getItem("nrk-color-theme");
     document.documentElement.dataset.colorTheme = ["gold", "rose", "green", "plum"].includes(colorTheme) ? colorTheme : "gold";
     document.documentElement.dataset.readingSize = localStorage.getItem("nrk-reading-size") || "standard";
+    var viewScale = Number(localStorage.getItem("nrk-view-scale"));
+    if (viewScale >= 70 && viewScale <= 130) document.documentElement.style.setProperty("--nrk-view-scale", String(viewScale / 100));
   } catch (e) {}
 `;
 

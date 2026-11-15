@@ -9,6 +9,7 @@
  */
 
 import type * as accountingYears from "../accountingYears.js";
+import type * as appPreferences from "../appPreferences.js";
 import type * as appSecurity from "../appSecurity.js";
 import type * as appSecurityInternal from "../appSecurityInternal.js";
 import type * as auth from "../auth.js";
@@ -50,6 +51,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   accountingYears: typeof accountingYears;
+  appPreferences: typeof appPreferences;
   appSecurity: typeof appSecurity;
   appSecurityInternal: typeof appSecurityInternal;
   auth: typeof auth;
