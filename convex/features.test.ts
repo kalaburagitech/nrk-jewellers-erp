@@ -458,3 +458,26 @@ it("preserves the reference invoice's paise through discount and old-metal deduc
   ).toBe(252450);
   expect(invoice.sale.totalPaise - invoice.sale.amountPaidPaise).toBe(0);
 });
+describe("old item deduction (amount only)", () => {
+  const baseArgs = (f: Awaited<ReturnType<typeof fixture>>) => ({
+    customerId: f.customer,
+    isGst: false,
+    items: [{ boxItemId: f.item, otherDeductionMg: 0, ratePerGramPaise: 10000, wastageBasisPoints: 0, makingChargePaise: 0, stoneChargePaise: 0 }],
+    discountMode: "none" as const,
+    discountValue: 0,
+    payments: [],
+  });
+  it("takes the amount off the bill total and stores it", async () => {
+    const f = await fixture();
+    const { saleId } = await f.owner.mutation(api.sales.create, { ...baseArgs(f), oldItemDeductionPaise: 2500, idempotencyKey: "old-deduct" });
+    const sale = await f.t.run((ctx) => ctx.db.get(saleId));
+    expect(sale?.oldItemDeductionPaise).toBe(2500);
+    expect(sale?.totalPaise).toBe(7500);
+  });
+  it("rejects a deduction larger than the bill", async () => {
+    const f = await fixture();
+    await expect(
+      f.owner.mutation(api.sales.create, { ...baseArgs(f), oldItemDeductionPaise: 20000, idempotencyKey: "old-deduct-big" }),
+    ).rejects.toThrow("cannot exceed");
+  });
+});

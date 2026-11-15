@@ -1506,6 +1506,25 @@ export default function NewBillPage() {
                 </div>
               )}
 
+              {/* Amount-only old item deduction: no weight/purity/rate, just ₹ taken off the bill. */}
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <Label htmlFor="old-item-deduction" className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  Old item deduction (₹)
+                </Label>
+                <Input
+                  id="old-item-deduction"
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  value={oldItemDeductionRupees === "0" ? "" : oldItemDeductionRupees}
+                  onChange={(e) => setOldItemDeductionRupees(e.target.value)}
+                  aria-invalid={Boolean(oldItemDeductionError)}
+                  className="h-8 w-32 text-right font-mono text-xs"
+                />
+              </div>
+              {oldItemDeductionError && (
+                <p className="text-right text-[11px] font-medium text-destructive">{oldItemDeductionError}</p>
+              )}
+
               {totals.oldGoldValuePaise > 0 && (
                 <div className="flex justify-between text-xs text-amber-600">
                   <span>Old gold / silver deduction</span>

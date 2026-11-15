@@ -6,12 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
-const HOLD_MS = 600;
+/** Press-and-hold time before the passcode popup opens. A normal click just follows the home link. */
+const HOLD_MS = 5000;
 
 /**
  * Hidden owner control for the privacy lock. Renders its children as plain
- * text (no button styling, no hint); a tap or a long-press opens a passcode
- * popup, or — when already unlocked — offers to hide the private sections again.
+ * text (no button styling, no hint). A normal click behaves like the rest of the
+ * logo (goes Home); only holding it for 5 seconds opens the passcode popup, or —
+ * when already unlocked — offers to hide the private sections again.
  * When `enabled` is false it renders the text and does nothing.
  */
 export function PrivacyUnlockTrigger({ enabled, className, children }: { enabled: boolean; className?: string; children: ReactNode }) {
@@ -20,6 +22,8 @@ export function PrivacyUnlockTrigger({ enabled, className, children }: { enabled
   const [code, setCode] = useState("");
   const [error, setError] = useState(false);
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Set when a hold opened the popup, so the click the browser fires on release doesn't also go Home.
+  const holdFired = useRef(false);
 
   if (!enabled) return <span className={className}>{children}</span>;
 
@@ -37,16 +41,23 @@ export function PrivacyUnlockTrigger({ enabled, className, children }: { enabled
     <>
       <span
         className={`select-none [-webkit-touch-callout:none] ${className ?? ""}`}
-        // The text sits inside the logo's home link: swallow the click so it doesn't navigate or close the menu.
+        // A plain click falls through to the surrounding home link. Only the click
+        // that ends a successful hold is swallowed.
         onClick={(event) => {
+          if (!holdFired.current) return;
+          holdFired.current = false;
           event.preventDefault();
           event.stopPropagation();
-          show();
         }}
         onPointerDown={() => {
           cancelHold();
-          holdTimer.current = setTimeout(show, HOLD_MS);
+          holdFired.current = false;
+          holdTimer.current = setTimeout(() => {
+            holdFired.current = true;
+            show();
+          }, HOLD_MS);
         }}
+        onDragStart={(event) => event.preventDefault()}
         onPointerUp={cancelHold}
         onPointerLeave={cancelHold}
         onPointerCancel={cancelHold}
