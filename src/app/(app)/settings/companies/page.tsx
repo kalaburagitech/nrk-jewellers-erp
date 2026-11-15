@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { usePrivacyLock } from "@/components/privacy-lock-context";
 
 const TYPES = [
   { value: "daily_sales", label: "Daily sales company" },
@@ -28,6 +29,7 @@ function companyTypeName(companyType?: string) {
 }
 
 export default function CompaniesPage() {
+  const { isLocked } = usePrivacyLock();
   const access = useQuery(api.organizations.getMyAccess);
   const createCompany = useMutation(api.organizations.createCompany);
   const selectCompany = useMutation(api.organizations.selectCompany);
@@ -49,7 +51,8 @@ export default function CompaniesPage() {
   const isOwner = access?.membership?.role === "owner";
   const filteredCompanies = useMemo(() => {
     const term = search.trim().toLowerCase();
-    return companies.filter((company) => {
+    const baseList = isLocked ? companies.filter((c) => c.organizationId === currentId) : companies;
+    return baseList.filter((company) => {
       const owned = company.role === "owner";
       const matchesScope = scope === "all" || (scope === "mine" ? owned : !owned);
       const matchesType = typeFilter === "all" || company.companyType === typeFilter;

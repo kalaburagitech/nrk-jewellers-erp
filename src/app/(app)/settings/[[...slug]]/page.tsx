@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { Building2, FileText, Gem, ShieldCheck, Tags, PanelsTopLeft, CalendarRange } from "lucide-react";
+import { Building2, FileText, Gem, ShieldCheck, Tags, PanelsTopLeft, CalendarRange, Sliders } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 
 const sections = [
+  { title: "General settings", description: "Privacy lock (passcode 1968), application security, multi-firm, and screen scale.", href: "/settings/general", icon: Sliders },
   { title: "Business profile", description: "Business name, address, contact details and invoice identity.", href: "/settings/business", icon: Building2 },
   { title: "Companies", description: "Create separate daily-sales and GST workspaces with isolated records.", href: "/settings/companies", icon: PanelsTopLeft },
   { title: "Booking years", description: "Create and close the financial years for this company.", href: "/settings/accounting-years", icon: CalendarRange },

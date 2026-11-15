@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { ArrowLeft, Bell, Building2, KeyRound, Lock, LockKeyhole, LockOpen, LogOut, Search } from "lucide-react";
+import { ArrowLeft, Bell, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -197,10 +197,7 @@ export function AppTopbar({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
-  const { isLocked, unlock, lock: lockPrivacy } = usePrivacyLock();
-  const [privacyModalOpen, setPrivacyModalOpen] = useState(false);
-  const [privacyCode, setPrivacyCode] = useState("");
-  const [privacyError, setPrivacyError] = useState<string | null>(null);
+  const { isLocked } = usePrivacyLock();
 
   const visibleCompanies = useMemo(() => {
     if (!isLocked) return companies;
@@ -252,28 +249,6 @@ export function AppTopbar({
             {role.replace("_", " ")}
           </Badge>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className={`h-8 w-8 sm:h-10 sm:w-10 rounded-md transition-colors ${
-            isLocked
-              ? "text-amber-500 hover:bg-amber-500/10 hover:text-amber-600"
-              : "text-emerald-500 hover:bg-emerald-500/10 hover:text-emerald-600"
-          }`}
-          aria-label={isLocked ? "Privacy lock (click to unlock with code 1968)" : "Privacy unlocked (click to lock)"}
-          title={isLocked ? "Privacy lock (click to unlock)" : "Privacy unlocked (click to lock)"}
-          onClick={() => {
-            if (isLocked) {
-              setPrivacyCode("");
-              setPrivacyError(null);
-              setPrivacyModalOpen(true);
-            } else {
-              lockPrivacy();
-            }
-          }}
-        >
-          {isLocked ? <Lock className="h-4 w-4" /> : <LockOpen className="h-4 w-4" />}
-        </Button>
         <div className="hidden md:flex items-center gap-1 sm:gap-2">
           <TextSizeToggle />
           <ColorThemePicker />
@@ -362,61 +337,6 @@ export function AppTopbar({
               }
             }}>{savingPassword ? "Updating…" : passwordSaved ? "Updated" : "Update password"}</Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <Dialog open={privacyModalOpen} onOpenChange={setPrivacyModalOpen}>
-        <DialogContent className="w-[92vw] sm:max-w-md rounded-2xl p-5 sm:p-6">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-              <Lock className="h-5 w-5 text-amber-500" />
-              Unlock Privacy Mode
-            </DialogTitle>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (unlock(privacyCode)) {
-                setPrivacyModalOpen(false);
-                setPrivacyCode("");
-                setPrivacyError(null);
-              } else {
-                setPrivacyError("Invalid passcode. Please enter code 1968.");
-              }
-            }}
-            className="space-y-4 py-2"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="privacy-code" className="text-sm font-medium">Enter 4-digit code</Label>
-              <Input
-                id="privacy-code"
-                type="password"
-                inputMode="numeric"
-                autoFocus
-                maxLength={4}
-                placeholder="••••"
-                value={privacyCode}
-                onChange={(e) => {
-                  setPrivacyCode(e.target.value);
-                  setPrivacyError(null);
-                }}
-                className="text-center text-xl tracking-widest font-mono h-12 rounded-xl"
-              />
-              {privacyError && (
-                <p className="text-xs text-destructive font-medium">{privacyError}</p>
-              )}
-            </div>
-            <DialogFooter className="flex-row justify-end gap-2 pt-2 sm:gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="flex-1 sm:flex-initial"
-                onClick={() => setPrivacyModalOpen(false)}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" className="flex-1 sm:flex-initial">Unlock</Button>
-            </DialogFooter>
-          </form>
         </DialogContent>
       </Dialog>
     </header>
