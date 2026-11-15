@@ -468,9 +468,9 @@ function PartyTransactionsView({ customer }: { customer: Doc<"customers"> }) {
   return (
     <div className="space-y-5">
       {/* Selected Party Header with Actions (Page 8) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl font-bold text-foreground">{customer.name}</h2>
             <Badge variant="outline" className="text-xs capitalize">
               {CUSTOMER_TYPE_LABEL[customer.customerType] || "Regular"}
@@ -489,7 +489,7 @@ function PartyTransactionsView({ customer }: { customer: Doc<"customers"> }) {
         </div>
 
         {/* Action icons: WhatsApp, Call, Edit, Add Sale */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {cleanPhone && (
             <Button
               asChild
@@ -564,12 +564,11 @@ function PartyTransactionsView({ customer }: { customer: Doc<"customers"> }) {
               <Table>
                 <TableHeader>
                   <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
-                    <TableHead className="py-2.5">Type</TableHead>
-                    <TableHead>Number</TableHead>
+                    <TableHead className="py-2.5">Bill No.</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Total Amount</TableHead>
-                    <TableHead className="text-right">Balance Due</TableHead>
-                    <TableHead className="text-right w-20">Actions</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                    <TableHead className="text-right">Balance</TableHead>
+                    <TableHead className="text-right">Print</TableHead>
                   </tr>
                 </TableHeader>
                 <TableBody>
@@ -579,13 +578,9 @@ function PartyTransactionsView({ customer }: { customer: Doc<"customers"> }) {
                       className="cursor-pointer hover:bg-muted/30"
                       onClick={() => router.push(`/sales/invoices/${sale._id}/print`)}
                     >
-                      <TableCell className="font-medium text-xs">
-                        <Badge variant="outline" className="text-[11px] font-normal">
-                          Sale
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-semibold text-primary text-xs">
-                        {sale.invoiceNumber}
+                      <TableCell className="text-xs">
+                        <span className="font-semibold text-primary">{sale.invoiceNumber}</span>
+                        <Badge variant="outline" className="ml-2 text-[10px] font-normal">Sale</Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(sale.createdAt).toLocaleDateString("en-IN")}
@@ -606,9 +601,10 @@ function PartyTransactionsView({ customer }: { customer: Doc<"customers"> }) {
                         className="text-right"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                          <Link href={`/sales/invoices/${sale._id}/print`} target="_blank">
+                        <Button asChild variant="outline" size="sm" className="h-7 gap-1 px-2 text-xs">
+                          <Link href={`/sales/invoices/${sale._id}/print`} target="_blank" aria-label={`Print bill ${sale.invoiceNumber}`}>
                             <Printer className="h-3.5 w-3.5" />
+                            <span className="hidden sm:inline">Print</span>
                           </Link>
                         </Button>
                       </TableCell>

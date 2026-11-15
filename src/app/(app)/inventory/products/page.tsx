@@ -539,9 +539,9 @@ function ProductDetailView({
   return (
     <div className="space-y-5">
       {/* Item Header & Controls (Page 10) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl font-bold uppercase tracking-tight text-foreground">
               {product.name}
             </h2>
@@ -557,7 +557,7 @@ function ProductDetailView({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <AdjustItemDialog product={product} />
           <ProductFormDialog
             product={product}
@@ -881,9 +881,9 @@ export default function ProductsPage() {
           {tabToUse === "boxes" && activeBox ? (
             <div className="space-y-5">
               {/* Box Header & Controls matching Page 10 */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
-                <div>
-                  <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-bold uppercase tracking-tight text-foreground">
                       BOX NO{activeBox.box.boxNumber}
                       {activeBox.box.label ? ` (${activeBox.box.label})` : ""}
@@ -898,7 +898,7 @@ export default function ProductsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button asChild size="sm" className="h-9 bg-[#1a73e8] hover:bg-[#1557b0] text-white">
                     <Link href={`/inventory/adjustments?boxId=${activeBox.box._id}`}>
                       <Sliders className="h-3.5 w-3.5 mr-1" />

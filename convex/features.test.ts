@@ -481,3 +481,18 @@ describe("old item deduction (amount only)", () => {
     ).rejects.toThrow("cannot exceed");
   });
 });
+describe("editing a box", () => {
+  it("changes label and number, clears a label, and rejects a taken number", async () => {
+    const f = await fixture();
+    const empty = await f.owner.mutation(api.boxes.createNext, { boxNumber: 117 });
+    await f.owner.mutation(api.boxes.update, { boxId: empty, boxNumber: 118, label: "  Chains " });
+    let box = await f.t.run((ctx) => ctx.db.get(empty));
+    expect(box?.boxNumber).toBe(118);
+    expect(box?.label).toBe("Chains");
+    await f.owner.mutation(api.boxes.update, { boxId: empty, boxNumber: 118, label: "" });
+    box = await f.t.run((ctx) => ctx.db.get(empty));
+    expect(box?.label).toBeUndefined();
+    await expect(f.owner.mutation(api.boxes.update, { boxId: empty, boxNumber: 17 })).rejects.toThrow("already in use");
+    await expect(f.owner.mutation(api.boxes.update, { boxId: empty, boxNumber: 2.5 })).rejects.toThrow("whole");
+  });
+});

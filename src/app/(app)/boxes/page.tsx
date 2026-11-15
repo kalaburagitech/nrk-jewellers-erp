@@ -90,21 +90,77 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
   );
 }
 
+/** Edit a box's number and label — works for empty boxes too. */
+function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; label?: string } }) {
+  const updateBox = useMutation(api.boxes.update);
+  const [number, setNumber] = useState(String(box.boxNumber));
+  const [label, setLabel] = useState(box.label ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const dirty = number.trim() !== String(box.boxNumber) || label.trim() !== (box.label ?? "");
+
+  async function save() {
+    setError("");
+    setSaved(false);
+    const parsed = Number(number);
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      setError("Enter a positive whole box number.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateBox({ boxId: box._id, boxNumber: parsed, label: label.trim() || undefined });
+      setSaved(true);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not update the box."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Edit box</p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="grid gap-1">
+          <label htmlFor="edit-box-number" className="text-xs text-muted-foreground">Box no.</label>
+          <Input id="edit-box-number" type="number" min="1" step="1" value={number} onChange={(e) => { setNumber(e.target.value); setSaved(false); }} className="w-24" />
+        </div>
+        <div className="grid min-w-40 flex-1 gap-1">
+          <label htmlFor="edit-box-label" className="text-xs text-muted-foreground">Label</label>
+          <Input id="edit-box-label" value={label} maxLength={60} placeholder="e.g. Chains" onChange={(e) => { setLabel(e.target.value); setSaved(false); }} />
+        </div>
+        <Button type="submit" disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</Button>
+      </div>
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {saved && !dirty && <p role="status" className="text-xs text-success">Box updated.</p>}
+    </form>
+  );
+}
+
 function BoxDetailDialog({
-  boxId,
+  box,
   onClose,
 }: {
-  boxId: Id<"boxes">;
+  box: { _id: Id<"boxes">; boxNumber: number; label?: string };
   onClose: () => void;
 }) {
-  const items = useQuery(api.boxes.getItems, { boxId });
+  const items = useQuery(api.boxes.getItems, { boxId: box._id });
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Box contents</DialogTitle>
+          <DialogTitle>Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</DialogTitle>
         </DialogHeader>
+        <BoxEditForm key={`${box.boxNumber}-${box.label ?? ""}`} box={box} />
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : items.length === 0 ? (
@@ -149,6 +205,9 @@ export default function BoxOverviewPage() {
         b.label?.toLowerCase().includes(q.toLowerCase()),
     );
   }, [boxes, search]);
+
+  // Live record, so the dialog title and edit form follow saved changes.
+  const selectedBoxRecord = selectedBox ? boxes?.find((b) => b._id === selectedBox) : undefined;
 
   const selection = useRecordSelection(
     filtered?.map((box) => box._id) ?? [],
@@ -290,20 +349,33 @@ export default function BoxOverviewPage() {
                     {mgToGramsDisplay(reportByBoxId.get(box._id)?.currentPhysicalWeightMg ?? 0)}g net
                   </span>
                 </button>
-                <DeleteRecordButton
-                  table="boxes"
-                  id={box._id}
-                  name={`Box ${box.boxNumber}`}
-                />
+                <div className="flex flex-wrap items-center justify-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1 text-xs"
+                    onClick={() => setSelectedBox(box._id)}
+                    aria-label={`Edit Box ${box.boxNumber}`}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
+                  <DeleteRecordButton
+                    table="boxes"
+                    id={box._id}
+                    name={`Box ${box.boxNumber}`}
+                  />
+                </div>
               </CardContent>
             </Card>
           ))}
         </div>
       )}
 
-      {selectedBox && (
+      {selectedBoxRecord && (
         <BoxDetailDialog
-          boxId={selectedBox}
+          box={selectedBoxRecord}
           onClose={() => setSelectedBox(null)}
         />
       )}

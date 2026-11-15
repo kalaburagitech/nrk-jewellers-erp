@@ -156,6 +156,27 @@ export const createNext = mutation({
   },
 });
 
+/** Change an existing box's number and/or label. Items reference the box by id, so renumbering is safe. */
+export const update = mutation({
+  args: { boxId: v.id("boxes"), boxNumber: v.number(), label: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, ["inventory_manager"]);
+    const box = await ctx.db.get(args.boxId);
+    if (!box || box.deletedAt || box.organizationId !== auth.organizationId) throw new Error("Box not found");
+    if (!Number.isSafeInteger(args.boxNumber) || args.boxNumber < 1) throw new Error("Enter a positive whole box number");
+    if (args.boxNumber !== box.boxNumber) {
+      const duplicate = await ctx.db.query("boxes")
+        .withIndex("by_org_and_number", (q) => q.eq("organizationId", auth.organizationId).eq("boxNumber", args.boxNumber))
+        .first();
+      if (duplicate && duplicate._id !== box._id) throw new Error("That box number is already in use. Please choose a different number.");
+    }
+    const label = args.label?.trim() || undefined;
+    if (label && label.length > 60) throw new Error("Box label must be 60 characters or fewer");
+    await ctx.db.patch(box._id, { boxNumber: args.boxNumber, label });
+  },
+});
+
 /**
  * Adds one physical piece directly into a box from the billing screen, for
  * when an operator finds a box empty (or the item they need missing) mid-sale
