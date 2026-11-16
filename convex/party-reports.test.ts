@@ -39,3 +39,31 @@ it("profit uses the exact purchase cost of the sold piece and the statement keep
   expect(statement?.closingBalancePaise).toBe(280000);
   expect(statement?.summary).toMatchObject({ totalSalePaise: 680000, moneyInPaise: 400000 });
 });
+
+it("balance sheet balances and places capital, loans and other income correctly", async () => {
+  const t = convexTest(schema, modules);
+  const d = await t.run(async (ctx) => {
+    const userId = await ctx.db.insert("users", { name: "Owner" });
+    const org = await ctx.db.insert("organizations", { name: "Shop", createdAt: 1 });
+    const branchId = await ctx.db.insert("branches", { organizationId: org, name: "Main", isDefault: true, createdAt: 1 });
+    await ctx.db.insert("memberships", { userId, organizationId: org, branchId, role: "owner", status: "active", createdAt: 1 });
+    const account = await ctx.db.insert("bankAccounts", { organizationId: org, name: "Cash", type: "cash", openingBalancePaise: 0, isActive: true, createdAt: 1 });
+    await ctx.db.insert("customers", { organizationId: org, name: "Asha", customerType: "regular", openingBalancePaise: 0, currentBalancePaise: 50_000, isActive: true, createdAt: 1 });
+    return { userId, account };
+  });
+  const owner = t.withIdentity({ subject: `${d.userId}|session` });
+  await owner.mutation(api.accountEntries.create, { kind: "capital_in", name: "Owner", amountPaise: 1_000_000, entryDate: 10, paymentAccountId: d.account });
+  await owner.mutation(api.accountEntries.create, { kind: "loan_taken", name: "Bank", amountPaise: 300_000, entryDate: 10, paymentAccountId: d.account });
+  await owner.mutation(api.accountEntries.create, { kind: "other_income", name: "Interest", amountPaise: 20_000, entryDate: 10, paymentAccountId: d.account });
+
+  const bs = await owner.query(api.balanceSheet.get, {});
+  expect(bs.totalAssets).toBe(bs.totalLiabilitiesAndEquity);
+  expect(bs.liabilities.find((l) => l.label.startsWith("Loans"))?.paise).toBe(300_000);
+  expect(bs.equity[0].paise).toBe(1_000_000);
+  // Cash 13,20,000 + debtors 50,000 = 13,70,000 assets.
+  expect(bs.totalAssets).toBe(1_370_000);
+
+  const pnl = await owner.query(api.partyReports.profitReports, { startDate: 0, endDate: 100 });
+  expect(pnl.pnl.otherIncomeTotalPaise).toBe(20_000);
+  expect(pnl.pnl.netProfitPaise).toBe(20_000);
+});

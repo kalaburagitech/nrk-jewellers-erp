@@ -21,6 +21,7 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
       { title: "Profit And Loss", href: "/reports/profit-loss", private: true },
       { title: "Bill Wise Profit", href: "/reports/bill-profit", private: true },
       { title: "Cash Flow", href: "/reports/cash-flow" },
+      { title: "Balance Sheet / Trial Balance", href: "/reports/balance-sheet", private: true },
     ],
   },
   {
@@ -31,6 +32,7 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
       { title: "All Parties", href: "/reports/all-parties" },
       { title: "Party Report By Item", href: "/reports/party-by-item" },
       { title: "Sale Purchase By Party", href: "/reports/sale-purchase-by-party" },
+      { title: "Sale Purchase By Party Group", href: "/reports/sale-purchase-by-party-group" },
       { title: "Outstanding / Ageing", href: "/reports/customers" },
     ],
   },
@@ -38,7 +40,9 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
     section: "GST reports",
     items: [
       { title: "GSTR 1", href: "/reports/gstr-1" },
+      { title: "GSTR 2", href: "/reports/gstr-2" },
       { title: "GSTR 3B", href: "/reports/gstr-3b" },
+      { title: "GSTR 9", href: "/reports/gstr-9" },
       { title: "Sale Summary By HSN", href: "/reports/hsn-summary" },
       { title: "GST Sales & Purchase Register", href: "/reports/gst" },
     ],

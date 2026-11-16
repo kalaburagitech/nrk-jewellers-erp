@@ -165,6 +165,7 @@ export default defineSchema({
     gstin: v.optional(v.string()),
     gstType: v.optional(GST_TYPE),
     state: v.optional(v.string()),
+    partyGroup: v.optional(v.string()), // Vyapar party grouping, e.g. "Wholesale"; unset = "General"
     customerType: v.union(v.literal("cash"), v.literal("regular"), v.literal("credit")),
     creditLimitPaise: v.optional(v.number()),
     openingBalancePaise: v.number(),
@@ -195,6 +196,7 @@ export default defineSchema({
     gstin: v.optional(v.string()),
     gstType: v.optional(GST_TYPE),
     state: v.optional(v.string()),
+    partyGroup: v.optional(v.string()), // Vyapar party grouping, e.g. "Wholesale"; unset = "General"
     creditLimitPaise: v.optional(v.number()),
     customFields: v.optional(v.record(v.string(), v.string())),
     openingBalancePaise: v.number(),
@@ -616,6 +618,32 @@ export default defineSchema({
     paymentAccountId: v.optional(v.id("bankAccounts")),
     description: v.optional(v.string()),
     expenseDate: v.number(),
+    status: v.union(v.literal("recorded"), v.literal("deleted")),
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_org", ["organizationId"]),
+
+  // ---------- Other income, capital, loans, fixed assets ----------
+  // Money that isn't a sale, purchase or expense. Feeds Profit & Loss
+  // (other income, loan interest) and the Balance Sheet (capital, loans,
+  // fixed assets). Posts to a cash/bank account like expenses do.
+  accountEntries: defineTable({
+    deletedAt: v.optional(v.number()),
+    organizationId: v.id("organizations"),
+    kind: v.union(
+      v.literal("other_income"),
+      v.literal("capital_in"),
+      v.literal("drawings"),
+      v.literal("loan_taken"),
+      v.literal("loan_repaid"),
+      v.literal("loan_interest"),
+      v.literal("fixed_asset"),
+    ),
+    name: v.string(), // income category, lender, or asset name
+    amountPaise: v.number(),
+    entryDate: v.number(),
+    paymentAccountId: v.optional(v.id("bankAccounts")),
+    description: v.optional(v.string()),
     status: v.union(v.literal("recorded"), v.literal("deleted")),
     createdByUserId: v.id("users"),
     createdAt: v.number(),

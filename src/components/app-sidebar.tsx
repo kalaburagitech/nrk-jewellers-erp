@@ -35,6 +35,7 @@ const OPTIONAL_DOCUMENT_PATHS = {
   proforma: ["/sales/proforma"],
   orders: ["/sales/orders", "/purchases/orders"],
   challans: ["/sales/challans"],
+  otherIncome: ["/cash-bank/accounts?tab=income"],
 } as const;
 const GROUPS = [
   {
@@ -62,7 +63,7 @@ export function AppSidebar({ role }: { role: string }) {
   if (preferences) setAmountDecimals(preferences.amountDecimals);
   const disabledPaths = new Set<string>(
     (Object.keys(OPTIONAL_DOCUMENT_PATHS) as (keyof typeof OPTIONAL_DOCUMENT_PATHS)[])
-      .filter((key) => preferences && !preferences.documents[key])
+      .filter((key) => preferences && !(key === "otherIncome" ? preferences.otherIncome : preferences.documents[key]))
       .flatMap((key) => OPTIONAL_DOCUMENT_PATHS[key]),
   );
   const access = useQuery(api.organizations.getMyAccess);

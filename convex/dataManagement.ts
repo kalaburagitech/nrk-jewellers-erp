@@ -36,6 +36,8 @@ export const TABLES = [
   "ewayBills",
   "girviLoans",
   "girviReceipts",
+  "productStock",
+  "accountEntries",
 ] as const;
 const MASTER_TABLES = [
   "customers",

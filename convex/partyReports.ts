@@ -327,6 +327,12 @@ export const profitReports = query({
       ctx.db.query("expenses").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
     ]);
+    const accountEntries = live(await ctx.db.query("accountEntries").withIndex("by_org", (q) => q.eq("organizationId", org)).collect())
+      .filter((e) => e.status === "recorded" && e.entryDate >= args.startDate && e.entryDate <= args.endDate);
+    const otherIncome = new Map<string, number>();
+    for (const e of accountEntries) if (e.kind === "other_income") otherIncome.set(e.name, (otherIncome.get(e.name) ?? 0) + e.amountPaise);
+    const otherIncomeTotal = [...otherIncome.values()].reduce((a, n) => a + n, 0);
+    const loanInterest = accountEntries.filter((e) => e.kind === "loan_interest").reduce((a, e) => a + e.amountPaise, 0);
     const productName = new Map(products.map((p) => [String(p._id), p.name]));
     const categoryName = new Map(categories.map((c) => [String(c._id), c.name]));
     const productCategory = new Map(products.map((p) => [String(p._id), p.stockCategoryId ? (categoryName.get(String(p.stockCategoryId)) ?? "—") : "Uncategorised"]));
@@ -401,7 +407,10 @@ export const profitReports = query({
         grossProfitPaise: grossProfit,
         expenses: [...byCategory.entries()].map(([category, amountPaise]) => ({ category, amountPaise })).sort((a, b) => b.amountPaise - a.amountPaise),
         expenseTotalPaise: expenseTotal,
-        netProfitPaise: grossProfit - expenseTotal,
+        otherIncome: [...otherIncome.entries()].map(([category, amountPaise]) => ({ category, amountPaise })),
+        otherIncomeTotalPaise: otherIncomeTotal,
+        loanInterestPaise: loanInterest,
+        netProfitPaise: grossProfit + otherIncomeTotal - expenseTotal - loanInterest,
         // Shown for reference, not part of profit (GST is a pass-through; purchases go to stock).
         purchasePaise: purchaseValue,
         purchaseReturnPaise: purchaseReturnValue,
@@ -505,5 +514,52 @@ export const salePurchaseByCategory = query({
       r.purchasePaise += k * i.lineTotalPaise;
     }
     return [...rows.values()].sort((a, b) => a.category.localeCompare(b.category));
+  },
+});
+
+const groupOf = (p?: { partyGroup?: string }) => p?.partyGroup?.trim() || "General";
+
+/** Distinct party group names (for the group picker on party forms). */
+export const partyGroups = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const { customers, suppliers } = await partyNames(ctx, auth.organizationId);
+    return [...new Set(["General", ...[...customers, ...suppliers].map(groupOf)])].sort();
+  },
+});
+
+/** Sale and purchase totals per party group (returns deducted). */
+export const salePurchaseByPartyGroup = query({
+  args: range,
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const org = auth.organizationId;
+    const [sales, purchases, names] = await Promise.all([
+      salesInRange(ctx, org, args.startDate, args.endDate),
+      purchasesInRange(ctx, org, args.startDate, args.endDate),
+      partyNames(ctx, org),
+    ]);
+    const rows = new Map<string, { group: string; parties: Set<string>; salePaise: number; purchasePaise: number }>();
+    const row = (g: string) => {
+      const r = rows.get(g) ?? { group: g, parties: new Set<string>(), salePaise: 0, purchasePaise: 0 };
+      rows.set(g, r);
+      return r;
+    };
+    for (const s of sales) {
+      const amount = isSaleInvoice(s) ? s.totalPaise : isSaleReturn(s) ? -s.totalPaise : 0;
+      if (!amount) continue;
+      const r = row(groupOf(names.customerById.get(String(s.customerId))));
+      r.salePaise += amount;
+      r.parties.add(`c:${s.customerId}`);
+    }
+    for (const p of purchases) {
+      const amount = isPurchaseInvoice(p) ? p.totalPaise : isPurchaseReturn(p) ? -p.totalPaise : 0;
+      if (!amount) continue;
+      const r = row(groupOf(names.supplierById.get(String(p.supplierId))));
+      r.purchasePaise += amount;
+      r.parties.add(`s:${p.supplierId}`);
+    }
+    return [...rows.values()].map((r) => ({ group: r.group, partyCount: r.parties.size, salePaise: r.salePaise, purchasePaise: r.purchasePaise })).sort((a, b) => a.group.localeCompare(b.group));
   },
 });

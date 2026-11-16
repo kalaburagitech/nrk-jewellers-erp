@@ -126,6 +126,7 @@ function CustomerFormDialog({
   customer?: Doc<"customers">;
   trigger?: React.ReactNode;
 }) {
+  const partyGroups = useQuery(api.partyReports.partyGroups) ?? ["General"];
   const createCustomer = useMutation(api.customers.create);
   const updateCustomer = useMutation(api.customers.update);
   const [open, setOpen] = useState(false);
@@ -143,6 +144,7 @@ function CustomerFormDialog({
     gstin: customer?.gstin ?? "",
     gstType: customer?.gstType ?? "unregistered_consumer",
     state: customer?.state ?? "Karnataka",
+    partyGroup: customer?.partyGroup ?? "",
     customerType: customer?.customerType ?? "regular",
     creditLimitRupees:
       customer?.creditLimitPaise !== undefined
@@ -181,6 +183,7 @@ function CustomerFormDialog({
         gstin: values.gstin || undefined,
         gstType: (values.gstType || undefined) as Doc<"customers">["gstType"],
         state: values.state || undefined,
+        partyGroup: values.partyGroup || undefined,
         customerType: values.customerType,
         creditLimitPaise: values.creditLimitRupees
           ? rupeesToPaise(values.creditLimitRupees) ?? undefined
@@ -334,6 +337,20 @@ function CustomerFormDialog({
                         <FormControl>
                           <Input {...field} placeholder="e.g. Karnataka" className="h-9 text-sm" />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="partyGroup"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-xs">Party Group</FormLabel>
+                        <FormControl>
+                          <Input {...field} list="party-groups" placeholder="General" className="h-9 text-sm" />
+                        </FormControl>
+                        <datalist id="party-groups">{partyGroups.map((g) => <option key={g} value={g} />)}</datalist>
                         <FormMessage />
                       </FormItem>
                     )}

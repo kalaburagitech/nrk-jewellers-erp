@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as accountEntries from "../accountEntries.js";
 import type * as accountingYears from "../accountingYears.js";
 import type * as appPreferences from "../appPreferences.js";
 import type * as appSecurity from "../appSecurity.js";
@@ -15,6 +16,7 @@ import type * as appSecurityInternal from "../appSecurityInternal.js";
 import type * as auditTrail from "../auditTrail.js";
 import type * as auth from "../auth.js";
 import type * as autoBackup from "../autoBackup.js";
+import type * as balanceSheet from "../balanceSheet.js";
 import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
 import type * as cashReports from "../cashReports.js";
@@ -59,6 +61,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  accountEntries: typeof accountEntries;
   accountingYears: typeof accountingYears;
   appPreferences: typeof appPreferences;
   appSecurity: typeof appSecurity;
@@ -66,6 +69,7 @@ declare const fullApi: ApiFromModules<{
   auditTrail: typeof auditTrail;
   auth: typeof auth;
   autoBackup: typeof autoBackup;
+  balanceSheet: typeof balanceSheet;
   boxes: typeof boxes;
   cashBank: typeof cashBank;
   cashReports: typeof cashReports;

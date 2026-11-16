@@ -87,6 +87,11 @@ export const NAV_SECTIONS: NavSection[] = [
     title: "Cash & Bank",
     icon: Landmark,
     href: "/cash-bank",
+    items: [
+      { title: "Bank & Cash Accounts", href: "/cash-bank" },
+      { title: "Other Income", href: "/cash-bank/accounts?tab=income" },
+      { title: "Capital, Loans & Assets", href: "/cash-bank/accounts?tab=capital" },
+    ],
   },
   {
     title: "Metal Rates",

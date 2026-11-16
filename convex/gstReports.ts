@@ -174,30 +174,7 @@ export const gstr3b = query({
       sgstPaise: out.sgstPaise - ret.sgstPaise,
     };
 
-    const [purchases, suppliers] = await Promise.all([
-      ctx.db.query("purchases").withIndex("by_org_and_time", (q) => q.eq("organizationId", auth.organizationId).gte("createdAt", args.startDate).lte("createdAt", args.endDate)).collect(),
-      ctx.db.query("suppliers").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId)).collect(),
-    ]);
-    const supplierById = new Map(suppliers.map((s) => [String(s._id), s]));
-    const itc = { taxablePaise: 0, igstPaise: 0, cgstPaise: 0, sgstPaise: 0 };
-    let unknownState = 0;
-    for (const p of purchases) {
-      if (p.deletedAt || p.status !== "finalized" || p.taxPaise <= 0) continue;
-      const type = p.documentType ?? "purchase_invoice";
-      if (type === "purchase_order") continue;
-      const sign = type === "purchase_return" ? -1 : 1;
-      const supplierState = supplierById.get(String(p.supplierId))?.state;
-      if (!supplierState || !org?.state) unknownState++;
-      // Purchases store one tax amount: inter-state supplier → IGST, same state → half CGST + half SGST.
-      const inter = !!supplierState && !!org?.state && supplierState.trim().toLowerCase() !== org.state.trim().toLowerCase();
-      itc.taxablePaise += sign * p.subtotalPaise;
-      if (inter) itc.igstPaise += sign * p.taxPaise;
-      else {
-        const half = Math.round(p.taxPaise / 2);
-        itc.cgstPaise += sign * half;
-        itc.sgstPaise += sign * (p.taxPaise - half);
-      }
-    }
+    const { itc, unknownState } = await inward(ctx, auth.organizationId, org?.state, args.startDate, args.endDate);
     return {
       outward,
       itc,
@@ -207,6 +184,79 @@ export const gstr3b = query({
         cgstPaise: outward.cgstPaise - itc.cgstPaise,
         sgstPaise: outward.sgstPaise - itc.sgstPaise,
       },
+    };
+  },
+});
+
+/** Purchase bills with GST in range, split IGST vs CGST/SGST by supplier state vs company state. */
+async function inward(ctx: QueryCtx, organizationId: Id<"organizations">, companyState: string | undefined, startDate: number, endDate: number) {
+  const [purchases, suppliers] = await Promise.all([
+    ctx.db.query("purchases").withIndex("by_org_and_time", (q) => q.eq("organizationId", organizationId).gte("createdAt", startDate).lte("createdAt", endDate)).collect(),
+    ctx.db.query("suppliers").withIndex("by_org", (q) => q.eq("organizationId", organizationId)).collect(),
+  ]);
+  const supplierById = new Map(suppliers.map((s) => [String(s._id), s]));
+  const itc = { taxablePaise: 0, igstPaise: 0, cgstPaise: 0, sgstPaise: 0 };
+  let unknownState = 0;
+  const rows = [];
+  for (const p of purchases) {
+    if (p.deletedAt || p.status !== "finalized" || p.taxPaise <= 0) continue;
+    const type = p.documentType ?? "purchase_invoice";
+    if (type === "purchase_order") continue;
+    const sign = type === "purchase_return" ? -1 : 1;
+    const supplier = supplierById.get(String(p.supplierId));
+    const supplierState = p.stateOfSupply || supplier?.state;
+    if (!supplierState || !companyState) unknownState++;
+    // Purchases store one tax amount: inter-state → IGST, same state → half CGST + half SGST.
+    const inter = !!supplierState && !!companyState && supplierState.trim().toLowerCase() !== companyState.trim().toLowerCase();
+    const half = Math.round(p.taxPaise / 2);
+    const split = inter ? { igstPaise: p.taxPaise, cgstPaise: 0, sgstPaise: 0 } : { igstPaise: 0, cgstPaise: half, sgstPaise: p.taxPaise - half };
+    itc.taxablePaise += sign * p.subtotalPaise;
+    itc.igstPaise += sign * split.igstPaise;
+    itc.cgstPaise += sign * split.cgstPaise;
+    itc.sgstPaise += sign * split.sgstPaise;
+    rows.push({
+      id: String(p._id), invoiceNumber: p.supplierBillNumber || p.invoiceNumber, date: p.createdAt, gstin: supplier?.gstin ?? "", name: supplier?.name ?? "—",
+      placeOfSupply: supplierState ?? "", type: type === "purchase_return" ? "Debit Note" : "Invoice", invoiceValuePaise: sign * p.totalPaise,
+      taxablePaise: sign * p.subtotalPaise, igstPaise: sign * split.igstPaise, cgstPaise: sign * split.cgstPaise, sgstPaise: sign * split.sgstPaise,
+    });
+  }
+  return { itc, unknownState, rows: rows.sort((a, b) => a.date - b.date) };
+}
+
+/** GSTR-2: inward supplies (purchases) with tax split. */
+export const gstr2 = query({
+  args: range,
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const org = await ctx.db.get(auth.organizationId);
+    return await inward(ctx, auth.organizationId, org?.state, args.startDate, args.endDate);
+  },
+});
+
+/** GSTR-9 (annual): outward supplies split B2B / B2C, credit notes, ITC, tax payable and HSN summary for the year. */
+export const gstr9 = query({
+  args: range,
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const org = await ctx.db.get(auth.organizationId);
+    const docs = (await loadOutward(ctx, auth.organizationId, args.startDate, args.endDate)).filter((d) => d.sale.status === "finalized");
+    const inv = docs.filter((d) => isInvoice(d.sale));
+    const b2b = sumSplit(inv.filter((d) => d.customer?.gstin?.trim()).flatMap((d) => d.lines));
+    const b2c = sumSplit(inv.filter((d) => !d.customer?.gstin?.trim()).flatMap((d) => d.lines));
+    const notes = sumSplit(docs.filter((d) => isCreditNote(d.sale)).flatMap((d) => d.lines));
+    const { itc } = await inward(ctx, auth.organizationId, org?.state, args.startDate, args.endDate);
+    const net = (k: "taxablePaise" | "igstPaise" | "cgstPaise" | "sgstPaise") => b2b[k] + b2c[k] - notes[k];
+    const outwardTotal = { taxablePaise: net("taxablePaise"), igstPaise: net("igstPaise"), cgstPaise: net("cgstPaise"), sgstPaise: net("sgstPaise") };
+    return {
+      rows: [
+        { id: "4A", label: "4A. Supplies to unregistered persons (B2C)", ...b2c },
+        { id: "4B", label: "4B. Supplies to registered persons (B2B)", ...b2b },
+        { id: "4I", label: "4I. Credit notes issued (−)", ...notes },
+        { id: "4N", label: "4N. Total outward supplies (net)", ...outwardTotal },
+        { id: "6", label: "6. Input tax credit availed (from purchases)", ...itc },
+        { id: "9", label: "9. Tax payable after ITC", taxablePaise: 0, igstPaise: outwardTotal.igstPaise - itc.igstPaise, cgstPaise: outwardTotal.cgstPaise - itc.cgstPaise, sgstPaise: outwardTotal.sgstPaise - itc.sgstPaise },
+      ],
+      hsn: hsnRows(inv),
     };
   },
 });

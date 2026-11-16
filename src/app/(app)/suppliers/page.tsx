@@ -79,6 +79,7 @@ function ImportSuppliersDialog() {
 function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
   const createSupplier = useMutation(api.suppliers.create);
   const updateSupplier = useMutation(api.suppliers.update);
+  const partyGroups = useQuery(api.partyReports.partyGroups) ?? ["General"];
   const [customFields, setCustomFields] = useState<Record<string, string>>(supplier?.customFields ?? {});
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -95,6 +96,7 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
     gstin: supplier?.gstin ?? "",
     gstType: supplier?.gstType ?? "unregistered_consumer",
     state: supplier?.state ?? "",
+    partyGroup: supplier?.partyGroup ?? "",
     creditLimitRupees: supplier?.creditLimitPaise !== undefined ? paiseToRupeesInput(supplier.creditLimitPaise) : "",
     openingBalanceRupees: supplier?.openingBalancePaise ? paiseToRupeesInput(supplier.openingBalancePaise) : "",
     openingBalanceDate: supplier?.openingBalanceDateMs
@@ -123,6 +125,7 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
         gstin: values.gstin || undefined,
         gstType: (values.gstType || undefined) as Doc<"suppliers">["gstType"],
         state: values.state || undefined,
+        partyGroup: values.partyGroup || undefined,
         creditLimitPaise: customLimit && values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
         openingBalancePaise: values.openingBalanceRupees ? (rupeesToPaise(values.openingBalanceRupees) ?? undefined) : undefined,
         openingBalanceDateMs: values.openingBalanceDate ? new Date(values.openingBalanceDate).getTime() : undefined,
@@ -274,6 +277,20 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="partyGroup"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-xs">Party Group</FormLabel>
+                  <FormControl>
+                    <Input {...field} list="party-groups" placeholder="General" className="h-9 text-sm" />
+                  </FormControl>
+                  <datalist id="party-groups">{partyGroups.map((g) => <option key={g} value={g} />)}</datalist>
                   <FormMessage />
                 </FormItem>
               )}
