@@ -12,6 +12,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { AppLockGate } from "@/components/app-lock-gate";
 import { PrivacyLockProvider } from "@/components/privacy-lock-context";
+import { DailySalesPrivacyGuard } from "@/components/daily-sales-privacy-guard";
 
 function CenteredState({ children }: { children: ReactNode }) {
   return (
@@ -92,7 +93,11 @@ export function AccessGate({ children }: { children: ReactNode }) {
                   <p className="text-sm text-muted-foreground">Your login is view only, so you can’t create bills, purchases, backups or delete data.</p>
                   <Link href="/" className="text-sm font-medium text-primary underline-offset-4 hover:underline">Go to Home</Link>
                 </div>
-              ) : children}
+              ) : (
+                <DailySalesPrivacyGuard activeCompanyType={access.organization?.companyType} companies={access.companies}>
+                  {children}
+                </DailySalesPrivacyGuard>
+              )}
             </main>
           </SidebarInset>
         </SidebarProvider>

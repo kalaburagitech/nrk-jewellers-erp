@@ -38,6 +38,7 @@ import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
+import { DueRemindersCard } from "@/components/due-reminders";
 import { useAccessInfo } from "@/components/access-context";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
@@ -188,6 +189,9 @@ export default function DashboardPage() {
 
       {/* Live Gold/Silver Metal Rates Bar */}
       <MetalRateTicker currentRates={rates} />
+
+      {/* Balances overdue or due within the next few days — remind before the deadline. */}
+      <DueRemindersCard />
 
       {/* Vyapar Key Financial Overview: Total Receivable & Total Payable (Pages 5 & 6) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

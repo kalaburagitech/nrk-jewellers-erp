@@ -262,7 +262,8 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
     if (grossWeightMg <= 0) return setError("Enter the gross weight.");
     if (stoneWeightMg > grossWeightMg) return setError("Stone weight cannot be more than gross weight.");
     if (!Number.isInteger(pcs) || pcs < 1) return setError("Pieces must be 1 or more.");
-    if (grossWeightMg - stoneWeightMg > selected.weightMg) return setError(`Only ${mgToGramsDisplay(selected.weightMg)} g of ${selected.name} is in GST stock.`);
+    // The whole piece (gross weight) leaves stock; the bill is priced on net weight.
+    if (grossWeightMg > selected.weightMg) return setError(`Only ${mgToGramsDisplay(selected.weightMg)} g of ${selected.name} is in GST stock.`);
     setError(null);
     const product = products?.find((p) => p._id === productId);
     onAdd({ productId, name: selected.name, metalPurityId: product?.metalPurityId, grossWeightMg, stoneWeightMg, pieces: pcs });
@@ -275,7 +276,7 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
     <Card className="border-border/80 shadow-xs">
       <CardHeader className="p-4 pb-2">
         <CardTitle className="text-sm font-bold uppercase tracking-wide">Add item (GST stock)</CardTitle>
-        <p className="text-xs text-muted-foreground">Pick the item and type its weight. The net weight is deducted from GST item stock.</p>
+        <p className="text-xs text-muted-foreground">Pick the item and type its weight. The bill shows net weight; the gross weight is deducted from GST item stock.</p>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-2 p-4 pt-0 sm:grid-cols-[2fr_1fr_1fr_0.7fr_auto] sm:items-end">
         <div className="col-span-2 sm:col-span-1">
@@ -536,7 +537,9 @@ export default function NewBillPage() {
   const purities = useQuery(api.metalPurities.list);
   const taxConfigs = useQuery(api.taxConfigurations.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
+  const lastPrices = useQuery(api.sales.lastPricesByProduct);
   const createSale = useMutation(api.sales.create);
+  const setCustomerDueDate = useMutation(api.customers.setDueDate);
   const updateSale = useMutation(api.sales.update);
   const createCustomer = useMutation(api.customers.create);
   const prefs = useQuery(api.appPreferences.get);
@@ -558,6 +561,11 @@ export default function NewBillPage() {
   const [payments, setPayments] = useState<{ mode: PaymentMode; amountRupees: string }[]>([
     { mode: "cash", amountRupees: "" },
   ]);
+  // Ticked: the first payment row always equals whatever is left to pay
+  // (bill total − old gold − other payment rows). Unticked: typed by hand.
+  const [payFull, setPayFull] = useState(false);
+  // When a balance is left unpaid: the date the customer promised to clear it.
+  const [dueDate, setDueDate] = useState("");
   const [oldGoldEnabled, setOldGoldEnabled] = useState(false);
   const [oldGoldPurityId, setOldGoldPurityId] = useState("");
   const [oldGoldGrossGrams, setOldGoldGrossGrams] = useState("");
@@ -689,10 +697,29 @@ export default function NewBillPage() {
     }
   }
 
+  /**
+   * Prices a newly picked item automatically: today's metal rate for its
+   * purity, and the making charge / wastage it was last billed at. A purity
+   * with no rate set today falls back to the item's last billed rate.
+   */
+  function defaultPricing(productId: string | undefined, productPurityId: string | undefined) {
+    const last = productId ? lastPrices?.[productId] : undefined;
+    const purityId = productPurityId || last?.metalPurityId || "";
+    const ratePaise = (purityId ? rateByPurity.get(purityId) : undefined) ?? last?.ratePerGramPaise;
+    // Making charge saved on the item (Add Item form) wins; otherwise the last price billed for it.
+    const itemMakingPaise = productId ? productById.get(productId as Id<"products">)?.makingChargePaise : undefined;
+    const makingPaise = itemMakingPaise ?? last?.makingChargePaise;
+    return {
+      metalPurityId: purityId,
+      ratePerGramRupees: ratePaise ? (ratePaise / 100).toFixed(2) : "",
+      makingChargeRupees: makingPaise ? (makingPaise / 100).toFixed(2) : "",
+      wastagePercent: last?.wastageBasisPoints ? String(last.wastageBasisPoints / 100) : "",
+    };
+  }
+
   function addLine(boxItem: Doc<"boxItems">, productNameOverride?: string) {
     const product = productById.get(boxItem.productId);
-    const purityId = product?.metalPurityId ?? "";
-    const defaultRatePaise = purityId ? rateByPurity.get(purityId) : undefined;
+    const pricing = defaultPricing(boxItem.productId, product?.metalPurityId);
     const box = boxes?.find((b) => b._id === boxItem.boxId);
     setLines((prev) => [
       ...prev,
@@ -705,12 +732,11 @@ export default function NewBillPage() {
         grossWeightMg: boxItem.grossWeightMg,
         stoneWeightMg: boxItem.stoneWeightMg,
         stockNetWeightMg: boxItem.netWeightMg,
-        metalPurityId: purityId,
+        metalPurityId: pricing.metalPurityId,
         otherDeductionGrams: "",
-        ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
-        wastagePercent: "",
-        // Item defaults from the Add Item form (making charge, item-wise tax rate).
-        makingChargeRupees: product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
+        ratePerGramRupees: pricing.ratePerGramRupees,
+        wastagePercent: pricing.wastagePercent,
+        makingChargeRupees: pricing.makingChargeRupees,
         stoneChargeRupees: "",
         taxConfigurationId: product?.taxConfigurationId ?? taxConfigs?.[0]?._id ?? "",
       },
@@ -719,8 +745,7 @@ export default function NewBillPage() {
 
   function addManualLine(item: { productId: string; name: string; metalPurityId?: string; grossWeightMg: number; stoneWeightMg: number; pieces: number }) {
     const product = productById.get(item.productId as Id<"products">);
-    const purityId = item.metalPurityId ?? "";
-    const defaultRatePaise = purityId ? rateByPurity.get(purityId) : undefined;
+    const pricing = defaultPricing(item.productId, item.metalPurityId);
     setLines((prev) => [
       ...prev,
       {
@@ -732,11 +757,11 @@ export default function NewBillPage() {
         grossWeightMg: item.grossWeightMg,
         stoneWeightMg: item.stoneWeightMg,
         stockNetWeightMg: item.grossWeightMg - item.stoneWeightMg,
-        metalPurityId: purityId,
+        metalPurityId: pricing.metalPurityId,
         otherDeductionGrams: "",
-        ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
-        wastagePercent: "",
-        makingChargeRupees: product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
+        ratePerGramRupees: pricing.ratePerGramRupees,
+        wastagePercent: pricing.wastagePercent,
+        makingChargeRupees: pricing.makingChargeRupees,
         stoneChargeRupees: "",
         taxConfigurationId: product?.taxConfigurationId ?? taxConfigs?.[0]?._id ?? "",
       },
@@ -844,8 +869,13 @@ export default function NewBillPage() {
     const preRound = beforeOldItemDeductionPaise - oldItemDeductionPaise;
     const roundedTotal = preRound;
     const roundOffPaise = 0;
-    const paymentsPaise = payments.reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
     const oldGoldValuePaise = oldGoldComputed?.exchangeValuePaise ?? 0;
+    const otherPaymentsPaise = payments
+      .slice(payFull ? 1 : 0)
+      .reduce((sum, p) => sum + (rupeesToPaise(p.amountRupees || "0") ?? 0), 0);
+    // "Full amount" ticked: the first row takes whatever is still left to pay.
+    const fullFirstPaymentPaise = Math.max(0, roundedTotal - oldGoldValuePaise - otherPaymentsPaise);
+    const paymentsPaise = otherPaymentsPaise + (payFull ? fullFirstPaymentPaise : 0);
     const amountPaidPaise = paymentsPaise + oldGoldValuePaise;
     return {
       subtotalPaise,
@@ -857,9 +887,10 @@ export default function NewBillPage() {
       totalPaise: roundedTotal,
       oldGoldValuePaise,
       amountPaidPaise,
+      fullFirstPaymentPaise,
       balancePaise: roundedTotal - amountPaidPaise,
     };
-  }, [computedLines, discountMode, discountValue, oldItemDeductionRupees, payments, oldGoldComputed]);
+  }, [computedLines, discountMode, discountValue, oldItemDeductionRupees, payments, payFull, oldGoldComputed]);
 
   const oldItemDeductionError =
     numberFieldError(oldItemDeductionRupees) ??
@@ -881,6 +912,8 @@ export default function NewBillPage() {
     setDiscountMode("none");
     setDiscountValue("");
     setPayments([{ mode: "cash", amountRupees: "" }]);
+    setPayFull(false);
+    setDueDate("");
     setOldGoldEnabled(false);
     setOldGoldPurityId("");
     setOldGoldGrossGrams("");
@@ -988,8 +1021,13 @@ export default function NewBillPage() {
             : 0;
       const oldItemDeductionPaise = rupeesToPaise(oldItemDeductionRupees || "0") ?? 0;
       const paymentSplits = payments
-        .filter((p) => Number(p.amountRupees) > 0)
-        .map((p) => ({ mode: p.mode, amountPaise: rupeesToPaise(p.amountRupees) ?? 0 }));
+        .map((p, index) => ({
+          mode: p.mode,
+          amountPaise: payFull && index === 0 ? totals.fullFirstPaymentPaise : rupeesToPaise(p.amountRupees || "0") ?? 0,
+        }))
+        .filter((p) => p.amountPaise > 0);
+      // A balance left on the bill gets the promised due date, so it shows up in payment reminders.
+      const dueDateMs = totals.balancePaise > 0 && dueDate ? dateInputToTimestamp(dueDate) : undefined;
       const oldGoldExchangeArg =
         oldGoldEnabled && oldGoldPurityId
           ? {
@@ -1015,6 +1053,7 @@ export default function NewBillPage() {
           oldGoldExchange: oldGoldExchangeArg,
           billDate: dateInputToTimestamp(billDate),
         });
+        if (dueDateMs) await setCustomerDueDate({ id: resolvedCustomerId, dueDateMs });
         router.push(`/sales/invoices?updated=${editSaleId}`);
         return;
       }
@@ -1033,6 +1072,7 @@ export default function NewBillPage() {
         billDate: dateInputToTimestamp(billDate),
         idempotencyKey,
       });
+      if (dueDateMs) await setCustomerDueDate({ id: resolvedCustomerId, dueDateMs });
       if (after === "print") {
         router.push(`/sales/invoices/${result.saleId}/print`);
       } else if (after === "printShare") {
@@ -1314,7 +1354,7 @@ export default function NewBillPage() {
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               {gstCompany
-                ? "Selling deducts the net weight and pieces from GST item stock."
+                ? "Bill is priced on net weight; the gross weight and pieces are deducted from GST item stock."
                 : "Selling deducts pieces and weight straight from the assigned physical box."}
             </p>
           </CardHeader>
@@ -1331,8 +1371,8 @@ export default function NewBillPage() {
                       <th className="py-2.5 px-3 w-8">#</th>
                       <th className="py-2.5 px-3">ITEM / BOX</th>
                       <th className="py-2.5 px-3">PURITY</th>
-                      <th className="py-2.5 px-3">GROSS WT</th>
-                      <th className="py-2.5 px-3">NET WT</th>
+                      <th className="py-2.5 px-3">GROSS WT <span className="font-normal">(stock)</span></th>
+                      <th className="py-2.5 px-3">NET WT <span className="font-normal">(bill)</span></th>
                       <th className="py-2.5 px-3">MAKING (₹)</th>
                       <th className="py-2.5 px-3">QTY</th>
                       <th className="py-2.5 px-3">RATE / G (₹)</th>
@@ -1653,6 +1693,16 @@ export default function NewBillPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 pt-0 space-y-2">
+                <label className="flex items-center gap-2 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-primary"
+                    checked={payFull}
+                    onChange={(e) => setPayFull(e.target.checked)}
+                  />
+                  Received full amount ({formatPaise(totals.fullFirstPaymentPaise)})
+                  <span className="font-normal text-muted-foreground">— untick to type the amount</span>
+                </label>
                 {payments.map((p, idx) => (
                   <div key={idx} className="flex items-center gap-2">
                     <Select
@@ -1677,7 +1727,9 @@ export default function NewBillPage() {
                     <Input
                       inputMode="decimal"
                       placeholder="Amount ₹"
-                      value={p.amountRupees}
+                      aria-label={`Payment ${idx + 1} amount`}
+                      readOnly={payFull && idx === 0}
+                      value={payFull && idx === 0 ? (totals.fullFirstPaymentPaise / 100).toFixed(2) : p.amountRupees}
                       onChange={(e) =>
                         setPayments((prev) =>
                           prev.map((pm, i) => (i === idx ? { ...pm, amountRupees: e.target.value } : pm)),
@@ -1719,12 +1771,38 @@ export default function NewBillPage() {
                 <span className="font-mono">{formatPaise(totals.subtotalPaise)}</span>
               </div>
 
-              {totals.discountPaise > 0 && (
-                <div className="flex justify-between text-xs text-emerald-600">
-                  <span>Discount</span>
-                  <span className="font-mono">-{formatPaise(totals.discountPaise)}</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <label htmlFor="bill-discount" className="text-muted-foreground">Discount</label>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    aria-label="Discount type"
+                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                    value={discountMode}
+                    onChange={(e) => {
+                      setDiscountMode(e.target.value as typeof discountMode);
+                      if (e.target.value === "none") setDiscountValue("");
+                    }}
+                  >
+                    <option value="none">None</option>
+                    <option value="percent">%</option>
+                    <option value="fixed">₹</option>
+                  </select>
+                  <Input
+                    id="bill-discount"
+                    inputMode="decimal"
+                    placeholder={discountMode === "percent" ? "0 %" : "0.00"}
+                    disabled={discountMode === "none"}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    aria-invalid={Boolean(discountError)}
+                    className="h-8 w-24 text-right font-mono text-xs"
+                  />
+                  <span className="w-24 text-right font-mono text-emerald-600">
+                    {totals.discountPaise > 0 ? `-${formatPaise(totals.discountPaise)}` : ""}
+                  </span>
                 </div>
-              )}
+                {discountError && <p className="w-full text-right text-[11px] font-medium text-destructive">{discountError}</p>}
+              </div>
 
               {isGst && (
                 <div className="flex justify-between text-xs text-muted-foreground">
@@ -1765,6 +1843,20 @@ export default function NewBillPage() {
                 <div className="flex justify-between text-xs font-semibold text-rose-600">
                   <span>Balance Due</span>
                   <span className="font-mono">{formatPaise(totals.balancePaise)}</span>
+                </div>
+              )}
+
+              {totals.balancePaise > 0 && (
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <label htmlFor="bill-due-date" className="text-muted-foreground">Balance due by (reminder date)</label>
+                  <Input
+                    id="bill-due-date"
+                    type="date"
+                    value={dueDate}
+                    min={todayDateInput()}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="h-8 w-40 text-xs"
+                  />
                 </div>
               )}
 

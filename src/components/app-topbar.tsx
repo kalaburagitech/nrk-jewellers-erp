@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { ArrowLeft, Bell, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
+import { ArrowLeft, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -14,11 +14,13 @@ import { Input } from "@/components/ui/input";
 import { TextSizeToggle } from "@/components/text-size-toggle";
 import { NAV_SECTIONS } from "@/lib/nav-data";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { DueRemindersBell } from "@/components/due-reminders";
 import { ColorThemePicker } from "@/components/color-theme-picker";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { Button } from "@/components/ui/button";
 import { useAppLock } from "@/components/app-lock-gate";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
+import { companiesVisibleWhileLocked } from "@/components/daily-sales-privacy-guard";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -157,22 +159,6 @@ function GlobalSearch() {
   );
 }
 
-function NotificationBell() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="outline-none">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-          <Bell className="h-4 w-4" />
-        </div>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <p className="px-2 py-3 text-center text-sm text-muted-foreground">
-          No new notifications.
-        </p>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
 
 export function AppTopbar({
   organizationName,
@@ -201,8 +187,9 @@ export function AppTopbar({
 
   const visibleCompanies = useMemo(() => {
     if (!isLocked) return companies;
-    return companies.filter((c) => c.organizationId === activeOrganizationId);
-  }, [companies, isLocked, activeOrganizationId]);
+    // Privacy lock on: only GST companies are shown; Daily Sales stays private.
+    return companiesVisibleWhileLocked(companies);
+  }, [companies, isLocked]);
   const pathname = usePathname();
   const router = useRouter();
   const page = NAV_SECTIONS.flatMap((section) => [
@@ -254,7 +241,7 @@ export function AppTopbar({
           <ColorThemePicker />
         </div>
         <ThemeToggle />
-        <NotificationBell />
+        <DueRemindersBell />
         <DropdownMenu>
           <DropdownMenuTrigger className="outline-none">
             <Avatar className="h-8 w-8 sm:h-10 sm:w-10 border border-border">

@@ -11,24 +11,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatPaise } from "@/lib/money";
+import { dueStatus, dueStatusLabel, reminderWhatsAppUrl } from "@/lib/due-reminders";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
 function dueDateInputValue(dueDateMs: number | undefined) {
   return dueDateMs ? new Date(dueDateMs).toISOString().slice(0, 10) : "";
 }
 
-function reminderWhatsAppUrl(phone: string | undefined, name: string, outstandingPaise: number, dueDateMs: number | undefined) {
-  const digits = (phone ?? "").replace(/\D/g, "");
-  const withCountryCode = digits.length === 10 ? `91${digits}` : digits;
-  const dueText = dueDateMs ? ` by ${new Date(dueDateMs).toLocaleDateString("en-IN")}` : "";
-  const message = `Hello ${name}, a gentle reminder that ${formatPaise(outstandingPaise)} is due${dueText} at NRK Jewellers. Please clear it at your earliest convenience. Thank you!`;
-  const base = withCountryCode ? `https://wa.me/${withCountryCode}` : "https://wa.me/";
-  return `${base}?text=${encodeURIComponent(message)}`;
-}
 
 function DueDateCell({ customer }: { customer: Doc<"customers"> & { outstandingPaise: number } }) {
   const setDueDate = useMutation(api.customers.setDueDate);
-  const isOverdue = customer.dueDateMs !== undefined && customer.dueDateMs < new Date().getTime();
+  const status = dueStatus(customer.dueDateMs);
 
   return (
     <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
@@ -41,7 +34,10 @@ function DueDateCell({ customer }: { customer: Doc<"customers"> & { outstandingP
           setDueDate({ id: customer._id, dueDateMs: ms });
         }}
       />
-      {isOverdue && <Badge variant="destructive">Overdue</Badge>}
+      {status === "overdue" && <Badge variant="destructive">{dueStatusLabel(customer.dueDateMs)}</Badge>}
+      {(status === "due_today" || status === "due_soon") && (
+        <Badge className="bg-amber-500 text-white">{dueStatusLabel(customer.dueDateMs)}</Badge>
+      )}
     </div>
   );
 }

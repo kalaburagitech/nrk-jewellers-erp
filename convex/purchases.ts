@@ -169,7 +169,8 @@ export const listReturnableItems = query({
       items.map(async (item) => ({ item, boxItem: item.boxItemId ? await ctx.db.get(item.boxItemId) : null })),
     );
     return withBoxItem
-      .filter(({ boxItem }) => boxItem?.status === "in_stock")
+      // Box lines: the piece must still be in stock. GST lines (item stock): not already returned.
+      .filter(({ item, boxItem }) => (item.toItemStock ? !item.returnedAt : boxItem?.status === "in_stock"))
       .map(({ item, boxItem }) => ({ ...item, label: boxItem?.label ?? item.label }));
   },
 });
@@ -338,8 +339,10 @@ async function applyPurchaseTransaction(
         lineTotalPaise: computed.lineTotalPaise,
         toItemStock: true,
         pieces,
+        stockWeightMg: item.grossWeightMg,
       });
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: computed.netWeightMg, piecesDelta: pieces, sourceTable: "purchases", sourceId: purchaseId, at: billDate });
+      // Item stock is kept in gross weight, so a sale can take the whole piece back out.
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: item.grossWeightMg, piecesDelta: pieces, sourceTable: "purchases", sourceId: purchaseId, at: billDate });
       continue;
     }
     boxItemDeltas.set(item.boxId, (boxItemDeltas.get(item.boxId) ?? 0) + 1);
@@ -442,7 +445,7 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
   for (const item of purchaseItems) {
     if (item.toItemStock) {
       // Throws if those grams were already sold — sell-side must be reversed first.
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: -item.netWeightMg, piecesDelta: -(item.pieces ?? 1), sourceTable: "purchases", sourceId: purchase._id, at: Date.now() });
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: -(item.stockWeightMg ?? item.netWeightMg), piecesDelta: -(item.pieces ?? 1), sourceTable: "purchases", sourceId: purchase._id, at: Date.now() });
     }
     if (item.boxItemId && item.boxId) {
       await ctx.db.patch(item.boxItemId, { deletedAt: Date.now(), status: "written_off" });
@@ -602,6 +605,7 @@ export const update = mutation({
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     for (const item of existingItems) {
+      if (item.returnedAt) throw new Error(`"${item.label}" was returned to the supplier — cancel that return before editing this invoice`);
       if (!item.boxItemId) continue;
       const boxItem = await ctx.db.get(item.boxItemId);
       if (boxItem && boxItem.status !== "in_stock") {
@@ -652,7 +656,11 @@ export const cancel = mutation({
     }
     if (purchase.documentType === "purchase_return") {
       const items = await ctx.db.query("purchaseItems").withIndex("by_purchase", q => q.eq("purchaseId", purchase._id)).filter(q => q.eq(q.field("deletedAt"), undefined)).collect();
-      for (const item of items) if (item.boxItemId) {
+      for (const item of items) if (item.toItemStock) {
+        // GST line: put the returned weight back and mark the original line returnable again.
+        await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: item.stockWeightMg ?? item.netWeightMg, piecesDelta: item.pieces ?? 1, sourceTable: "purchases", sourceId: purchase._id, at: Date.now() });
+        if (item.returnOfPurchaseItemId) await ctx.db.patch(item.returnOfPurchaseItemId, { returnedAt: undefined });
+      } else if (item.boxItemId) {
         const stock = await ctx.db.get(item.boxItemId);
         if (!stock || stock.deletedAt || stock.status !== "written_off") throw new Error("Returned stock has changed. Reverse the later transaction first.");
         const box = await ctx.db.get(stock.boxId);
@@ -675,6 +683,7 @@ export const cancel = mutation({
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     for (const item of purchaseItems) {
+      if (item.returnedAt) throw new Error(`"${item.label}" was returned to the supplier — cancel that return before deleting this bill`);
       if (!item.boxItemId) continue;
       const boxItem = await ctx.db.get(item.boxItemId);
       if (boxItem && boxItem.status !== "in_stock") {
@@ -905,10 +914,17 @@ export const createPurchaseReturn = mutation({
     if (!supplier) throw new Error("Supplier not found");
 
     const lines: Array<{ purchaseItem: Doc<"purchaseItems">; boxItem: Doc<"boxItems"> }> = [];
+    const itemStockLines: Doc<"purchaseItems">[] = [];
     for (const purchaseItemId of args.purchaseItemIds) {
       const purchaseItem = await ctx.db.get(purchaseItemId);
-      if (!purchaseItem || purchaseItem.purchaseId !== args.originalPurchaseId) {
+      if (!purchaseItem || purchaseItem.deletedAt || purchaseItem.purchaseId !== args.originalPurchaseId) {
         throw new Error("Return item not found on this purchase");
+      }
+      if (purchaseItem.toItemStock) {
+        // GST company line: the weight sits in item stock, not in a box piece.
+        if (purchaseItem.returnedAt) throw new Error(`"${purchaseItem.label}" has already been returned`);
+        itemStockLines.push(purchaseItem);
+        continue;
       }
       if (!purchaseItem.boxItemId) throw new Error("This line has no physical item to return");
       const boxItem = await ctx.db.get(purchaseItem.boxItemId);
@@ -917,7 +933,9 @@ export const createPurchaseReturn = mutation({
       lines.push({ purchaseItem, boxItem });
     }
 
-    const returnValuePaise = lines.reduce((sum, l) => sum + l.purchaseItem.lineTotalPaise, 0);
+    const returnValuePaise =
+      lines.reduce((sum, l) => sum + l.purchaseItem.lineTotalPaise, 0) +
+      itemStockLines.reduce((sum, item) => sum + item.lineTotalPaise, 0);
 
     const branchId = await resolveBranchId(ctx, auth.organizationId, originalPurchase.branchId);
     const invoiceNumber = await allocateInvoiceNumber(ctx, auth.organizationId, branchId, "purchase_return", "PR-");
@@ -977,6 +995,32 @@ export const createPurchaseReturn = mutation({
     for (const [boxId, delta] of boxDeltas) {
       const box = await ctx.db.get(boxId);
       if (box) await ctx.db.patch(boxId, { itemCount: Math.max(0, (box.itemCount ?? 0) - delta) });
+    }
+
+    for (const purchaseItem of itemStockLines) {
+      const stockWeightMg = purchaseItem.stockWeightMg ?? purchaseItem.netWeightMg;
+      const pieces = purchaseItem.pieces ?? 1;
+      // Throws if those grams were already sold — nothing to send back.
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: purchaseItem.productId, weightDeltaMg: -stockWeightMg, piecesDelta: -pieces, sourceTable: "purchases", sourceId: returnId, at: now });
+      await ctx.db.insert("purchaseItems", {
+        organizationId: auth.organizationId,
+        purchaseId: returnId,
+        productId: purchaseItem.productId,
+        metalPurityId: purchaseItem.metalPurityId,
+        label: purchaseItem.label,
+        grossWeightMg: purchaseItem.grossWeightMg,
+        stoneWeightMg: purchaseItem.stoneWeightMg,
+        netWeightMg: purchaseItem.netWeightMg,
+        ratePerGramPaise: purchaseItem.ratePerGramPaise,
+        makingChargePaise: purchaseItem.makingChargePaise,
+        stoneChargePaise: purchaseItem.stoneChargePaise,
+        lineTotalPaise: purchaseItem.lineTotalPaise,
+        toItemStock: true,
+        pieces,
+        stockWeightMg,
+        returnOfPurchaseItemId: purchaseItem._id,
+      });
+      await ctx.db.patch(purchaseItem._id, { returnedAt: now });
     }
 
     const priorBalance = supplier.currentBalancePaise ?? supplier.openingBalancePaise;

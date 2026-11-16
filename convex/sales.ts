@@ -83,6 +83,46 @@ export const getOldGoldExchange = query({
 });
 
 /** Everything a printable invoice needs, in one query. */
+/**
+ * The rate, making charge and wastage each item was last billed at, so the
+ * New Bill screen can fill them in the moment an item is picked. One indexed
+ * read per product (latest sale line) — fine at shop scale.
+ */
+export const lastPricesByProduct = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const products = await ctx.db
+      .query("products")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .take(2000);
+    const result: Record<string, { ratePerGramPaise: number; makingChargePaise: number; wastageBasisPoints: number; metalPurityId?: Id<"metalPurities"> }> = {};
+    for (const product of products) {
+      const recent = await ctx.db
+        .query("saleItems")
+        .withIndex("by_product", (q) => q.eq("productId", product._id))
+        .order("desc")
+        .filter((q) => q.and(q.eq(q.field("deletedAt"), undefined), q.gt(q.field("lineTotalPaise"), 0)))
+        .take(5);
+      for (const line of recent) {
+        if (line.organizationId !== auth.organizationId) continue;
+        const sale = await ctx.db.get(line.saleId);
+        // Only real bills — not returns/credit notes or cancelled invoices.
+        if (!sale || sale.deletedAt || sale.status !== "finalized" || sale.documentType !== "sales_invoice") continue;
+        result[product._id] = {
+          ratePerGramPaise: line.ratePerGramPaise,
+          makingChargePaise: line.makingChargePaise,
+          wastageBasisPoints: line.wastageBasisPoints,
+          metalPurityId: line.metalPurityId,
+        };
+        break;
+      }
+    }
+    return result;
+  },
+});
+
 export const getInvoiceData = query({
   args: { saleId: v.id("sales") },
   handler: async (ctx, args) => {
@@ -440,7 +480,7 @@ async function applySaleTransaction(
       saleId,
       productId,
       boxItemId: boxItem ? boxItem._id : undefined,
-      ...(boxItem ? {} : { fromItemStock: true, pieces }),
+      ...(boxItem ? {} : { fromItemStock: true, pieces, stockWeightMg: grossWeightMg }),
       metalPurityId: item.metalPurityId,
       grossWeightMg,
       stoneWeightMg,
@@ -457,8 +497,9 @@ async function applySaleTransaction(
     });
 
     if (!boxItem) {
-      // GST line: take the sold net weight and pieces out of item stock.
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId, weightDeltaMg: -computed.netWeightMg, piecesDelta: -pieces, sourceTable: "sales", sourceId: saleId, at: billDate, allowNegative: !(await readPreferences(ctx, auth.organizationId)).stopSaleOnNegativeStock });
+      // GST line: the bill is priced on net weight, but the whole piece
+      // (gross weight) leaves stock.
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId, weightDeltaMg: -grossWeightMg, piecesDelta: -pieces, sourceTable: "sales", sourceId: saleId, at: billDate, allowNegative: !(await readPreferences(ctx, auth.organizationId)).stopSaleOnNegativeStock });
       continue;
     }
 
@@ -584,7 +625,7 @@ async function reverseSaleTransaction(ctx: MutationCtx, auth: AuthContext, sale:
     }
     if (item.fromItemStock) {
       // GST line: put the sold weight and pieces back into item stock.
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: item.netWeightMg, piecesDelta: item.pieces ?? 1, sourceTable: "sales", sourceId: sale._id, at: reversedAt });
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: item.stockWeightMg ?? item.netWeightMg, piecesDelta: item.pieces ?? 1, sourceTable: "sales", sourceId: sale._id, at: reversedAt });
     }
     if (!retainLines) await ctx.db.patch(item._id, { deletedAt: reversedAt });
   }
