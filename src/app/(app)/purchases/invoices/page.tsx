@@ -22,6 +22,13 @@ import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { periodRange } from "@/components/report-kit";
+
+const localDay = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases">; onClose: () => void }) {
   const items = useQuery(api.purchases.getItems, { purchaseId: purchase._id });
@@ -137,6 +144,18 @@ export default function PurchaseInvoicesPage() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [period, setPeriod] = useState("all-time");
+  const [userFilter, setUserFilter] = useState("all");
+  const members = useQuery(api.memberships.listMembers);
+  function applyPeriod(value: string) {
+    setPeriod(value);
+    if (value === "all-time") { setDateFrom(""); setDateTo(""); }
+    else if (value !== "custom") {
+      const r = periodRange(value as Parameters<typeof periodRange>[0]);
+      setDateFrom(localDay(r.startDate));
+      setDateTo(localDay(r.endDate));
+    }
+  }
   const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const supplierName = useMemo(() => {
@@ -148,11 +167,13 @@ export default function PurchaseInvoicesPage() {
   const filteredPurchases = useMemo(() => purchases?.filter(row => {
     const q = search.trim().toLowerCase();
     const supplier = supplierName.get(row.supplierId)?.toLowerCase() ?? "";
-    const day = new Date(row.createdAt).toISOString().slice(0, 10);
-    return (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
-  }), [purchases, search, dateFrom, dateTo, supplierName]);
-  const selection = useRecordSelection(filteredPurchases?.map(row => row._id) ?? [], `purchases:${search}:${dateFrom}:${dateTo}`);
-  const totals = filteredPurchases?.reduce((sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }), { total: 0, paid: 0 });
+    const day = localDay(row.createdAt);
+    return (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo)
+      && (userFilter === "all" || row.createdByUserId === userFilter);
+  }), [purchases, search, dateFrom, dateTo, userFilter, supplierName]);
+  const selection = useRecordSelection(filteredPurchases?.map(row => row._id) ?? [], `purchases:${search}:${dateFrom}:${dateTo}:${userFilter}`);
+  // Cancelled bills are listed (struck through) but never counted in Paid / Unpaid / Total.
+  const totals = filteredPurchases?.filter((row) => row.status === "finalized").reduce((sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }), { total: 0, paid: 0 });
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6">
@@ -193,8 +214,43 @@ export default function PurchaseInvoicesPage() {
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3"><Input placeholder="Search invoice or supplier" value={search} onChange={e => setSearch(e.target.value)} /><Input aria-label="From date" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /><Input aria-label="To date" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
-      <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Paid</p><p className="text-xl font-semibold">{formatPaise(totals?.paid ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Unpaid</p><p className="text-xl font-semibold">{formatPaise((totals?.total ?? 0) - (totals?.paid ?? 0))}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-semibold">{formatPaise(totals?.total ?? 0)}</p></CardContent></Card></div>
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 print:hidden">
+        <Select value={period} onValueChange={applyPeriod}>
+          <SelectTrigger className="h-9 w-48 font-semibold" aria-label="Period"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all-time">All Purchase Invoices</SelectItem>
+            <SelectItem value="today">Today</SelectItem>
+            <SelectItem value="this-week">This Week</SelectItem>
+            <SelectItem value="this-month">This Month</SelectItem>
+            <SelectItem value="last-month">Last Month</SelectItem>
+            <SelectItem value="this-quarter">This Quarter</SelectItem>
+            <SelectItem value="this-fy">This Financial Year</SelectItem>
+            <SelectItem value="custom">Custom</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex items-center overflow-hidden rounded-md border text-sm">
+          <span className="bg-muted px-2.5 py-2 text-xs font-semibold text-muted-foreground">Between</span>
+          <input aria-label="From date" type="date" className="bg-transparent px-2 py-1.5 outline-none" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPeriod("custom"); }} />
+          <span className="px-1 text-xs text-muted-foreground">To</span>
+          <input aria-label="To date" type="date" className="bg-transparent px-2 py-1.5 outline-none" value={dateTo} onChange={e => { setDateTo(e.target.value); setPeriod("custom"); }} />
+        </div>
+        <Select value={userFilter} onValueChange={setUserFilter}>
+          <SelectTrigger className="h-9 w-36" aria-label="User"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Users</SelectItem>
+            {members?.map((m) => <SelectItem key={m._id} value={m.userId}>{m.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Input className="h-9 sm:ml-auto sm:w-64" placeholder="Search invoice or supplier" value={search} onChange={e => setSearch(e.target.value)} />
+        <Button variant="outline" size="sm" onClick={() => window.print()}><Printer className="h-4 w-4" />Print</Button>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-40 rounded-xl bg-emerald-100 p-4 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200"><p className="text-sm">Paid</p><p className="text-xl font-semibold tabular-nums">{formatPaise(totals?.paid ?? 0)}</p></div>
+        <span className="text-xl font-semibold text-muted-foreground">+</span>
+        <div className="min-w-40 rounded-xl bg-sky-100 p-4 text-sky-900 dark:bg-sky-950/50 dark:text-sky-200"><p className="text-sm">Unpaid</p><p className="text-xl font-semibold tabular-nums">{formatPaise((totals?.total ?? 0) - (totals?.paid ?? 0))}</p></div>
+        <span className="text-xl font-semibold text-muted-foreground">=</span>
+        <div className="min-w-40 rounded-xl bg-amber-100 p-4 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"><p className="text-sm">Total</p><p className="text-xl font-semibold tabular-nums">{formatPaise(totals?.total ?? 0)}</p></div>
+      </div>
 
       <BulkRecordActions selection={selection} table="purchases" />
 
@@ -217,7 +273,9 @@ export default function PurchaseInvoicesPage() {
                     <TableHead>Date</TableHead>
                     <TableHead>Supplier</TableHead>
                     <TableHead className="text-right">Total</TableHead>
+                    <TableHead>Payment Type</TableHead>
                     <TableHead className="text-right">Paid</TableHead>
+                    <TableHead className="text-right">Balance Due</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-28 text-right">Actions</TableHead>
                   </TableRow>
@@ -230,7 +288,9 @@ export default function PurchaseInvoicesPage() {
                       <TableCell>{new Date(p.createdAt).toLocaleDateString("en-IN")}</TableCell>
                       <TableCell>{supplierName.get(p.supplierId) ?? "—"}</TableCell>
                       <TableCell className="text-right">{formatPaise(p.totalPaise)}</TableCell>
+                      <TableCell className="capitalize">{p.reportPaymentType || "—"}</TableCell>
                       <TableCell className="text-right">{formatPaise(p.amountPaidPaise)}</TableCell>
+                      <TableCell className="text-right">{formatPaise(Math.max(0, p.totalPaise - p.amountPaidPaise))}</TableCell>
                       <TableCell>
                         <Badge variant={p.status === "finalized" ? "secondary" : "destructive"} className="capitalize">
                           {p.status}
@@ -240,6 +300,9 @@ export default function PurchaseInvoicesPage() {
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" title={`View ${p.invoiceNumber}`} aria-label={`View ${p.invoiceNumber}`} onClick={() => setSelected(p)}>
                             <Eye className="h-4 w-4" />
+                          </Button>
+                          <Button asChild variant="ghost" size="icon" title={`Print ${p.invoiceNumber}`} aria-label={`Print ${p.invoiceNumber}`}>
+                            <Link href={`/purchases/invoices/${p._id}/print`}><Printer className="h-4 w-4" /></Link>
                           </Button>
                           {canEdit && p.status === "finalized" && (
                             <>

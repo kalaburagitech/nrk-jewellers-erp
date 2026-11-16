@@ -176,6 +176,7 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
   const access = useQuery(api.organizations.getMyAccess);
   const scale = useViewScale();
   const currentFormat = preferences?.defaultPrintTemplate ?? "half-a4";
+  const shortLabel = currentFormat === "half-a4" ? "A5" : currentFormat === "full-a4" ? "A4" : "Thermal 80 mm";
   const formatLabel = currentFormat === "half-a4" ? "A5 Landscape (210 × 148 mm · Half-A4)" : currentFormat === "full-a4" ? "A4 Landscape (297 × 210 mm)" : "Thermal Receipt (80 mm)";
 
   return (
@@ -207,7 +208,7 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
             </CardDescription>
           </div>
           <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-600 border border-amber-500/20">
-            A5 Default Active
+            {shortLabel} Default Active
           </span>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -217,7 +218,7 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
             control={
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-600 border border-amber-500/20">
-                  A5 Landscape
+                  {shortLabel}
                 </span>
                 <Button variant="outline" size="sm" onClick={onSwitchToPrintTab}>
                   Change
@@ -227,17 +228,17 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
           />
           <SettingRow
             title="All Invoices Print Mode"
-            description="Sales Tax Invoices, Daily Counter Bills, Purchases, and Girvi Pawn Receipts print in A5 size."
+            description={`Sales Tax Invoices, Daily Counter Bills, Purchases, and Girvi Pawn Receipts print in ${shortLabel} size.`}
             control={
               <span className="text-xs font-semibold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                A5 Standard
+                {shortLabel} Standard
               </span>
             }
           />
           <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground flex flex-col gap-1">
-            <p className="font-medium text-foreground">A5 Print Details:</p>
+            <p className="font-medium text-foreground">{shortLabel} Print Details:</p>
             <ul className="list-disc pl-4 space-y-0.5">
-              <li>Paper Dimensions: 210 × 148 mm (A5 Landscape / Half-A4 sheet)</li>
+              <li>Paper Dimensions: {formatLabel}</li>
               <li>Print Margins: 5 mm safety margin with full single-sheet auto-fit</li>
               <li>All billing screens (Sales [F2], Purchases, Girvi) default to this size</li>
             </ul>

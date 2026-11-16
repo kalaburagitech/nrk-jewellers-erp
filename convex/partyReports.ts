@@ -318,15 +318,18 @@ export const profitReports = query({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     const org = auth.organizationId;
-    const [sales, purchases, names, products, costOf, expenses] = await Promise.all([
+    const [sales, purchases, names, products, costOf, expenses, categories] = await Promise.all([
       salesInRange(ctx, org, args.startDate, args.endDate),
       purchasesInRange(ctx, org, args.startDate, args.endDate),
       partyNames(ctx, org),
       ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       buildCostModel(ctx, org),
       ctx.db.query("expenses").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+      ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
     ]);
     const productName = new Map(products.map((p) => [String(p._id), p.name]));
+    const categoryName = new Map(categories.map((c) => [String(c._id), c.name]));
+    const productCategory = new Map(products.map((p) => [String(p._id), p.stockCategoryId ? (categoryName.get(String(p.stockCategoryId)) ?? "—") : "Uncategorised"]));
     const invoices = sales.filter(isSaleInvoice);
     const returns = sales.filter(isSaleReturn);
     const lines = await itemsBySale(ctx, org, new Set(invoices.map((s) => String(s._id))));
@@ -334,7 +337,7 @@ export const profitReports = query({
     let linesWithoutCost = 0;
     const bills = [];
     const parties = new Map<string, { id: string; name: string; phone: string; salePaise: number; costPaise: number; profitPaise: number }>();
-    const items = new Map<string, { id: string; name: string; qty: number; weightMg: number; salePaise: number; costPaise: number; profitPaise: number }>();
+    const items = new Map<string, { id: string; name: string; category: string; qty: number; weightMg: number; salePaise: number; costPaise: number; profitPaise: number }>();
 
     for (const s of invoices) {
       const saleLines = lines.get(String(s._id)) ?? [];
@@ -349,7 +352,7 @@ export const profitReports = query({
         // Spread the bill discount across lines by their share of the pre-tax value.
         const lineValue = preTaxLines > 0 ? Math.round((value * (l.lineTotalPaise - l.lineTaxPaise)) / preTaxLines) : 0;
         const key = String(l.productId);
-        const it = items.get(key) ?? { id: key, name: productName.get(key) ?? "—", qty: 0, weightMg: 0, salePaise: 0, costPaise: 0, profitPaise: 0 };
+        const it = items.get(key) ?? { id: key, name: productName.get(key) ?? "—", category: productCategory.get(key) ?? "Uncategorised", qty: 0, weightMg: 0, salePaise: 0, costPaise: 0, profitPaise: 0 };
         it.qty += l.pieces ?? 1;
         it.weightMg += l.netWeightMg;
         it.salePaise += lineValue;
@@ -455,5 +458,52 @@ export const dayBook = query({
       });
     }
     return rows.sort((a, b) => b.date - a.date);
+  },
+});
+
+/** Sale and purchase quantity/weight/amount per item category (returns deducted). */
+export const salePurchaseByCategory = query({
+  args: range,
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const org = auth.organizationId;
+    const [sales, purchases, products, categories, saleItemRows, purchaseItemRows] = await Promise.all([
+      salesInRange(ctx, org, args.startDate, args.endDate),
+      purchasesInRange(ctx, org, args.startDate, args.endDate),
+      ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+      ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+      ctx.db.query("saleItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+      ctx.db.query("purchaseItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+    ]);
+    const categoryName = new Map(categories.map((c) => [String(c._id), c.name]));
+    const catOf = new Map(products.map((p) => [String(p._id), p.stockCategoryId ? (categoryName.get(String(p.stockCategoryId)) ?? "—") : "Uncategorised"]));
+    const saleById = new Map(sales.filter((s) => isSaleInvoice(s) || isSaleReturn(s)).map((s) => [String(s._id), s]));
+    const purchaseById = new Map(purchases.filter((p) => isPurchaseInvoice(p) || isPurchaseReturn(p)).map((p) => [String(p._id), p]));
+    type Row = { category: string; saleQty: number; saleWeightMg: number; salePaise: number; purchaseQty: number; purchaseWeightMg: number; purchasePaise: number };
+    const rows = new Map<string, Row>();
+    const row = (c: string) => {
+      const r = rows.get(c) ?? { category: c, saleQty: 0, saleWeightMg: 0, salePaise: 0, purchaseQty: 0, purchaseWeightMg: 0, purchasePaise: 0 };
+      rows.set(c, r);
+      return r;
+    };
+    for (const i of live(saleItemRows)) {
+      const s = saleById.get(String(i.saleId));
+      if (!s) continue;
+      const k = isSaleReturn(s) ? -1 : 1;
+      const r = row(catOf.get(String(i.productId)) ?? "Uncategorised");
+      r.saleQty += k * (i.pieces ?? 1);
+      r.saleWeightMg += k * i.netWeightMg;
+      r.salePaise += k * i.lineTotalPaise;
+    }
+    for (const i of live(purchaseItemRows)) {
+      const p = purchaseById.get(String(i.purchaseId));
+      if (!p) continue;
+      const k = isPurchaseReturn(p) ? -1 : 1;
+      const r = row(catOf.get(String(i.productId)) ?? "Uncategorised");
+      r.purchaseQty += k * (i.pieces ?? 1);
+      r.purchaseWeightMg += k * i.netWeightMg;
+      r.purchasePaise += k * i.lineTotalPaise;
+    }
+    return [...rows.values()].sort((a, b) => a.category.localeCompare(b.category));
   },
 });

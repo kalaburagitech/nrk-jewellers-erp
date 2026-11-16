@@ -109,9 +109,10 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Party Statement", href: "/reports/party-statement" },
       { title: "All Parties", href: "/reports/all-parties" },
       { title: "Sale Purchase By Party", href: "/reports/sale-purchase-by-party" },
-      { title: "Stock Summary", href: "/reports/stock" },
+      { title: "Stock Summary", href: "/reports/item-stock" },
+      { title: "Cash Flow", href: "/reports/cash-flow" },
       { title: "Box Reports", href: "/reports/boxes" },
-      { title: "GST Reports", href: "/reports/gst" },
+      { title: "GSTR 1 / 3B", href: "/reports/gstr-1" },
     ],
   },
   {

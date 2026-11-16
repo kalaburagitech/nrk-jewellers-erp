@@ -368,9 +368,6 @@ export default function SalesInvoicesPage() {
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 Total Sales Amount
               </p>
-              <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
-                0% ↗ vs last month
-              </span>
             </div>
             <h2 className="mt-2 text-2xl font-bold text-foreground tabular-nums">
               {formatPaise(totalAmount)}

@@ -83,9 +83,19 @@ export default function DashboardPage() {
   const totalReceivables = summary?.totalReceivablesPaise ?? 0;
   const totalPayables = summary?.totalPayablesPaise ?? 0;
   const totalSales = summary?.todaysSalesPaise ?? 0;
+  const lowStock = useQuery(api.stockReports.itemStock)?.filter((r) => r.isLow && r.isActive) ?? [];
 
   return (
     <div className="counter-dashboard mx-auto flex max-w-7xl flex-col gap-5">
+      {lowStock.length > 0 && (
+        <Link href="/reports/low-stock" className="flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200">
+          <span>
+            <strong>Low stock:</strong> {lowStock.length} item{lowStock.length === 1 ? " is" : "s are"} below minimum stock
+            {" "}({lowStock.slice(0, 3).map((r) => r.name).join(", ")}{lowStock.length > 3 ? "…" : ""})
+          </span>
+          <span className="shrink-0 font-semibold underline">View</span>
+        </Link>
+      )}
       {/* Vyapar Customer Support & Quick Actions Header Line (Page 5) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 text-xs text-muted-foreground border-b pb-3">
         <div className="flex flex-wrap items-center gap-2 sm:gap-4">

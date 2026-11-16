@@ -17,8 +17,10 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
       { title: "Sale", href: "/reports/sales" },
       { title: "Purchase", href: "/reports/purchases" },
       { title: "Day Book", href: "/reports/day-book" },
+      { title: "All Transactions", href: "/reports/all-transactions" },
       { title: "Profit And Loss", href: "/reports/profit-loss", private: true },
       { title: "Bill Wise Profit", href: "/reports/bill-profit", private: true },
+      { title: "Cash Flow", href: "/reports/cash-flow" },
     ],
   },
   {
@@ -32,15 +34,30 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
       { title: "Outstanding / Ageing", href: "/reports/customers" },
     ],
   },
-  { section: "GST reports", items: [{ title: "GST Sales & Purchase Register", href: "/reports/gst" }] },
+  {
+    section: "GST reports",
+    items: [
+      { title: "GSTR 1", href: "/reports/gstr-1" },
+      { title: "GSTR 3B", href: "/reports/gstr-3b" },
+      { title: "Sale Summary By HSN", href: "/reports/hsn-summary" },
+      { title: "GST Sales & Purchase Register", href: "/reports/gst" },
+    ],
+  },
   {
     section: "Item / Stock report",
     items: [
-      { title: "Stock Summary", href: "/reports/stock" },
+      { title: "Stock Summary", href: "/reports/item-stock" },
+      { title: "Stock By Purity", href: "/reports/stock" },
       { title: "Item Wise Profit And Loss", href: "/reports/item-profit", private: true },
+      { title: "Item Category Wise Profit And Loss", href: "/reports/category-profit", private: true },
+      { title: "Low Stock Summary", href: "/reports/low-stock" },
+      { title: "Sale/Purchase Report By Item Category", href: "/reports/sale-purchase-by-category" },
+      { title: "Stock Summary By Item Category", href: "/reports/stock-by-category" },
       { title: "Box Reports", href: "/reports/boxes", private: true },
     ],
   },
+  { section: "Business status", items: [{ title: "Bank Statement", href: "/reports/bank-statement" }] },
+  { section: "Expense report", items: [{ title: "Expense / Expense Category", href: "/reports/expenses" }] },
 ];
 
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {

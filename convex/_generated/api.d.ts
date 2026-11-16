@@ -15,6 +15,7 @@ import type * as appSecurityInternal from "../appSecurityInternal.js";
 import type * as auth from "../auth.js";
 import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
+import type * as cashReports from "../cashReports.js";
 import type * as customFields from "../customFields.js";
 import type * as customers from "../customers.js";
 import type * as dashboard from "../dashboard.js";
@@ -22,6 +23,7 @@ import type * as dataManagement from "../dataManagement.js";
 import type * as ewayBills from "../ewayBills.js";
 import type * as expenses from "../expenses.js";
 import type * as girvi from "../girvi.js";
+import type * as gstReports from "../gstReports.js";
 import type * as http from "../http.js";
 import type * as itemStock from "../itemStock.js";
 import type * as lib_accountingYears from "../lib/accountingYears.js";
@@ -43,6 +45,7 @@ import type * as search from "../search.js";
 import type * as stockAdjustments from "../stockAdjustments.js";
 import type * as stockCategories from "../stockCategories.js";
 import type * as stockGroups from "../stockGroups.js";
+import type * as stockReports from "../stockReports.js";
 import type * as suppliers from "../suppliers.js";
 import type * as taxConfigurations from "../taxConfigurations.js";
 
@@ -60,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   boxes: typeof boxes;
   cashBank: typeof cashBank;
+  cashReports: typeof cashReports;
   customFields: typeof customFields;
   customers: typeof customers;
   dashboard: typeof dashboard;
@@ -67,6 +71,7 @@ declare const fullApi: ApiFromModules<{
   ewayBills: typeof ewayBills;
   expenses: typeof expenses;
   girvi: typeof girvi;
+  gstReports: typeof gstReports;
   http: typeof http;
   itemStock: typeof itemStock;
   "lib/accountingYears": typeof lib_accountingYears;
@@ -88,6 +93,7 @@ declare const fullApi: ApiFromModules<{
   stockAdjustments: typeof stockAdjustments;
   stockCategories: typeof stockCategories;
   stockGroups: typeof stockGroups;
+  stockReports: typeof stockReports;
   suppliers: typeof suppliers;
   taxConfigurations: typeof taxConfigurations;
 }>;

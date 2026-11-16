@@ -232,6 +232,26 @@ export default defineSchema({
     hsnCode: v.optional(v.string()),
     customFields: v.optional(v.record(v.string(), v.string())),
     reorderLevelMg: v.optional(v.number()),
+    // Item form "Pricing" tab. All optional: jewellery is usually billed by
+    // today's metal rate, so these are defaults/reference, not required.
+    salePricePaise: v.optional(v.number()),
+    salePriceIncludesTax: v.optional(v.boolean()),
+    saleDiscountMode: v.optional(v.union(v.literal("percent"), v.literal("amount"))),
+    saleDiscountValue: v.optional(v.number()), // basis points for percent, paise for amount
+    wholesalePricePaise: v.optional(v.number()),
+    wholesaleMinQty: v.optional(v.number()),
+    purchasePricePaise: v.optional(v.number()),
+    purchasePriceIncludesTax: v.optional(v.boolean()),
+    taxConfigurationId: v.optional(v.id("taxConfigurations")),
+    // Jewellery defaults for the item (per piece).
+    grossWeightMg: v.optional(v.number()),
+    netWeightMg: v.optional(v.number()),
+    makingChargePaise: v.optional(v.number()),
+    // Item form "Stock" tab.
+    openingAtPricePaise: v.optional(v.number()),
+    openingAsOfMs: v.optional(v.number()),
+    location: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
     isActive: v.boolean(),
     createdAt: v.number(),
   })

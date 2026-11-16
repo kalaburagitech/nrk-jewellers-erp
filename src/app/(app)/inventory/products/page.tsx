@@ -6,46 +6,22 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import {
   Gem,
-  Plus,
   Search,
   Pencil,
   Boxes,
   Sliders,
-  Printer,
   ChevronRight,
-  ExternalLink,
-  Layers,
-  Sparkles,
   Barcode,
   Receipt,
-  ShoppingCart,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
+import { formatPaise } from "@/lib/money";
+import { AdjustStockDialog, ItemFormDialog } from "@/components/item-form-dialog";
 import { DeleteRecordButton } from "@/components/delete-record-button";
-import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
-import { getUserErrorMessage } from "@/lib/user-error";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
@@ -107,425 +83,24 @@ function ImportProductsDialog({
   );
 }
 
-const NONE = "NONE";
-
-// Add / Edit Product Dialog (matching Vyapar Pages 12-14)
-function ProductFormDialog({
-  product,
-  trigger,
-}: {
-  product?: Doc<"products">;
-  trigger?: React.ReactNode;
-}) {
-  const create = useMutation(api.products.create);
-  const update = useMutation(api.products.update);
-  const purities = useQuery(api.metalPurities.list);
-  const groups = useQuery(api.stockGroups.list);
-  const categories = useQuery(api.stockCategories.list);
-
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState(product?.name ?? "");
-  const [sku, setSku] = useState(product?.sku ?? "");
-  const [unit, setUnit] = useState<"gram" | "kilogram" | "piece" | "carat">(
-    product?.unit ?? "piece",
-  );
-  const [itemType, setItemType] = useState<"product" | "service">(
-    product?.itemType ?? "product",
-  );
-  const [metalPurityId, setMetalPurityId] = useState<string>(
-    product?.metalPurityId ?? NONE,
-  );
-  const [stockGroupId, setStockGroupId] = useState<string>(
-    product?.stockGroupId ?? NONE,
-  );
-  const [stockCategoryId, setStockCategoryId] = useState<string>(
-    product?.stockCategoryId ?? NONE,
-  );
-  const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? "");
-  const [description, setDescription] = useState(product?.description ?? "");
-  const [customFields, setCustomFields] = useState<Record<string, string>>(
-    product?.customFields ?? {},
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const isEdit = !!product;
-
-  function reset() {
-    setName(product?.name ?? "");
-    setSku(product?.sku ?? "");
-    setUnit(product?.unit ?? "piece");
-    setItemType(product?.itemType ?? "product");
-    setMetalPurityId(product?.metalPurityId ?? NONE);
-    setStockGroupId(product?.stockGroupId ?? NONE);
-    setStockCategoryId(product?.stockCategoryId ?? NONE);
-    setHsnCode(product?.hsnCode ?? "");
-    setDescription(product?.description ?? "");
-    setCustomFields(product?.customFields ?? {});
-    setError(null);
-  }
-
-  async function handleSave() {
-    if (!name.trim()) {
-      setError("Item name is required.");
-      return;
-    }
-    setSubmitting(true);
-    setError(null);
-    try {
-      const payload = {
-        name: name.trim(),
-        sku: sku.trim() || undefined,
-        unit,
-        itemType,
-        metalPurityId: metalPurityId === NONE ? undefined : (metalPurityId as Id<"metalPurities">),
-        stockGroupId: stockGroupId === NONE ? undefined : (stockGroupId as Id<"stockGroups">),
-        stockCategoryId:
-          stockCategoryId === NONE ? undefined : (stockCategoryId as Id<"stockCategories">),
-        hsnCode: hsnCode.trim() || undefined,
-        description: description.trim() || undefined,
-        customFields,
-      };
-      if (isEdit) {
-        await update({ id: product._id, ...payload });
-      } else {
-        await create(payload);
-      }
-      setOpen(false);
-      if (!isEdit) reset();
-    } catch (e) {
-      setError(getUserErrorMessage(e, "Could not save this item."));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
+function StatCard({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) reset();
-      }}
-    >
-      <DialogTrigger asChild>
-        {trigger ? (
-          trigger
-        ) : isEdit ? (
-          <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit item">
-            <Pencil className="h-4 w-4" />
-          </Button>
-        ) : (
-          <Button className="bg-[#d93025] hover:bg-[#b3261e] text-white font-medium shadow-sm">
-            <Plus className="h-4 w-4" />
-            Add Item
-          </Button>
-        )}
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-bold">
-            {isEdit ? "Edit Item" : "Add Item"}
-          </DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 pt-1">
-          {/* Top Toggle: Product vs Service (Page 12) */}
-          <div className="flex items-center gap-2 border-b pb-3">
-            <span className="text-xs font-semibold text-muted-foreground">Item Type:</span>
-            <div className="inline-flex rounded-lg border p-0.5 bg-muted/40">
-              <button
-                type="button"
-                onClick={() => setItemType("product")}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                  itemType === "product"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Product / Ornament
-              </button>
-              <button
-                type="button"
-                onClick={() => setItemType("service")}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                  itemType === "service"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Service / Making
-              </button>
-            </div>
-          </div>
-
-          {/* Primary Fields (Page 12) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="item-name" className="text-xs font-semibold">
-                Item Name *
-              </Label>
-              <Input
-                id="item-name"
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Gold Chain 22K (Box 112)"
-                className="h-9 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="item-hsn" className="text-xs font-semibold">
-                Item HSN
-              </Label>
-              <Input
-                id="item-hsn"
-                value={hsnCode}
-                onChange={(e) => setHsnCode(e.target.value)}
-                placeholder="HSN Code (e.g. 7113)"
-                className="h-9 text-sm"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Unit</Label>
-              <Select value={unit} onValueChange={(v) => setUnit(v as typeof unit)}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UNITS.map((u) => (
-                    <SelectItem key={u.value} value={u.value} className="text-xs">
-                      {u.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Metal Purity</Label>
-              <Select value={metalPurityId} onValueChange={setMetalPurityId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Choose Purity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE} className="text-xs">
-                    None
-                  </SelectItem>
-                  {purities?.map((p) => (
-                    <SelectItem key={p._id} value={p._id} className="text-xs">
-                      {p.label} ({p.metal})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Item Code / SKU</Label>
-              <Input
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                placeholder="Optional SKU"
-                className="h-9 text-sm font-mono"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Category</Label>
-              <Select value={stockCategoryId} onValueChange={setStockCategoryId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE} className="text-xs">
-                    None
-                  </SelectItem>
-                  {categories?.map((c) => (
-                    <SelectItem key={c._id} value={c._id} className="text-xs">
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Stock Group</Label>
-              <Select value={stockGroupId} onValueChange={setStockGroupId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select Stock Group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE} className="text-xs">
-                    None
-                  </SelectItem>
-                  {groups?.map((g) => (
-                    <SelectItem key={g._id} value={g._id} className="text-xs">
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="item-desc" className="text-xs font-semibold">
-              Description / Notes
-            </Label>
-            <Textarea
-              id="item-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Design details, gemstone specs, weight notes..."
-              rows={2}
-              className="text-sm resize-none"
-            />
-          </div>
-
-          <CustomFieldInputs entity="product" values={customFields} onChange={setCustomFields} />
-
-          {error && <p className="text-xs text-destructive font-medium">{error}</p>}
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0 pt-2">
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} className="h-9">
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={submitting}
-            className="h-9 bg-[#1a73e8] hover:bg-[#1557b0] text-white"
-          >
-            {submitting ? "Saving…" : isEdit ? "Update Item" : "Save Item"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Card className="border-border/80 shadow-xs">
+      <CardContent className="p-4">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className={`mt-1 text-base font-bold ${tone ?? "text-foreground"}`}>{value}</p>
+        {note && <p className="mt-0.5 text-xs text-muted-foreground">{note}</p>}
+      </CardContent>
+    </Card>
   );
 }
 
-// Stock Adjustment Modal Dialog (Page 11)
-function AdjustItemDialog({ product }: { product: Doc<"products"> }) {
-  const [open, setOpen] = useState(false);
-  const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");
-  const [quantity, setQuantity] = useState("1");
-  const [details, setDetails] = useState("");
-  const [saved, setSaved] = useState(false);
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 gap-1.5 font-medium">
-          <Sliders className="h-3.5 w-3.5" />
-          Adjust Item
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="text-base font-bold">Stock Adjustment</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4 pt-1">
-          {/* Add Stock vs Reduce Stock Toggle (Page 11) */}
-          <div className="flex items-center gap-3 border-b pb-3">
-            <button
-              type="button"
-              onClick={() => setAdjustType("add")}
-              className={`flex-1 py-2 text-center rounded-lg text-xs font-semibold transition ${
-                adjustType === "add"
-                  ? "bg-emerald-600 text-white shadow-xs"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              + Add Stock
-            </button>
-            <button
-              type="button"
-              onClick={() => setAdjustType("reduce")}
-              className={`flex-1 py-2 text-center rounded-lg text-xs font-semibold transition ${
-                adjustType === "reduce"
-                  ? "bg-rose-600 text-white shadow-xs"
-                  : "bg-muted text-muted-foreground hover:bg-muted/80"
-              }`}
-            >
-              - Reduce Stock
-            </button>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Item Name</Label>
-            <p className="font-semibold text-sm">{product.name}</p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label htmlFor="adj-qty" className="text-xs font-semibold">
-                Adjustment Quantity ({product.unit})
-              </Label>
-              <Input
-                id="adj-qty"
-                type="number"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="h-9 text-sm"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Adjustment Date</Label>
-              <Input
-                type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
-                className="h-9 text-xs"
-              />
-            </div>
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="adj-details" className="text-xs font-semibold">
-              Adjustment Reason / Details
-            </Label>
-            <Input
-              id="adj-details"
-              value={details}
-              onChange={(e) => setDetails(e.target.value)}
-              placeholder="e.g. Counter count mismatch, reweighed"
-              className="h-9 text-sm"
-            />
-          </div>
-
-          {saved && (
-            <p className="text-xs text-emerald-600 font-medium">
-              Stock adjustment recorded successfully.
-            </p>
-          )}
-        </div>
-
-        <DialogFooter className="gap-2 sm:gap-0 pt-2">
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} className="h-9">
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            onClick={() => {
-              setSaved(true);
-              setTimeout(() => {
-                setOpen(false);
-                setSaved(false);
-              }, 600);
-            }}
-            className="h-9 bg-[#1a73e8] hover:bg-[#1557b0] text-white"
-          >
-            Save Adjustment
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+/** Purchase price × stock: per gram for weight units, per piece otherwise. */
+function stockValuePaise(product: Doc<"products">, stock: { weightMg: number; pieces: number }) {
+  const price = product.purchasePricePaise ?? 0;
+  if (product.unit === "gram") return Math.round((price * stock.weightMg) / 1000);
+  if (product.unit === "kilogram") return Math.round((price * stock.weightMg) / 1_000_000);
+  return price * stock.pieces;
 }
 
 // Right Detail View for Selected Item (Page 10)
@@ -536,6 +111,7 @@ function ProductDetailView({
   product: Doc<"products">;
   purityLabel?: string;
 }) {
+  const details = useQuery(api.products.details, { id: product._id });
   return (
     <div className="space-y-5">
       {/* Item Header & Controls (Page 10) */}
@@ -558,8 +134,8 @@ function ProductDetailView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <AdjustItemDialog product={product} />
-          <ProductFormDialog
+          <AdjustStockDialog product={product} />
+          <ItemFormDialog
             product={product}
             trigger={
               <Button variant="outline" size="sm" className="h-9 gap-1.5">
@@ -582,53 +158,22 @@ function ProductDetailView({
         </div>
       </div>
 
-      {/* 4 Summary Stats Cards matching Page 10 */}
+      {/* Summary cards: real prices and live stock */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Sale Price
-            </p>
-            <p className="mt-1 text-lg font-bold text-foreground">
-              Daily Rate <span className="text-xs font-normal text-muted-foreground">(excl)</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Purchase Price
-            </p>
-            <p className="mt-1 text-lg font-bold text-foreground">
-              ₹ 0.00 <span className="text-xs font-normal text-muted-foreground">(excl)</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Stock Quantity
-            </p>
-            <p className="mt-1 text-lg font-bold text-emerald-600">
-              Active Stock
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Stock Value
-            </p>
-            <p className="mt-1 text-lg font-bold text-foreground">
-              In Inventory
-            </p>
-          </CardContent>
-        </Card>
+        <StatCard label="Sale Price" value={product.salePricePaise !== undefined ? `${formatPaise(product.salePricePaise)} ${product.salePriceIncludesTax ? "(incl. tax)" : "(excl. tax)"}` : "Billed at today's rate"} />
+        <StatCard label="Purchase Price" value={product.purchasePricePaise !== undefined ? `${formatPaise(product.purchasePricePaise)} ${product.purchasePriceIncludesTax ? "(incl. tax)" : "(excl. tax)"}` : "—"} />
+        <StatCard
+          label="Stock Quantity"
+          value={details ? `${details.pieces} pcs · ${(details.weightMg / 1000).toFixed(3)} g` : "…"}
+          tone={details?.lowStock ? "text-red-600" : "text-emerald-600"}
+          note={details?.lowStock ? "Below minimum stock" : product.location ? `Location: ${product.location}` : undefined}
+        />
+        <StatCard
+          label="Stock Value"
+          value={details && product.purchasePricePaise !== undefined ? formatPaise(stockValuePaise(product, details)) : "Set a purchase price"}
+          note={details?.taxName ? `Tax: ${details.taxName}` : undefined}
+        />
       </div>
-
       {/* Box Links & Barcode Labeling Quick Actions */}
       <div className="flex flex-wrap items-center gap-3">
         <Button asChild variant="outline" size="sm" className="h-9 gap-1.5">
@@ -721,7 +266,7 @@ export default function ProductsPage() {
         </div>
         <div className="flex items-center gap-2">
           <ImportProductsDialog purities={purities} />
-          <ProductFormDialog />
+          <ItemFormDialog />
         </div>
       </div>
 
@@ -914,55 +459,9 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* 4 Summary Stats Cards matching Page 10 */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <Card className="border-border/80 shadow-xs">
-                  <CardContent className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Sale Price
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-foreground">
-                      Live Rate <span className="text-xs font-normal text-muted-foreground">(excl)</span>
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border/80 shadow-xs">
-                  <CardContent className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Purchase Price
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-foreground">
-                      ₹ 0.00 <span className="text-xs font-normal text-muted-foreground">(excl)</span>
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border/80 shadow-xs">
-                  <CardContent className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Stock Quantity
-                    </p>
-                    <p
-                      className={`mt-1 text-lg font-bold tabular-nums ${
-                        activeBox.quantity >= 0 ? "text-emerald-600" : "text-rose-600"
-                      }`}
-                    >
-                      {activeBox.quantity} Pcs · {(activeBox.weightMg / 1000).toFixed(2)}g
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-border/80 shadow-xs">
-                  <CardContent className="p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Stock Value
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-foreground">
-                      In Inventory
-                    </p>
-                  </CardContent>
-                </Card>
+              <div className="grid grid-cols-2 gap-3">
+                <StatCard label="Pieces in Box" value={`${activeBox.quantity} pcs`} tone="text-emerald-600" />
+                <StatCard label="Net Weight" value={`${(activeBox.weightMg / 1000).toFixed(3)} g`} />
               </div>
 
               {/* Box Transactions Table matching Page 10 */}
