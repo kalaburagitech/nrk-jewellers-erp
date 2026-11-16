@@ -20,6 +20,8 @@ import {
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { PrivacyLockGate } from "@/components/privacy-lock-gate";
+import { GstStockAdjustDialog } from "@/components/gst-stock-adjust-dialog";
+import { useAccessInfo } from "@/components/access-context";
 
 function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () => void }) {
   const correctWeight = useMutation(api.stockAdjustments.correctWeight);
@@ -105,11 +107,19 @@ function AdjustDialog({ item, onClose }: { item: Doc<"boxItems">; onClose: () =>
   );
 }
 
-type AdjustmentMeta = { label?: string; boxNumber?: number; addWeightMg?: number; deductWeightMg?: number; addPieces?: number; deductPieces?: number };
+type AdjustmentMeta = { label?: string; boxNumber?: number; addWeightMg?: number; deductWeightMg?: number; addPieces?: number; deductPieces?: number; direction?: "in" | "out"; weightMg?: number; pieces?: number };
 
 /** Human-readable summary of one adjustment log entry. */
-function describeAdjustment(log: Doc<"auditLogs">) {
+function describeAdjustment(log: Doc<"auditLogs">, productName: (id: string) => string | undefined) {
   const meta = (log.metadata ?? {}) as AdjustmentMeta;
+  if (log.action === "item_stock.adjust") {
+    const sign = meta.direction === "out" ? "−" : "+";
+    const parts = [
+      meta.weightMg ? `${sign}${mgToGramsDisplay(meta.weightMg)}g` : "",
+      meta.pieces ? `${sign}${meta.pieces} pcs` : "",
+    ].filter(Boolean);
+    return `${productName(log.entityId) ?? "Item"}${parts.length ? ` · ${parts.join(", ")}` : ""}`;
+  }
   if (log.action !== "stock.adjust_box") return meta.label ?? "Item";
   const parts = [
     meta.addWeightMg ? `+${mgToGramsDisplay(meta.addWeightMg)}g` : "",
@@ -120,11 +130,106 @@ function describeAdjustment(log: Doc<"auditLogs">) {
   return `Box ${meta.boxNumber ?? "?"}${parts.length ? ` · ${parts.join(", ")}` : ""}`;
 }
 
+function RecentAdjustments() {
+  const recent = useQuery(api.stockAdjustments.listRecent);
+  const products = useQuery(api.products.list);
+  const productName = (id: string) => products?.find((p) => p._id === id)?.name;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Recent adjustments</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-2">
+        {recent === undefined ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : recent.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No adjustments recorded yet.</p>
+        ) : (
+          recent.map((log) => (
+            <div key={log._id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
+              <div>
+                <p>{describeAdjustment(log, productName)}</p>
+                <p className="text-xs text-muted-foreground">{(log.metadata as { reason?: string })?.reason}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={log.action === "stock.write_off" ? "destructive" : "secondary"}>
+                  {log.action === "stock.write_off" ? "Write-off" : log.action === "stock.adjust_box" ? "Box adjustment" : log.action === "item_stock.adjust" ? "GST stock" : "Weight correction"}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  {new Date(log.createdAt).toLocaleDateString("en-IN")}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/** GST companies keep item-wise stock (no boxes), so adjustments change item stock directly. */
+function GstStockAdjustments() {
+  const items = useQuery(api.itemStock.list);
+  const { isViewOnly } = useAccessInfo();
+  const [adjusting, setAdjusting] = useState<{ productId: string; direction: "in" | "out" } | null>(null);
+  return (
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>
+        <p className="text-sm text-muted-foreground">
+          Add or remove GST item stock after a physical count, damage or loss — every change is logged with a reason.
+        </p>
+      </div>
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-base">GST item stock</CardTitle>
+          {!isViewOnly && (
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => setAdjusting({ productId: "", direction: "in" })}>Add stock</Button>
+              <Button size="sm" variant="outline" onClick={() => setAdjusting({ productId: "", direction: "out" })}>Remove stock</Button>
+            </div>
+          )}
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {items === undefined ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No items yet. Add items under Items → Item List.</p>
+          ) : (
+            items.map((item) => (
+              <div key={item.productId} className="flex items-center justify-between rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium">{item.name}</p>
+                  <p className="text-xs text-muted-foreground">{mgToGramsDisplay(item.weightMg)} g · {item.pieces} pcs</p>
+                </div>
+                {!isViewOnly && (
+                  <Button size="sm" variant="outline" onClick={() => setAdjusting({ productId: item.productId, direction: "out" })}>
+                    Adjust
+                  </Button>
+                )}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+      <RecentAdjustments />
+      {adjusting && items && <GstStockAdjustDialog items={items} initial={adjusting} onClose={() => setAdjusting(null)} />}
+    </div>
+  );
+}
+
 export default function StockAdjustmentsPage() {
+  const access = useQuery(api.organizations.getMyAccess);
+  const companyType = access?.organization?.companyType;
+  if (access === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
+  if (companyType === "gst_gold" || companyType === "gst_silver") return <GstStockAdjustments />;
+  return <BoxStockAdjustments />;
+}
+
+function BoxStockAdjustments() {
   const boxes = useQuery(api.boxes.list);
   const overview = useQuery(api.boxes.getInventoryOverview);
   const adjustBox = useMutation(api.stockAdjustments.adjustBox);
-  const recent = useQuery(api.stockAdjustments.listRecent);
   const [boxNumberInput, setBoxNumberInput] = useState("");
   const [addWeight, setAddWeight] = useState("");
   const [deductWeight, setDeductWeight] = useState("");
@@ -246,35 +351,7 @@ export default function StockAdjustmentsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Recent adjustments</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-2">
-          {recent === undefined ? (
-            <p className="text-sm text-muted-foreground">Loading…</p>
-          ) : recent.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No adjustments recorded yet.</p>
-          ) : (
-            recent.map((log) => (
-              <div key={log._id} className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
-                <div>
-                  <p>{describeAdjustment(log)}</p>
-                  <p className="text-xs text-muted-foreground">{(log.metadata as { reason?: string })?.reason}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={log.action === "stock.write_off" ? "destructive" : "secondary"}>
-                    {log.action === "stock.write_off" ? "Write-off" : log.action === "stock.adjust_box" ? "Box adjustment" : "Weight correction"}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    {new Date(log.createdAt).toLocaleDateString("en-IN")}
-                  </span>
-                </div>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
+      <RecentAdjustments />
 
       {selectedItem && <AdjustDialog item={selectedItem} onClose={() => setSelectedItem(null)} />}
       </div>

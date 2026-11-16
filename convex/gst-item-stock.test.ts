@@ -41,7 +41,10 @@ describe("GST item stock", () => {
       items: [{ ...line, productId: f.product, grossWeightMg: 4000, stoneWeightMg: 500, pieces: 1 }],
     });
     let stock = await f.owner.query(api.itemStock.list, {});
-    expect(stock[0]).toMatchObject({ weightMg: 6500, pieces: 1 });
+    // The bill is priced on net weight (3.5 g) but the whole piece — gross 4 g — leaves stock.
+    expect(stock[0]).toMatchObject({ weightMg: 6000, pieces: 1 });
+    const [soldLine] = await f.t.run((ctx) => ctx.db.query("saleItems").collect());
+    expect(soldLine).toMatchObject({ netWeightMg: 3500, stockWeightMg: 4000 });
 
     await expect(f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "gst-2",
@@ -76,6 +79,47 @@ describe("GST item stock", () => {
     expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 5000, pieces: 1 });
     await f.owner.mutation(api.purchases.cancel, { purchaseId, reason: "Wrong bill" });
     expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 0, pieces: 0 });
+  });
+
+  it("adds the gross weight of a GST purchase, returns it to the supplier, and restores it when the return is cancelled", async () => {
+    const f = await fixture("gst");
+    const { purchaseId } = await f.owner.mutation(api.purchases.create, {
+      supplierId: f.supplier, gstBasisPoints: 0, amountPaidPaise: 0, idempotencyKey: "p-ret",
+      items: [{ productId: f.product, label: "Chain", pieces: 2, grossWeightMg: 5000, stoneWeightMg: 400, ratePerGramPaise: 500000, makingChargePaise: 0, stoneChargePaise: 0 }],
+    });
+    expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 5000, pieces: 2 });
+
+    const returnable = await f.owner.query(api.purchases.listReturnableItems, { purchaseId });
+    expect(returnable).toHaveLength(1);
+    const { purchaseId: returnId } = await f.owner.mutation(api.purchases.createPurchaseReturn, {
+      originalPurchaseId: purchaseId, purchaseItemIds: [returnable[0]._id], idempotencyKey: "ret-1",
+    });
+    expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 0, pieces: 0 });
+    expect(await f.owner.query(api.purchases.listReturnableItems, { purchaseId })).toHaveLength(0);
+    // The original bill can't be deleted while its goods sit on a return.
+    await expect(f.owner.mutation(api.purchases.cancel, { purchaseId, reason: "x" })).rejects.toThrow(/returned to the supplier/);
+
+    await f.owner.mutation(api.purchases.cancel, { purchaseId: returnId, reason: "Wrong return" });
+    expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 5000, pieces: 2 });
+    expect(await f.owner.query(api.purchases.listReturnableItems, { purchaseId })).toHaveLength(1);
+  });
+
+  it("restores the net weight for a GST sale line saved before stock moved to gross weight", async () => {
+    const f = await fixture("gst");
+    await f.owner.mutation(api.itemStock.adjust, { productId: f.product, direction: "in", weightMg: 10000, pieces: 2, reason: "Opening" });
+    const { saleId } = await f.owner.mutation(api.sales.create, {
+      ...bill, customerId: f.customer, isGst: true, idempotencyKey: "legacy",
+      items: [{ ...line, productId: f.product, grossWeightMg: 4000, stoneWeightMg: 500, pieces: 1 }],
+    });
+    // Simulate an older line: it took its net weight out of stock and has no stockWeightMg.
+    await f.t.run(async (ctx) => {
+      const [saleLine] = await ctx.db.query("saleItems").collect();
+      await ctx.db.patch(saleLine._id, { stockWeightMg: undefined });
+      const [row] = await ctx.db.query("productStock").collect();
+      await ctx.db.patch(row._id, { weightMg: 6500 });
+    });
+    await f.owner.mutation(api.sales.cancel, { saleId, reason: "Mistake" });
+    expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 10000, pieces: 2 });
   });
 
   it("shows both companies on the stock overview", async () => {

@@ -183,6 +183,15 @@ export default function PrintInvoicePage({
   const grandTotalNetPaise =
     sale.totalPaise - (oldGoldExchange?.exchangeValuePaise ?? 0);
   const balanceDuePaise = Math.max(0, sale.totalPaise - sale.amountPaidPaise);
+  // Item table columns. The bill shows net weight only (gross weight is what
+  // left stock, not what the customer pays for). Daily Sales bills have no
+  // Tax column, so every span below is derived from this one list instead of
+  // hard-coded GST numbers.
+  const itemColumnWidths = sale.isGst
+    ? ["5%", "23%", "10%", "6%", "10%", "11%", "11%", "11%", "13%"]
+    : ["5%", "27%", "12%", "7%", "11%", "12%", "12%", "14%"];
+  const itemColumnCount = itemColumnWidths.length;
+  const adjustmentLeadSpan = itemColumnCount - 3;
   const paymentTypeLabel =
     cashPayments.length > 0
       ? [
@@ -379,7 +388,9 @@ export default function PrintInvoicePage({
               </div>
               {
                 <p className={`shrink-0 self-start rounded-full border border-[#655c36]/40 bg-white font-semibold text-[#13253f] ${template === "half-a4" ? "px-2 py-1 text-[8px]" : "px-3 py-1.5 text-sm"}`}>
-                  State: {withGstStateCode(organization?.state || BUSINESS_PROFILE_DEFAULTS.state)}
+                  State: {sale.isGst
+                    ? withGstStateCode(organization?.state || BUSINESS_PROFILE_DEFAULTS.state)
+                    : organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
                 </p>
               }
             </div>
@@ -408,10 +419,7 @@ export default function PrintInvoicePage({
 
             <table className="w-full table-fixed border-collapse border border-[#655c36] leading-tight" data-invoice-items-table>
               <colgroup>
-                {(sale.isGst
-                  ? ["5%", "20%", "10%", "6%", "9%", "9%", "10%", "11%", "10%", "10%"]
-                  : ["5%", "24%", "12%", "6%", "10%", "10%", "11%", "11%", "11%"]
-                ).map((width, index) => <col key={index} style={{ width }} />)}
+                {itemColumnWidths.map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>
               <thead>
                 <tr className="bg-[#f4f0df] text-center font-bold text-[#13253f]">
@@ -422,9 +430,6 @@ export default function PrintInvoicePage({
                   <th className="border border-[#655c36] px-1 py-2">Purity</th>
                   <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Qty
-                  </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    Gross Wt
                   </th>
                   <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Net Wt
@@ -461,9 +466,6 @@ export default function PrintInvoicePage({
                       {item.pieces ?? 1}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                      {mgToGramsDisplay(item.grossWeightMg)}
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
@@ -489,7 +491,7 @@ export default function PrintInvoicePage({
                     the blank space — just empty space within the columns. */}
                 {Array.from({ length: Math.max(0, MIN_INVOICE_ITEM_ROWS - items.length) }, (_, i) => (
                   <tr key={`blank-${i}`}>
-                    {Array.from({ length: sale.isGst ? 10 : 9 }, (_, col) => (
+                    {Array.from({ length: itemColumnCount }, (_, col) => (
                       <td key={col} className="border-x border-[#655c36] px-1 py-2">
                         &nbsp;
                       </td>
@@ -502,11 +504,6 @@ export default function PrintInvoicePage({
                   </td>
                   <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {items.length}
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    {mgToGramsDisplay(
-                      items.reduce((sum, i) => sum + i.grossWeightMg, 0),
-                    )}
                   </td>
                   <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
@@ -533,7 +530,7 @@ export default function PrintInvoicePage({
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="border border-[#655c36] px-1 py-2" colSpan={adjustmentLeadSpan} />
                   <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Discount
                   </td>
@@ -542,7 +539,7 @@ export default function PrintInvoicePage({
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                  <td className="border border-[#655c36] px-1 py-2" colSpan={adjustmentLeadSpan} />
                   <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Old Item Deduction{sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}
                   </td>
@@ -552,7 +549,7 @@ export default function PrintInvoicePage({
                 </tr>
                 {oldGoldExchange && (
                   <tr>
-                    <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
+                    <td className="border border-[#655c36] px-1 py-2" colSpan={adjustmentLeadSpan} />
                     <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                       Old Gold / Silver Exchange
                     </td>
@@ -652,9 +649,6 @@ export default function PrintInvoicePage({
               <thead>
                 <tr className="border-b border-gray-200 text-left">
                   <th className="py-1">Item</th>
-                  {template !== "thermal" && (
-                    <th className="py-1 text-right">Gross Wt (g)</th>
-                  )}
                   <th className="py-1 text-right">Net Wt (g)</th>
                   <th className="py-1 text-right">Rate/g</th>
                   {template !== "thermal" && (
@@ -668,11 +662,6 @@ export default function PrintInvoicePage({
                 {items.map((item) => (
                   <tr key={item._id} className="border-b border-gray-200/60">
                     <td className="py-1">{item.label}</td>
-                    {template !== "thermal" && (
-                      <td className="py-1 text-right">
-                        {mgToGramsDisplay(item.grossWeightMg)}
-                      </td>
-                    )}
                     <td className="py-1 text-right">
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>

@@ -21,7 +21,12 @@ export const correctWeight = mutation({
     if (deltaMg === 0) throw new Error("New weight matches the current weight — nothing to adjust");
 
     const now = Date.now();
-    await ctx.db.patch(args.boxItemId, { netWeightMg: args.newNetWeightMg });
+    // Gross moves with net (the stone weight doesn't change), so the piece's
+    // gross weight — what leaves stock when it is sold — stays correct.
+    await ctx.db.patch(args.boxItemId, {
+      netWeightMg: args.newNetWeightMg,
+      grossWeightMg: Math.max(args.newNetWeightMg, boxItem.grossWeightMg + deltaMg),
+    });
 
     await ctx.db.insert("stockMovements", {
       organizationId: auth.organizationId,
@@ -100,8 +105,16 @@ export const listRecent = query({
     return await ctx.db
       .query("auditLogs")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-      .filter((q) => q.or(q.eq(q.field("action"), "stock.correct_weight"), q.or(q.eq(q.field("action"), "stock.write_off"), q.eq(q.field("action"), "stock.adjust_box"))))
       .order("desc")
+      .filter((q) =>
+        q.or(
+          q.eq(q.field("action"), "stock.correct_weight"),
+          q.eq(q.field("action"), "stock.write_off"),
+          q.eq(q.field("action"), "stock.adjust_box"),
+          // GST companies adjust item stock instead of boxes.
+          q.eq(q.field("action"), "item_stock.adjust"),
+        ),
+      )
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(100);
   },
@@ -168,7 +181,7 @@ export const adjustBox = mutation({
     for (const item of retained) {
       if (!delta) break;
       const step = delta > 0 ? delta : -Math.min(item.netWeightMg, -delta);
-      await ctx.db.patch(item._id, { netWeightMg: item.netWeightMg + step });
+      await ctx.db.patch(item._id, { netWeightMg: item.netWeightMg + step, grossWeightMg: Math.max(item.netWeightMg + step, item.grossWeightMg + step) });
       if (step) await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: item.productId, boxItemId: item._id, boxId: box._id, direction: step > 0 ? "in" : "out", netWeightMg: Math.abs(step), quantity: 0, sourceTable: "stock_adjustments", sourceId: item._id, createdAt: now });
       delta -= step;
     }

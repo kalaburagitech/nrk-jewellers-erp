@@ -400,6 +400,14 @@ export default defineSchema({
     // GST company line: added to item stock (productStock) instead of a box.
     toItemStock: v.optional(v.boolean()),
     pieces: v.optional(v.number()),
+    // Weight actually added to item stock for this line (the gross weight).
+    // Absent on lines saved before stock moved to gross weight — those
+    // added their net weight, so reversals fall back to netWeightMg.
+    stockWeightMg: v.optional(v.number()),
+    // GST (item-stock) line sent back to the supplier by a purchase return.
+    returnedAt: v.optional(v.number()),
+    // On a purchase return's GST line: the original invoice line it sends back.
+    returnOfPurchaseItemId: v.optional(v.id("purchaseItems")),
   }).index("by_purchase", ["purchaseId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Sales ----------
@@ -462,6 +470,9 @@ export default defineSchema({
     // GST company line: typed in manually and deducted from item stock (productStock), not a box piece.
     fromItemStock: v.optional(v.boolean()),
     pieces: v.optional(v.number()),
+    // Weight taken out of item stock (the gross weight). Absent on older
+    // lines, which deducted their net weight — reversals fall back to that.
+    stockWeightMg: v.optional(v.number()),
   }).index("by_sale", ["saleId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Payments & ledgers ----------
