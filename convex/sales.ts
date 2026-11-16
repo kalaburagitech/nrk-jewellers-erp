@@ -138,6 +138,8 @@ export const listByDocumentType = query({
     documentType: v.union(
       v.literal("quotation"),
       v.literal("proforma_invoice"),
+      v.literal("sales_order"),
+      v.literal("delivery_challan"),
       v.literal("sales_return"),
       v.literal("credit_note"),
     ),
@@ -785,10 +787,12 @@ const estimateLineValidator = v.object({
 const ESTIMATE_PREFIX: Record<string, string> = {
   quotation: "QUO-",
   proforma_invoice: "PI-",
+  sales_order: "SO-",
+  delivery_challan: "DC-",
 };
 
 /**
- * Quotations and proforma invoices are non-binding estimates: no stock
+ * Quotations, proforma invoices, sale orders and delivery challans are non-binding documents: no stock
  * leaves a box, no customer ledger entry is written, no payment is
  * recorded. They reuse the sales/saleItems tables (boxItemId stays unset)
  * purely so printing, sharing and listing can reuse the same code as a
@@ -796,7 +800,7 @@ const ESTIMATE_PREFIX: Record<string, string> = {
  */
 export const createEstimate = mutation({
   args: {
-    documentType: v.union(v.literal("quotation"), v.literal("proforma_invoice")),
+    documentType: v.union(v.literal("quotation"), v.literal("proforma_invoice"), v.literal("sales_order"), v.literal("delivery_challan")),
     customerId: v.id("customers"),
     isGst: v.boolean(),
     items: v.array(estimateLineValidator),

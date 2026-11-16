@@ -337,3 +337,20 @@ export const recomputeItemCounts = internalMutation({
     }
   },
 });
+
+/** Barcode/QR scan at billing: label codes are "NRK:<boxItemId>"; a raw saved barcode also works. */
+export const lookupScannedItem = query({
+  args: { code: v.string() },
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const code = args.code.trim();
+    if (!code) return { error: "Nothing was scanned." } as const;
+    const id = ctx.db.normalizeId("boxItems", code.replace(/^NRK:/i, ""));
+    const item = id
+      ? await ctx.db.get(id)
+      : await ctx.db.query("boxItems").withIndex("by_org_and_barcode", (q) => q.eq("organizationId", auth.organizationId).eq("barcode", code)).first();
+    if (!item || item.deletedAt || item.organizationId !== auth.organizationId) return { error: `No item found for code "${code}".` } as const;
+    if (item.status !== "in_stock") return { error: `"${item.label}" is not in stock (${item.status.replaceAll("_", " ")}).` } as const;
+    return { item } as const;
+  },
+});

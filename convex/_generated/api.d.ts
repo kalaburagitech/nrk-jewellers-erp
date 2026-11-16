@@ -12,6 +12,7 @@ import type * as accountingYears from "../accountingYears.js";
 import type * as appPreferences from "../appPreferences.js";
 import type * as appSecurity from "../appSecurity.js";
 import type * as appSecurityInternal from "../appSecurityInternal.js";
+import type * as auditTrail from "../auditTrail.js";
 import type * as auth from "../auth.js";
 import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
@@ -60,6 +61,7 @@ declare const fullApi: ApiFromModules<{
   appPreferences: typeof appPreferences;
   appSecurity: typeof appSecurity;
   appSecurityInternal: typeof appSecurityInternal;
+  auditTrail: typeof auditTrail;
   auth: typeof auth;
   boxes: typeof boxes;
   cashBank: typeof cashBank;

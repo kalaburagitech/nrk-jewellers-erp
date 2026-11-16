@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ChangePasscodeDialog } from "@/components/change-passcode-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useAppLock } from "@/components/app-lock-gate";
@@ -192,6 +193,8 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
             description="Hides the app until the passcode is entered again."
             control={<Button variant="outline" size="sm" onClick={appLock.lock}><Lock className="h-4 w-4" />Lock now</Button>}
           />
+          <SettingRow title="Passcode" description="Change the 4–6 digit passcode asked when the app opens." control={<ChangePasscodeDialog />} />
+          <SettingRow title="Audit trail" description="See who created, edited or deleted bills and stock." control={<Button asChild variant="outline" size="sm"><Link href="/settings/audit-trail">Open</Link></Button>} />
           <SettingRow title="Business currency" description="Amounts are stored and printed in rupees." control={<span className="text-sm font-medium">₹ INR</span>} />
         </CardContent>
       </Card>

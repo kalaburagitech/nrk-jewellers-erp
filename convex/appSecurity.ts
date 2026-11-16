@@ -106,6 +106,30 @@ export const verifyMyAppPin = action({
   },
 });
 
+/** Settings → Change Passcode: requires the current passcode (wrong tries count toward the lockout). */
+export const changeMyAppPin = action({
+  args: { currentPin: v.string(), newPin: v.string() },
+  handler: async (ctx, args): Promise<{ changed: boolean; lockedUntil?: number }> => {
+    if (!PIN_PATTERN.test(args.newPin)) throw new Error("Choose a 4 to 6 digit passcode.");
+    const access = await ctx.runQuery(api.organizations.getMyAccess, {});
+    if (!access?.user || !access.membership) throw new Error("Sign in to change your passcode.");
+    const record: { pinSalt: string; pinHash: string; lockedUntil?: number } | null = await ctx.runQuery(internal.appSecurityInternal.getPinRecord, { userId: access.user._id });
+    if (!record) throw new Error("No passcode is set yet.");
+    if (record.lockedUntil && record.lockedUntil > Date.now()) return { changed: false, lockedUntil: record.lockedUntil };
+    const valid = PIN_PATTERN.test(args.currentPin) && safeEqual(await derivePinHash(args.currentPin, hexToBytes(record.pinSalt)), record.pinHash);
+    const { lockedUntil } = await ctx.runMutation(internal.appSecurityInternal.recordPinAttempt, { userId: access.user._id, success: valid });
+    if (!valid) return { changed: false, lockedUntil };
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    await ctx.runMutation(internal.appSecurityInternal.replacePin, {
+      userId: access.user._id,
+      organizationId: access.membership.organizationId,
+      pinSalt: bytesToHex(salt),
+      pinHash: await derivePinHash(args.newPin, salt),
+    });
+    return { changed: true };
+  },
+});
+
 export const resetMyAppPinWithPassword = action({
   args: { accountPassword: v.string(), pin: v.string() },
   handler: async (ctx, args) => {

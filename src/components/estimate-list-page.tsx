@@ -22,7 +22,7 @@ export function EstimateListPage({
   triggerLabel,
   dialogTitle,
 }: {
-  documentType: "quotation" | "proforma_invoice";
+  documentType: "quotation" | "proforma_invoice" | "sales_order" | "delivery_challan";
   heading: string;
   description: string;
   triggerLabel: string;

@@ -128,6 +128,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Metal Purity Configuration", href: "/settings/purity" },
       { title: "Users and Roles", href: "/settings/users" },
       { title: "General Settings", href: "/settings/general" },
+      { title: "Audit Trail", href: "/settings/audit-trail" },
     ],
   },
 ];

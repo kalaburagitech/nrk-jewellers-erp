@@ -58,7 +58,7 @@ export function EstimateFormDialog({
   triggerLabel,
   title,
 }: {
-  documentType: "quotation" | "proforma_invoice";
+  documentType: "quotation" | "proforma_invoice" | "sales_order" | "delivery_challan";
   triggerLabel: string;
   title: string;
 }) {

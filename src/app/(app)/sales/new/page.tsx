@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
+import { BarcodeScanInput } from "@/components/barcode-scan-input";
 import { MessageCircle, Minus, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { Button } from "@/components/ui/button";
@@ -1264,12 +1265,15 @@ export default function NewBillPage() {
         {gstCompany ? (
           <ManualItemForm onAdd={addManualLine} />
         ) : (
-          <BoxItemPicker
-            boxes={boxes}
-            products={products}
-            onAdd={addLine}
-            alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [l.boxItemId] : [])))}
-          />
+          <>
+            <BarcodeScanInput onItem={(item) => addLine(item)} alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [String(l.boxItemId)] : [])))} />
+            <BoxItemPicker
+              boxes={boxes}
+              products={products}
+              onAdd={addLine}
+              alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [l.boxItemId] : [])))}
+            />
+          </>
         )}
 
         {/* Vyapar Items Table matching Page 17 */}
