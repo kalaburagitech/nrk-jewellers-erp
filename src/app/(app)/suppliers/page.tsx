@@ -42,8 +42,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { supplierFormSchema, GST_TYPE_OPTIONS, type SupplierFormValues } from "@/lib/schemas/party";
+import { GST_STATES } from "@/lib/gst-state-codes";
 import { formatPaise, rupeesToPaise, paiseToRupeesInput } from "@/lib/money";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
 import type { Doc } from "../../../../convex/_generated/dataModel";
@@ -80,6 +82,8 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
   const [customFields, setCustomFields] = useState<Record<string, string>>(supplier?.customFields ?? {});
   const [open, setOpen] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [showShipping, setShowShipping] = useState(!!supplier?.shippingAddress);
+  const [customLimit, setCustomLimit] = useState(supplier?.creditLimitPaise !== undefined);
   const isEdit = !!supplier;
 
   const defaultValues: SupplierFormValues = {
@@ -87,6 +91,7 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
     phone: supplier?.phone ?? "",
     email: supplier?.email ?? "",
     address: supplier?.address ?? "",
+    shippingAddress: supplier?.shippingAddress ?? "",
     gstin: supplier?.gstin ?? "",
     gstType: supplier?.gstType ?? "unregistered_consumer",
     state: supplier?.state ?? "",
@@ -102,6 +107,8 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
   function resetForm() {
     form.reset(defaultValues);
     setCustomFields(supplier?.customFields ?? {});
+    setShowShipping(!!supplier?.shippingAddress);
+    setCustomLimit(supplier?.creditLimitPaise !== undefined);
   }
 
   async function onSubmit(values: SupplierFormValues) {
@@ -112,10 +119,11 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
         phone: values.phone || undefined,
         email: values.email || undefined,
         address: values.address || undefined,
+        shippingAddress: showShipping ? values.shippingAddress || undefined : undefined,
         gstin: values.gstin || undefined,
         gstType: (values.gstType || undefined) as Doc<"suppliers">["gstType"],
         state: values.state || undefined,
-        creditLimitPaise: values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
+        creditLimitPaise: customLimit && values.creditLimitRupees ? (rupeesToPaise(values.creditLimitRupees) ?? undefined) : undefined,
         openingBalancePaise: values.openingBalanceRupees ? (rupeesToPaise(values.openingBalanceRupees) ?? undefined) : undefined,
         openingBalanceDateMs: values.openingBalanceDate ? new Date(values.openingBalanceDate).getTime() : undefined,
         customFields,
@@ -217,7 +225,7 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
               name="address"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Address</FormLabel>
+                  <FormLabel>Billing address</FormLabel>
                   <FormControl>
                     <Textarea {...field} rows={2} />
                   </FormControl>
@@ -225,33 +233,73 @@ function SupplierFormDialog({ supplier }: { supplier?: Doc<"suppliers"> }) {
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-2 gap-4">
+            {showShipping ? (
               <FormField
                 control={form.control}
-                name="state"
+                name="shippingAddress"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>State</FormLabel>
+                    <FormLabel>Shipping address</FormLabel>
                     <FormControl>
-                      <Input {...field} placeholder="optional" />
+                      <Textarea {...field} rows={2} placeholder="optional" />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="creditLimitRupees"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Credit limit (₹)</FormLabel>
+            ) : (
+              <button
+                type="button"
+                className="-mt-2 w-fit text-left text-sm font-medium text-primary underline-offset-4 hover:underline"
+                onClick={() => setShowShipping(true)}
+              >
+                + Enable shipping address
+              </button>
+            )}
+            <FormField
+              control={form.control}
+              name="state"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>State</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
-                      <Input {...field} inputMode="decimal" placeholder="optional" />
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select state" />
+                      </SelectTrigger>
                     </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                    <SelectContent>
+                      {GST_STATES.map((s) => (
+                        <SelectItem key={s} value={s}>{s}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-3">
+                <FormLabel className="m-0">Credit limit</FormLabel>
+                <span className={!customLimit ? "font-medium text-primary" : "text-muted-foreground"}>No Limit</span>
+                <Switch checked={customLimit} onCheckedChange={setCustomLimit} />
+                <span className={customLimit ? "font-medium text-primary" : "text-muted-foreground"}>Custom Limit</span>
+              </div>
+              {customLimit && (
+                <FormField
+                  control={form.control}
+                  name="creditLimitRupees"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Credit limit (₹)</FormLabel>
+                      <FormControl>
+                        <Input {...field} inputMode="decimal" placeholder="0.00" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
             </div>
             <FormField
               control={form.control}

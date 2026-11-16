@@ -39,6 +39,9 @@ const GST_STATE_CODES: Record<string, string> = {
   "Ladakh": "38",
 };
 
+/** Every state/UT name Vyapar's own party-state dropdown offers, in the same source order as the GST code table above. */
+export const GST_STATES = Object.keys(GST_STATE_CODES);
+
 /** "Karnataka" -> "29-Karnataka". Falls back to the plain name when the state isn't in the GST code table (e.g. not yet set, or a non-standard value). */
 export function withGstStateCode(state: string | undefined | null): string {
   if (!state) return "";
