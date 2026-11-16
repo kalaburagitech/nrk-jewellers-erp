@@ -526,6 +526,7 @@ export default function NewBillPage() {
   const createSale = useMutation(api.sales.create);
   const updateSale = useMutation(api.sales.update);
   const createCustomer = useMutation(api.customers.create);
+  const prefs = useQuery(api.appPreferences.get);
   const createTaxConfig = useMutation(api.taxConfigurations.create);
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
@@ -694,14 +695,16 @@ export default function NewBillPage() {
         otherDeductionGrams: "",
         ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
         wastagePercent: "",
-        makingChargeRupees: "",
+        // Item defaults from the Add Item form (making charge, item-wise tax rate).
+        makingChargeRupees: product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
         stoneChargeRupees: "",
-        taxConfigurationId: taxConfigs?.[0]?._id ?? "",
+        taxConfigurationId: product?.taxConfigurationId ?? taxConfigs?.[0]?._id ?? "",
       },
     ]);
   }
 
   function addManualLine(item: { productId: string; name: string; metalPurityId?: string; grossWeightMg: number; stoneWeightMg: number; pieces: number }) {
+    const product = productById.get(item.productId as Id<"products">);
     const purityId = item.metalPurityId ?? "";
     const defaultRatePaise = purityId ? rateByPurity.get(purityId) : undefined;
     setLines((prev) => [
@@ -719,9 +722,9 @@ export default function NewBillPage() {
         otherDeductionGrams: "",
         ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
         wastagePercent: "",
-        makingChargeRupees: "",
+        makingChargeRupees: product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
         stoneChargeRupees: "",
-        taxConfigurationId: taxConfigs?.[0]?._id ?? "",
+        taxConfigurationId: product?.taxConfigurationId ?? taxConfigs?.[0]?._id ?? "",
       },
     ]);
   }
@@ -903,6 +906,10 @@ export default function NewBillPage() {
     }
     if (oldGoldEnabled && (!oldGoldPurityId || !oldGoldComputed || oldGoldComputed.grossWeightMg <= 0 || oldGoldComputed.ratePerGramPaise <= 0)) {
       setServerError("Fill in the old gold purity, weight and rate, or turn off old gold exchange.");
+      return;
+    }
+    if (!customerId && prefs?.blockNewPartiesFromTxn) {
+      setServerError("Select an existing customer. Adding new parties from the bill is turned off in Settings → General.");
       return;
     }
     setSubmitting(true);
@@ -1266,7 +1273,7 @@ export default function NewBillPage() {
           <ManualItemForm onAdd={addManualLine} />
         ) : (
           <>
-            <BarcodeScanInput onItem={(item) => addLine(item)} alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [String(l.boxItemId)] : [])))} />
+            {prefs?.items.barcodeScan !== false && <BarcodeScanInput onItem={(item) => addLine(item)} alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [String(l.boxItemId)] : [])))} />}
             <BoxItemPicker
               boxes={boxes}
               products={products}

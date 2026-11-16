@@ -89,6 +89,9 @@ export default function NewPurchasePage() {
   const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
   const purities = useQuery(api.metalPurities.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
+  const prefs = useQuery(api.appPreferences.get);
+  const blockNewParties = prefs?.blockNewPartiesFromTxn ?? false;
+  const blockNewItems = prefs?.blockNewItemsFromTxn ?? false;
   const createPurchase = useMutation(api.purchases.create);
   const updatePurchase = useMutation(api.purchases.update);
   const createSupplier = useMutation(api.suppliers.create);
@@ -457,7 +460,7 @@ export default function NewPurchasePage() {
                   <CardTitle className="text-base">Supplier Details</CardTitle>
                   <p className="text-xs text-muted-foreground mt-0.5">Select an existing supplier or add a new supplier manually.</p>
                 </div>
-                <Button
+                {!blockNewParties && <Button
                   type="button"
                   variant="outline"
                   size="sm"
@@ -472,7 +475,7 @@ export default function NewPurchasePage() {
                   }}
                 >
                   {isNewSupplier ? "Select Existing Supplier" : "+ Manual / New Supplier"}
-                </Button>
+                </Button>}
               </CardHeader>
               <CardContent>
                 <div className="flex flex-wrap gap-4 items-start">
@@ -577,7 +580,7 @@ export default function NewPurchasePage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Button
+                    {!blockNewItems && <Button
                       type="button"
                       variant="ghost"
                       size="sm"
@@ -585,7 +588,7 @@ export default function NewPurchasePage() {
                       onClick={() => setQuickIsManualProduct((p) => !p)}
                     >
                       {quickIsManualProduct ? "Select Product from list" : "+ Type custom product"}
-                    </Button>
+                    </Button>}
                     {!gstCompany && (
                       <Button
                         type="button"
@@ -702,7 +705,7 @@ export default function NewPurchasePage() {
                         <div className="flex flex-col gap-1.5">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-medium">Product</span>
-                            <button
+                            {!blockNewItems && <button
                               type="button"
                               className="text-[11px] text-primary hover:underline"
                               onClick={() => {
@@ -713,7 +716,7 @@ export default function NewPurchasePage() {
                               }}
                             >
                               {manualProductFlags[index] ? "Select list" : "+ Type manual"}
-                            </button>
+                            </button>}
                           </div>
                           {manualProductFlags[index] ? (
                             <FormField

@@ -18,7 +18,9 @@ import {
   Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ChangePasscodeDialog } from "@/components/change-passcode-dialog";
+import { ChangePasscodeDialog, PasscodeToggle } from "@/components/change-passcode-dialog";
+import { ShopPreferencesCard } from "@/components/shop-preferences-card";
+import { ItemSettingsCard } from "@/components/item-settings-card";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { useAppLock } from "@/components/app-lock-gate";
@@ -193,11 +195,13 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
             description="Hides the app until the passcode is entered again."
             control={<Button variant="outline" size="sm" onClick={appLock.lock}><Lock className="h-4 w-4" />Lock now</Button>}
           />
-          <SettingRow title="Passcode" description="Change the 4–6 digit passcode asked when the app opens." control={<ChangePasscodeDialog />} />
+          <SettingRow title="Enable Passcode" description="Ask for your passcode every time the app opens." control={<PasscodeToggle />} />
+          <SettingRow title="Change Passcode" description="Change the 4–6 digit passcode asked when the app opens." control={<ChangePasscodeDialog />} />
           <SettingRow title="Audit trail" description="See who created, edited or deleted bills and stock." control={<Button asChild variant="outline" size="sm"><Link href="/settings/audit-trail">Open</Link></Button>} />
           <SettingRow title="Business currency" description="Amounts are stored and printed in rupees." control={<span className="text-sm font-medium">₹ INR</span>} />
         </CardContent>
       </Card>
+      <ShopPreferencesCard />
 
       <Card>
         <CardHeader className="flex flex-row items-start justify-between pb-2">
@@ -311,7 +315,7 @@ export function GeneralSettings({ initialTab = "general" }: { initialTab?: Setti
     if (tab === "print") content = <div className="flex flex-col gap-5">{content}<LinkCard title="Invoice details on the bill" description="Business name, address, logo and motto printed on the invoice header." links={[{ href: "/settings/business", label: "Business profile" }, { href: "/settings/custom-fields", label: "Customer fields on invoice" }]} /></div>;
   } else if (tab === "gst") content = <LinkCard title="Taxes & GST" description="GST registration, tax rates used on bills, and metal purity options." links={[{ href: "/settings/gst", label: "GST configuration" }, { href: "/settings/purity", label: "Metal purity" }]} />;
   else if (tab === "party") content = <LinkCard title="Parties" description="Customers and suppliers, plus your own extra fields and dropdowns for them." links={[{ href: "/customers", label: "Customers" }, { href: "/suppliers", label: "Suppliers" }, { href: "/settings/custom-fields", label: "Custom fields & dropdowns" }]} />;
-  else if (tab === "item") content = <LinkCard title="Items" description="Item list, stock groups and categories, plus custom item fields." links={[{ href: "/inventory/products", label: "Item list" }, { href: "/inventory/groups", label: "Stock groups" }, { href: "/inventory/categories", label: "Stock categories" }, { href: "/settings/custom-fields", label: "Custom fields" }]} />;
+  else if (tab === "item") content = <ItemSettingsCard />;
   else content = <LinkCard title="Accounting" description="Financial (booking) years for this company, and staff access." links={[{ href: "/settings/accounting-years", label: "Booking years" }, { href: "/settings/users", label: "Users and roles" }]} />;
 
   return (

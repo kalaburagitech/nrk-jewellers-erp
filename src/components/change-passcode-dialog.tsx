@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useAction } from "convex/react";
+import { useAction, useQuery } from "convex/react";
+import { Switch } from "@/components/ui/switch";
 import { api } from "../../convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,5 +66,49 @@ export function ChangePasscodeDialog() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Settings → Enable Passcode: switching needs the current passcode. */
+export function PasscodeToggle() {
+  const status = useQuery(api.appSecurity.getMyAppPinStatus, {});
+  const setEnabled = useAction(api.appSecurity.setMyAppPinEnabled);
+  const [target, setTarget] = useState<boolean | null>(null);
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!status?.configured) return null;
+
+  async function confirm() {
+    if (target === null) return;
+    setBusy(true);
+    setError("");
+    try {
+      const r = await setEnabled({ pin, enabled: target });
+      if (r.changed) { setTarget(null); setPin(""); }
+      else setError(r.lockedUntil ? `Too many wrong tries. Try after ${new Date(r.lockedUntil).toLocaleTimeString("en-IN")}.` : "Wrong passcode.");
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not change this setting."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Switch aria-label="Enable passcode" checked={status.enabled} onCheckedChange={(c) => { setTarget(c); setError(""); }} />
+      <Dialog open={target !== null} onOpenChange={(o) => { if (!o) { setTarget(null); setPin(""); } }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>{target ? "Turn passcode on" : "Turn passcode off"}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{target ? "The app will ask for the passcode every time it opens." : "Anyone with this device and your login can open the app without a passcode."}</p>
+          <div className="grid gap-1.5">
+            <Label>Current passcode</Label>
+            <Input type="password" inputMode="numeric" autoComplete="off" maxLength={6} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <DialogFooter><Button disabled={busy || pin.length < 4} onClick={confirm}>{busy ? "Saving…" : "Confirm"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

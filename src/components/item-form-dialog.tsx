@@ -50,12 +50,12 @@ const toMg = (s: string) => (s.trim() === "" ? undefined : Number.isFinite(Numbe
 const toInt = (s: string) => (s.trim() === "" ? undefined : Number.isInteger(Number(s)) && Number(s) >= 0 ? Number(s) : Number.NaN);
 const today = () => new Date().toISOString().slice(0, 10);
 
-function blank(product?: Doc<"products">) {
+function blank(product?: Doc<"products">, defaultUnit: Unit = "piece") {
   return {
     itemType: product?.itemType ?? ("product" as "product" | "service"),
     name: product?.name ?? "",
     hsnCode: product?.hsnCode ?? "",
-    unit: product?.unit ?? ("piece" as Unit),
+    unit: product?.unit ?? defaultUnit,
     sku: product?.sku ?? "",
     stockCategoryId: product?.stockCategoryId ?? NONE,
     stockGroupId: product?.stockGroupId ?? NONE,
@@ -105,8 +105,9 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const isGstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
 
   const isEdit = !!product;
+  const defaultUnit = useQuery(api.appPreferences.get)?.items.defaultUnit ?? "piece";
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState(() => blank(product));
+  const [f, setF] = useState(() => blank(product, defaultUnit));
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -116,7 +117,7 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const isService = f.itemType === "service";
 
   function reset() {
-    setF(blank(product));
+    setF(blank(product, defaultUnit));
     setImagePreview(null);
     setError(null);
     setTab("pricing");
@@ -196,7 +197,7 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
       if (isEdit) await update({ id: product._id, ...payload });
       else await create({ ...payload, ...(isGstCompany ? opening : {}) });
       if (andNew && !isEdit) {
-        setF(blank());
+        setF(blank(undefined, defaultUnit));
         setImagePreview(null);
         setTab("pricing");
       } else {
@@ -213,7 +214,7 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const image = imagePreview ?? (f.imageStorageId && f.imageStorageId === product?.imageStorageId ? details?.imageUrl : null);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); }}>
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); else if (!isEdit) setF(blank(undefined, defaultUnit)); }}>
       <DialogTrigger asChild>
         {trigger ?? (isEdit ? (
           <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit item"><Pencil className="h-4 w-4" /></Button>

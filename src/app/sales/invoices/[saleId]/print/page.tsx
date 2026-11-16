@@ -139,6 +139,7 @@ export default function PrintInvoicePage({
     saleId: saleId as Id<"sales">,
   });
   const preferences = useQuery(api.appPreferences.get);
+  const showGstin = preferences?.printGstin ?? true;
   // Until the user picks a size here, follow the shop default from Settings → Print.
   const [chosenTemplate, setTemplate] = useState<Template | null>(null);
   const template: Template = chosenTemplate ?? preferences?.defaultPrintTemplate ?? "half-a4";
@@ -391,7 +392,7 @@ export default function PrintInvoicePage({
                 {customer?.phone && (
                   <p className={`text-gray-600 ${template === "half-a4" ? "text-[9px]" : "text-sm"}`}>{customer.phone}</p>
                 )}
-                {customer?.gstin && (
+                {showGstin && customer?.gstin && (
                   <p className={`text-gray-600 ${template === "half-a4" ? "text-[9px]" : "text-sm"}`}>
                     GSTIN: {customer.gstin}
                   </p>
@@ -623,7 +624,7 @@ export default function PrintInvoicePage({
                 )}
                 <p className="text-gray-500">
                   {organization?.phone && <>{organization.phone} · </>}
-                  {organization?.gstin && <>GSTIN: {organization.gstin}</>}
+                  {showGstin && organization?.gstin && <>GSTIN: {organization.gstin}</>}
                 </p>
               </div>
               <div className="text-right">
@@ -643,7 +644,7 @@ export default function PrintInvoicePage({
               {customer?.phone && (
                 <p className="text-gray-500">{customer.phone}</p>
               )}
-              {customer?.gstin && (
+              {showGstin && customer?.gstin && (
                 <p className="text-gray-500">GSTIN: {customer.gstin}</p>
               )}
             </div>

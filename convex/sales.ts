@@ -1,3 +1,4 @@
+import { readPreferences } from "./appPreferences";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
@@ -447,7 +448,7 @@ async function applySaleTransaction(
 
     if (!boxItem) {
       // GST line: take the sold net weight and pieces out of item stock.
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId, weightDeltaMg: -computed.netWeightMg, piecesDelta: -pieces, sourceTable: "sales", sourceId: saleId, at: billDate });
+      await changeItemStock(ctx, { organizationId: auth.organizationId, productId, weightDeltaMg: -computed.netWeightMg, piecesDelta: -pieces, sourceTable: "sales", sourceId: saleId, at: billDate, allowNegative: !(await readPreferences(ctx, auth.organizationId)).stopSaleOnNegativeStock });
       continue;
     }
 

@@ -130,6 +130,14 @@ export default defineSchema({
 
   // Hashed per-user app unlock PINs. The secret hash stays server-side and is
   // never included in the public access/profile queries.
+  // Settings → Auto Backup: JSON backups saved on schedule (newest 10 kept per company).
+  autoBackups: defineTable({
+    organizationId: v.id("organizations"),
+    storageId: v.id("_storage"),
+    sizeBytes: v.number(),
+    createdAt: v.number(),
+  }).index("by_org", ["organizationId"]),
+
   appSecurity: defineTable({
     userId: v.id("users"),
     organizationId: v.id("organizations"),
@@ -137,6 +145,8 @@ export default defineSchema({
     pinHash: v.string(),
     failedAttempts: v.optional(v.number()),
     lockedUntil: v.optional(v.number()),
+    // Settings → "Enable Passcode" off: the app opens without asking (PIN kept for turning it back on).
+    disabled: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

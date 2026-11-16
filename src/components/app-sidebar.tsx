@@ -25,6 +25,7 @@ import { NAV_SECTIONS } from "@/lib/nav-data";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { isWriteOnlyPath } from "@/components/access-context";
 import { PrivacyUnlockTrigger } from "@/components/privacy-unlock-trigger";
+import { setAmountDecimals } from "@/lib/money";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
@@ -57,6 +58,8 @@ export function AppSidebar({ role }: { role: string }) {
   const term = search.trim().toLowerCase();
   const viewOnly = role === "staff";
   const preferences = useQuery(api.appPreferences.get);
+  // Sidebar renders before page content, so every amount on screen picks this up.
+  if (preferences) setAmountDecimals(preferences.amountDecimals);
   const disabledPaths = new Set<string>(
     (Object.keys(OPTIONAL_DOCUMENT_PATHS) as (keyof typeof OPTIONAL_DOCUMENT_PATHS)[])
       .filter((key) => preferences && !preferences.documents[key])

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { convexTest } from "convex-test";
 import schema from "./schema";
 import { api } from "./_generated/api";
+import { DEFAULT_PREFERENCES } from "./appPreferences";
 const modules = import.meta.glob(["./**/*.ts", "!./**/*.test.ts"]);
 
 async function fixture() {
@@ -78,8 +79,8 @@ describe("app preferences", () => {
   it("defaults on, saves for the owner only", async () => {
     const { owner, admin, staff } = await fixture();
     const initial = await staff.query(api.appPreferences.get, {});
-    expect(initial).toEqual({ documents: { quotations: true, proforma: true, orders: true, challans: true }, defaultPrintTemplate: "half-a4" });
-    const next = { documents: { ...initial.documents, challans: false }, defaultPrintTemplate: "full-a4" as const };
+    expect(initial).toEqual(DEFAULT_PREFERENCES);
+    const next = { ...initial, documents: { ...initial.documents, challans: false }, defaultPrintTemplate: "full-a4" as const, amountDecimals: 0 };
     await expect(admin.mutation(api.appPreferences.save, { preferences: next })).rejects.toThrow(/only the owner/i);
     await expect(staff.mutation(api.appPreferences.save, { preferences: next })).rejects.toThrow(/view-only/i);
     await owner.mutation(api.appPreferences.save, { preferences: next });

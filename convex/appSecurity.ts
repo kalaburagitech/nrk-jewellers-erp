@@ -53,7 +53,7 @@ export const getMyAppPinStatus = query({
       .query("appSecurity")
       .withIndex("by_user", (q) => q.eq("userId", auth.userId))
       .unique();
-    return { configured: !!security?.pinHash };
+    return { configured: !!security?.pinHash, enabled: !security?.disabled };
   },
 });
 
@@ -103,6 +103,23 @@ export const verifyMyAppPin = action({
     const valid = safeEqual(candidate, record.pinHash);
     const { lockedUntil } = await ctx.runMutation(internal.appSecurityInternal.recordPinAttempt, { userId: access.user._id, success: valid });
     return { valid, lockedUntil };
+  },
+});
+
+/** Settings → Enable Passcode on/off. Needs the current passcode either way. */
+export const setMyAppPinEnabled = action({
+  args: { pin: v.string(), enabled: v.boolean() },
+  handler: async (ctx, args): Promise<{ changed: boolean; lockedUntil?: number }> => {
+    const access = await ctx.runQuery(api.organizations.getMyAccess, {});
+    if (!access?.user) throw new Error("Sign in to change passcode settings.");
+    const record: { pinSalt: string; pinHash: string; lockedUntil?: number } | null = await ctx.runQuery(internal.appSecurityInternal.getPinRecord, { userId: access.user._id });
+    if (!record) throw new Error("No passcode is set yet.");
+    if (record.lockedUntil && record.lockedUntil > Date.now()) return { changed: false, lockedUntil: record.lockedUntil };
+    const valid = PIN_PATTERN.test(args.pin) && safeEqual(await derivePinHash(args.pin, hexToBytes(record.pinSalt)), record.pinHash);
+    const { lockedUntil } = await ctx.runMutation(internal.appSecurityInternal.recordPinAttempt, { userId: access.user._id, success: valid });
+    if (!valid) return { changed: false, lockedUntil };
+    await ctx.runMutation(internal.appSecurityInternal.setPinDisabled, { userId: access.user._id, disabled: !args.enabled });
+    return { changed: true };
   },
 });
 

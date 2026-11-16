@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Dynamic table access is restricted to this explicit business-data allowlist.
 import { v } from "convex/values";
-import { action, internalMutation, mutation, query } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import type { TableNames } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
@@ -428,5 +428,15 @@ export const archivedTransactions = query({
           });
     }
     return result.sort((a, b) => b.date - a.date).slice(0, 200);
+  },
+});
+
+/** Backup JSON for one company, for the scheduled auto-backup (no signed-in user). */
+export const exportBackupInternal = internalQuery({
+  args: { organizationId: v.id("organizations") },
+  handler: async (ctx, args) => {
+    const tables = await readRows(ctx, args.organizationId);
+    const organization = await ctx.db.get(args.organizationId);
+    return { format: "nrk-erp-backup", version: 2, organizationId: args.organizationId, exportedAt: Date.now(), organization, tables };
   },
 });

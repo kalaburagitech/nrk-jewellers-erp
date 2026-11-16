@@ -13,6 +13,7 @@ export default function BackupPage() {
   const clearCompanyData = useAction(api.dataManagement.clearCompanyData);
   const access = useQuery(api.organizations.getMyAccess);
   const allowed = ["owner", "admin"].includes(access?.membership?.role ?? "");
+  const autoBackups = useQuery(api.autoBackup.list, allowed ? {} : "skip");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [backupReady, setBackupReady] = useState(false);
@@ -87,6 +88,29 @@ export default function BackupPage() {
                 <Download />
                 Download backup
               </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Auto backups</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              {autoBackups === undefined ? (
+                <p className="text-muted-foreground">Loading…</p>
+              ) : autoBackups.length === 0 ? (
+                <p className="text-muted-foreground">No auto backups yet. Turn on Auto Backup in Settings → General; the newest 10 are kept here.</p>
+              ) : (
+                autoBackups.map((b) => (
+                  <div key={b.id} className="flex items-center justify-between gap-3 border-b py-2 last:border-0">
+                    <span>{new Date(b.createdAt).toLocaleString("en-IN")} · {(b.sizeBytes / 1024).toFixed(0)} KB</span>
+                    {b.url && (
+                      <Button asChild variant="outline" size="sm">
+                        <a href={b.url} download={`NRK-auto-backup-${new Date(b.createdAt).toISOString().slice(0, 10)}.json`}><Download className="h-4 w-4" />Download</a>
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
           <Card>

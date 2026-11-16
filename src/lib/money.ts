@@ -16,9 +16,15 @@ export function percentToBasisPoints(percent: string | number): number | null {
   return Math.round(value * 100);
 }
 
+// Settings → General → "Amount (upto decimal places)". Set once by the app shell from shop preferences.
+let amountDecimals = 2;
+export function setAmountDecimals(decimals: number) {
+  if (Number.isInteger(decimals) && decimals >= 0 && decimals <= 3) amountDecimals = decimals;
+}
+
 export function formatPaise(paise: number): string {
   return `₹${(paise / 100).toLocaleString("en-IN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
+    minimumFractionDigits: amountDecimals,
+    maximumFractionDigits: amountDecimals,
   })}`;
 }

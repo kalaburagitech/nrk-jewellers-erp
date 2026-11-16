@@ -39,6 +39,8 @@ export async function changeItemStock(
     sourceTable: string;
     sourceId: string;
     at: number;
+    /** Settings → "Stop Sale on Negative Stock" turned off lets a sale take stock below zero. */
+    allowNegative?: boolean;
   },
 ) {
   if (!Number.isSafeInteger(args.weightDeltaMg) || !Number.isSafeInteger(args.piecesDelta)) throw new Error("Stock change must be whole milligrams and pieces");
@@ -48,7 +50,7 @@ export async function changeItemStock(
   const row = await getItemStock(ctx, args.organizationId, args.productId);
   const weightMg = (row?.weightMg ?? 0) + args.weightDeltaMg;
   const pieces = (row?.pieces ?? 0) + args.piecesDelta;
-  if (weightMg < 0 || pieces < 0) {
+  if ((weightMg < 0 || pieces < 0) && !args.allowNegative) {
     const haveG = ((row?.weightMg ?? 0) / 1000).toFixed(3);
     throw new Error(`Not enough GST stock for "${product.name}": available ${haveG}g, ${row?.pieces ?? 0} pcs. Add stock under Stock → GST first.`);
   }

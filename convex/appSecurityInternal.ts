@@ -71,3 +71,11 @@ export const replacePin = internalMutation({
     else await ctx.db.insert("appSecurity", { ...args, createdAt: now, updatedAt: now });
   },
 });
+
+export const setPinDisabled = internalMutation({
+  args: { userId: v.id("users"), disabled: v.boolean() },
+  handler: async (ctx, args) => {
+    const record = await ctx.db.query("appSecurity").withIndex("by_user", (q) => q.eq("userId", args.userId)).unique();
+    if (record) await ctx.db.patch(record._id, { disabled: args.disabled || undefined, updatedAt: Date.now() });
+  },
+});

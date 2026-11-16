@@ -192,7 +192,7 @@ export function AppLockGate({ userId, children }: { userId: string; children: Re
     );
   }
 
-  if (unlocked) {
+  if (unlocked || (pinStatus.configured && !pinStatus.enabled)) {
     return <AppLockContext.Provider value={controls}>{children}</AppLockContext.Provider>;
   }
 
