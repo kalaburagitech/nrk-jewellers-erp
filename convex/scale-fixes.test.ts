@@ -182,6 +182,28 @@ describe("purchases tax is computed server-side, not trusted from the client", (
     expect(purchase?.totalPaise).toBe(5_150_000);
   });
 
+  it("rounds off the total and records split payments with the supplier's bill number", async () => {
+    const f = await purchaseFixture();
+    const result = await f.owner.mutation(api.purchases.create, {
+      supplierId: f.supplier,
+      items: [{ productId: f.product, boxId: f.box, label: "Bar", grossWeightMg: 1000, stoneWeightMg: 0, ratePerGramPaise: 600_050, makingChargePaise: 0, stoneChargePaise: 0 }],
+      gstBasisPoints: 0,
+      amountPaidPaise: 0,
+      payments: [{ mode: "cash", amountPaise: 200_000 }, { mode: "upi", amountPaise: 100_000 }],
+      roundOff: true,
+      supplierBillNumber: "SB-77",
+      idempotencyKey: "purchase-split",
+    });
+    const purchase = await f.t.run((ctx) => ctx.db.get(result.purchaseId));
+    // 1g × ₹6,000.50 = ₹6,000.50 → rounds to ₹6,001.00
+    expect(purchase?.roundOffPaise).toBe(50);
+    expect(purchase?.totalPaise).toBe(600_100);
+    expect(purchase?.amountPaidPaise).toBe(300_000);
+    expect(purchase?.supplierBillNumber).toBe("SB-77");
+    const payments = await f.t.run((ctx) => ctx.db.query("payments").collect());
+    expect(payments.map((p) => [p.mode, p.amountPaise]).sort()).toEqual([["cash", 200_000], ["upi", 100_000]]);
+  });
+
   it("rejects a GST percentage over 100%", async () => {
     const f = await purchaseFixture();
     await expect(

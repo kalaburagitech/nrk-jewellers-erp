@@ -388,6 +388,12 @@ export default defineSchema({
     taxPaise: v.number(),
     totalPaise: v.number(),
     amountPaidPaise: v.number(),
+    // Vyapar purchase form extras (all optional for older bills).
+    supplierBillNumber: v.optional(v.string()), // the number printed on the supplier's own bill
+    stateOfSupply: v.optional(v.string()),
+    roundOffPaise: v.optional(v.number()),
+    notes: v.optional(v.string()), // description / terms & conditions
+    billImageStorageId: v.optional(v.id("_storage")), // photo or scan of the supplier's bill
     idempotencyKey: v.string(),
     createdByUserId: v.id("users"),
     createdAt: v.number(),

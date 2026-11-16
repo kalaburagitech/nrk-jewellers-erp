@@ -48,6 +48,15 @@ export const list = query({
   },
 });
 
+export const generateBillImageUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    requireRole(auth, ["purchase_manager"]);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
 export const getItems = query({
   args: { purchaseId: v.id("purchases") },
   handler: async (ctx, args) => {
@@ -97,13 +106,14 @@ export const getForEdit = query({
       .withIndex("by_purchase", (q) => q.eq("purchaseId", args.purchaseId))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
-    const payment = await ctx.db
+    const payments = await ctx.db
       .query("payments")
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.and(q.eq(q.field("sourceTable"), "purchases"), q.eq(q.field("sourceId"), args.purchaseId)))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .first();
-    return { purchase, items, payment };
+      .collect();
+    const billImageUrl = purchase.billImageStorageId ? await ctx.storage.getUrl(purchase.billImageStorageId) : null;
+    return { purchase, items, payment: payments[0] ?? null, payments, billImageUrl };
   },
 });
 
@@ -210,8 +220,17 @@ type PurchaseTransactionArgs = {
   }>;
   gstBasisPoints: number;
   amountPaidPaise: number;
-  paymentMode?: "cash" | "upi" | "card" | "cheque" | "bank_transfer";
+  paymentMode?: PaymentMode;
+  /** Split payment (Vyapar "Add Payment type"). When given, it replaces amountPaidPaise + paymentMode. */
+  payments?: { mode: PaymentMode; amountPaise: number }[];
+  roundOff?: boolean;
+  supplierBillNumber?: string;
+  stateOfSupply?: string;
+  notes?: string;
+  billImageStorageId?: Id<"_storage">;
 };
+type PaymentMode = "cash" | "upi" | "card" | "cheque" | "bank_transfer";
+const purchasePaymentMode = v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer"));
 
 /**
  * Validates, computes and writes every effect of a purchase invoice (new
@@ -259,21 +278,39 @@ async function applyPurchaseTransaction(
   const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
   const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
   const taxPaise = basisPointsOf(subtotalPaise, args.gstBasisPoints);
-  const totalPaise = subtotalPaise + taxPaise;
+  const unrounded = subtotalPaise + taxPaise;
+  // Round off to the nearest rupee, like the bill's printed total.
+  const roundOffPaise = args.roundOff ? Math.round(unrounded / 100) * 100 - unrounded : 0;
+  const totalPaise = unrounded + roundOffPaise;
 
-  if (args.amountPaidPaise < 0 || args.amountPaidPaise > totalPaise) {
+  const payments = (args.payments ?? (args.amountPaidPaise > 0 && args.paymentMode ? [{ mode: args.paymentMode, amountPaise: args.amountPaidPaise }] : []))
+    .filter((p) => p.amountPaise !== 0);
+  for (const p of payments) {
+    if (!Number.isSafeInteger(p.amountPaise) || p.amountPaise < 0) throw new Error("Each payment must be a valid amount greater than zero");
+  }
+  const amountPaidPaise = args.payments ? payments.reduce((a, p) => a + p.amountPaise, 0) : args.amountPaidPaise;
+  if (amountPaidPaise < 0 || amountPaidPaise > totalPaise) {
     throw new Error("Amount paid must be between 0 and the invoice total");
   }
-  if (args.amountPaidPaise > 0 && !args.paymentMode) {
+  if (!args.payments && args.amountPaidPaise > 0 && !args.paymentMode) {
     throw new Error("Payment mode is required when recording a payment");
+  }
+  if (args.billImageStorageId) {
+    const meta = await ctx.db.system.get(args.billImageStorageId);
+    if (!meta) throw new Error("Bill image upload not found — please upload it again");
   }
 
   await ctx.db.patch(purchaseId, {
     supplierId: args.supplierId,
     subtotalPaise,
     taxPaise,
+    roundOffPaise,
     totalPaise,
-    amountPaidPaise: args.amountPaidPaise,
+    amountPaidPaise,
+    supplierBillNumber: args.supplierBillNumber?.trim().slice(0, 40) || undefined,
+    stateOfSupply: args.stateOfSupply?.trim() || undefined,
+    notes: args.notes?.trim().slice(0, 1000) || undefined,
+    billImageStorageId: args.billImageStorageId,
     createdAt: billDate,
   });
 
@@ -350,21 +387,21 @@ async function applyPurchaseTransaction(
   }
 
   const priorBalance = supplier.currentBalancePaise ?? supplier.openingBalancePaise;
-  const newBalance = priorBalance + totalPaise - args.amountPaidPaise;
+  const newBalance = priorBalance + totalPaise - amountPaidPaise;
 
   await ctx.db.insert("supplierLedgerEntries", {
     organizationId: auth.organizationId,
     supplierId: args.supplierId,
     sourceTable: "purchases",
     sourceId: purchaseId,
-    debitPaise: args.amountPaidPaise,
+    debitPaise: amountPaidPaise,
     creditPaise: totalPaise,
     balancePaise: newBalance,
     createdAt: billDate,
   });
   await ctx.db.patch(args.supplierId, { currentBalancePaise: newBalance });
 
-  if (args.amountPaidPaise > 0 && args.paymentMode) {
+  for (const payment of payments) {
     await ctx.db.insert("payments", {
       organizationId: auth.organizationId,
       direction: "payment",
@@ -372,8 +409,8 @@ async function applyPurchaseTransaction(
       partyId: args.supplierId,
       sourceTable: "purchases",
       sourceId: purchaseId,
-      mode: args.paymentMode,
-      amountPaise: args.amountPaidPaise,
+      mode: payment.mode,
+      amountPaise: payment.amountPaise,
       createdByUserId: auth.userId,
       createdAt: billDate,
     });
@@ -458,6 +495,12 @@ export const create = mutation({
     paymentMode: v.optional(
       v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
     ),
+    payments: v.optional(v.array(v.object({ mode: purchasePaymentMode, amountPaise: v.number() }))),
+    roundOff: v.optional(v.boolean()),
+    supplierBillNumber: v.optional(v.string()),
+    stateOfSupply: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    billImageStorageId: v.optional(v.id("_storage")),
     billDate: v.optional(v.number()),
     idempotencyKey: v.string(),
   },
@@ -527,6 +570,12 @@ export const update = mutation({
     paymentMode: v.optional(
       v.union(v.literal("cash"), v.literal("upi"), v.literal("card"), v.literal("cheque"), v.literal("bank_transfer")),
     ),
+    payments: v.optional(v.array(v.object({ mode: purchasePaymentMode, amountPaise: v.number() }))),
+    roundOff: v.optional(v.boolean()),
+    supplierBillNumber: v.optional(v.string()),
+    stateOfSupply: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    billImageStorageId: v.optional(v.id("_storage")),
     billDate: v.number(),
   },
   handler: async (ctx, args) => {

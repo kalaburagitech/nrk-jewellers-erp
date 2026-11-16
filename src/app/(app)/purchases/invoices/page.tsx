@@ -168,7 +168,7 @@ export default function PurchaseInvoicesPage() {
     const q = search.trim().toLowerCase();
     const supplier = supplierName.get(row.supplierId)?.toLowerCase() ?? "";
     const day = localDay(row.createdAt);
-    return (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo)
+    return (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q) || (row.supplierBillNumber ?? "").toLowerCase().includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo)
       && (userFilter === "all" || row.createdByUserId === userFilter);
   }), [purchases, search, dateFrom, dateTo, userFilter, supplierName]);
   const selection = useRecordSelection(filteredPurchases?.map(row => row._id) ?? [], `purchases:${search}:${dateFrom}:${dateTo}:${userFilter}`);
@@ -284,7 +284,7 @@ export default function PurchaseInvoicesPage() {
                   {filteredPurchases?.map((p) => (
                     <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(p)}>
                       <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.invoiceNumber}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
-                      <TableCell className="font-medium">{p.invoiceNumber}</TableCell>
+                      <TableCell className="font-medium">{p.invoiceNumber}{p.supplierBillNumber && <span className="block text-xs font-normal text-muted-foreground">Supplier #{p.supplierBillNumber}</span>}</TableCell>
                       <TableCell>{new Date(p.createdAt).toLocaleDateString("en-IN")}</TableCell>
                       <TableCell>{supplierName.get(p.supplierId) ?? "—"}</TableCell>
                       <TableCell className="text-right">{formatPaise(p.totalPaise)}</TableCell>

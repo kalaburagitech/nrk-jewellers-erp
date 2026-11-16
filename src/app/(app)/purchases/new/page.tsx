@@ -31,6 +31,11 @@ import { purchaseFormSchema, type PurchaseFormValues } from "@/lib/schemas/purch
 import { basisPointsOf, computePurchaseLine, gramsToMg } from "@/lib/jewelry-calc";
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { GST_STATES } from "@/lib/gst-state-codes";
+
+type PaymentModeValue = "cash" | "upi" | "card" | "cheque" | "bank_transfer";
 
 const PAYMENT_MODES = [
   { value: "cash", label: "Cash" },
@@ -101,6 +106,35 @@ export default function NewPurchasePage() {
   const [quickManualProductName, setQuickManualProductName] = useState("");
   const [quickIsManualBox, setQuickIsManualBox] = useState(false);
   const [quickManualBoxNumber, setQuickManualBoxNumber] = useState("");
+  // Vyapar purchase-form extras kept outside react-hook-form (all optional).
+  const [supplierBillNumber, setSupplierBillNumber] = useState("");
+  const [stateOfSupply, setStateOfSupply] = useState("");
+  const [roundOff, setRoundOff] = useState(true);
+  const [notes, setNotes] = useState("");
+  const [showNotes, setShowNotes] = useState(false);
+  const [extraPayments, setExtraPayments] = useState<{ mode: PaymentModeValue; rupees: string }[]>([]);
+  const [billImageId, setBillImageId] = useState<Id<"_storage"> | undefined>();
+  const [billImageName, setBillImageName] = useState("");
+  const [uploadingBill, setUploadingBill] = useState(false);
+  const uploadBillUrl = useMutation(api.purchases.generateBillImageUploadUrl);
+
+  async function uploadBill(file: File | undefined) {
+    if (!file) return;
+    if (!file.type.startsWith("image/") && file.type !== "application/pdf") return setServerError("Upload a photo or PDF of the bill.");
+    if (file.size > 10 * 1024 * 1024) return setServerError("Bill file must be 10 MB or smaller.");
+    setUploadingBill(true);
+    try {
+      const url = await uploadBillUrl();
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": file.type }, body: file });
+      if (!res.ok) throw new Error("Upload failed");
+      setBillImageId(((await res.json()) as { storageId: Id<"_storage"> }).storageId);
+      setBillImageName(file.name);
+    } catch (e) {
+      setServerError(getUserErrorMessage(e, "Could not upload the bill."));
+    } finally {
+      setUploadingBill(false);
+    }
+  }
 
   const form = useForm<PurchaseFormValues>({
     resolver: zodResolver(purchaseFormSchema),
@@ -119,13 +153,21 @@ export default function NewPurchasePage() {
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!editPurchaseId || !existingPurchase || prefilled) return;
-    const { purchase, items, payment } = existingPurchase;
+    const { purchase, items, payment, payments } = existingPurchase;
+    setSupplierBillNumber(purchase.supplierBillNumber ?? "");
+    setStateOfSupply(purchase.stateOfSupply ?? "");
+    setRoundOff((purchase.roundOffPaise ?? 0) !== 0);
+    setNotes(purchase.notes ?? "");
+    setShowNotes(!!purchase.notes);
+    setBillImageId(purchase.billImageStorageId);
+    setBillImageName(purchase.billImageStorageId ? "Bill attached" : "");
+    setExtraPayments(payments.slice(1).map((p) => ({ mode: p.mode as PaymentModeValue, rupees: (p.amountPaise / 100).toFixed(2) })));
     const gstPercent = purchase.subtotalPaise > 0 ? ((purchase.taxPaise / purchase.subtotalPaise) * 100).toFixed(2) : "0";
     form.reset({
       supplierId: purchase.supplierId,
       billDate: timestampToDateInput(purchase.createdAt),
       gstPercent,
-      amountPaidRupees: (purchase.amountPaidPaise / 100).toFixed(2),
+      amountPaidRupees: ((payment?.amountPaise ?? purchase.amountPaidPaise) / 100).toFixed(2),
       paymentMode: payment?.mode as PurchaseFormValues["paymentMode"],
       items: items.map((item) => ({
         productId: item.productId,
@@ -192,6 +234,12 @@ export default function NewPurchasePage() {
   }
 
   const watchedItems = useWatch({ control: form.control, name: "items" });
+  const watchedSupplierId = useWatch({ control: form.control, name: "supplierId" });
+  const selectedSupplier = suppliers?.find((sup) => sup._id === watchedSupplierId);
+  const supplierState = selectedSupplier?.state;
+  // Vyapar defaults State of supply to the party's state.
+  /* eslint-disable-next-line react-hooks/set-state-in-effect */
+  useEffect(() => { if (supplierState && !stateOfSupply) setStateOfSupply(supplierState); }, [supplierState, stateOfSupply]);
   const watchedGst = useWatch({ control: form.control, name: "gstPercent" });
   const watchedPaid = useWatch({ control: form.control, name: "amountPaidRupees" });
 
@@ -208,10 +256,13 @@ export default function NewPurchasePage() {
     const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
     const gstBasisPoints = percentToBasisPoints(watchedGst || "0") ?? 0;
     const taxPaise = basisPointsOf(subtotalPaise, gstBasisPoints);
-    const totalPaise = subtotalPaise + taxPaise;
-    const amountPaidPaise = Math.min(rupeesToPaise(watchedPaid || "0") ?? 0, totalPaise);
-    return { lines, subtotalPaise, taxPaise, totalPaise, amountPaidPaise, balancePaise: totalPaise - amountPaidPaise };
-  }, [watchedItems, watchedGst, watchedPaid]);
+    const unrounded = subtotalPaise + taxPaise;
+    const roundOffPaise = roundOff ? Math.round(unrounded / 100) * 100 - unrounded : 0;
+    const totalPaise = unrounded + roundOffPaise;
+    const paid = (rupeesToPaise(watchedPaid || "0") ?? 0) + extraPayments.reduce((a, p) => a + (rupeesToPaise(p.rupees || "0") ?? 0), 0);
+    const amountPaidPaise = Math.min(paid, totalPaise);
+    return { lines, subtotalPaise, taxPaise, roundOffPaise, totalPaise, amountPaidPaise, balancePaise: totalPaise - amountPaidPaise };
+  }, [watchedItems, watchedGst, watchedPaid, roundOff, extraPayments]);
 
   async function onSubmit(values: PurchaseFormValues) {
     setServerError(null);
@@ -326,6 +377,23 @@ export default function NewPurchasePage() {
       }
 
       const amountPaidPaise = rupeesToPaise(values.amountPaidRupees || "0") ?? 0;
+      if (amountPaidPaise > 0 && !values.paymentMode) throw new Error("Select the payment mode for the amount paid.");
+      const payments = [
+        ...(amountPaidPaise > 0 && values.paymentMode ? [{ mode: values.paymentMode, amountPaise: amountPaidPaise }] : []),
+        ...extraPayments.map((p) => {
+          const amountPaise = rupeesToPaise(p.rupees || "0");
+          if (amountPaise === null) throw new Error("One of the split payment amounts is not valid.");
+          return { mode: p.mode, amountPaise };
+        }).filter((p) => p.amountPaise > 0),
+      ];
+      const extras = {
+        payments,
+        roundOff,
+        supplierBillNumber: supplierBillNumber.trim() || undefined,
+        stateOfSupply: stateOfSupply || undefined,
+        notes: notes.trim() || undefined,
+        billImageStorageId: billImageId,
+      };
 
       if (editPurchaseId) {
         await updatePurchase({
@@ -335,6 +403,7 @@ export default function NewPurchasePage() {
           amountPaidPaise,
           paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
           billDate: dateInputToTimestamp(values.billDate),
+          ...extras,
           items: resolvedItems,
         });
         router.push(`/purchases/invoices?updated=${editPurchaseId}`);
@@ -345,6 +414,7 @@ export default function NewPurchasePage() {
           amountPaidPaise,
           paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
           billDate: dateInputToTimestamp(values.billDate),
+          ...extras,
           idempotencyKey,
           items: resolvedItems,
         });
@@ -474,6 +544,23 @@ export default function NewPurchasePage() {
                       </FormItem>
                     )}
                   />
+                  {!isNewSupplier && selectedSupplier && (
+                    <div className="grid gap-2">
+                      <span className="text-sm font-medium">Phone No.</span>
+                      <Input readOnly value={selectedSupplier.phone ?? ""} placeholder="—" className="w-40 bg-muted/40" aria-label="Supplier phone" />
+                    </div>
+                  )}
+                  <div className="grid gap-2">
+                    <span className="text-sm font-medium">Supplier Bill Number</span>
+                    <Input value={supplierBillNumber} onChange={(e) => setSupplierBillNumber(e.target.value)} placeholder="No. on supplier's bill" className="w-44" aria-label="Supplier bill number" />
+                  </div>
+                  <div className="grid gap-2">
+                    <span className="text-sm font-medium">State of supply</span>
+                    <Select value={stateOfSupply} onValueChange={setStateOfSupply}>
+                      <SelectTrigger className="w-48" aria-label="State of supply"><SelectValue placeholder={access?.organization?.state ?? "Select state"} /></SelectTrigger>
+                      <SelectContent>{GST_STATES.map((st) => <SelectItem key={st} value={st}>{st}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -958,6 +1045,32 @@ export default function NewPurchasePage() {
                   )}
                 </div>
 
+                {extraPayments.map((p, i) => (
+                  <div key={i} className="flex flex-wrap items-end gap-2">
+                    <div className="grid gap-1.5">
+                      <span className="text-sm font-medium">Payment type {i + 2}</span>
+                      <Select value={p.mode} onValueChange={(v) => setExtraPayments((all) => all.map((x, j) => (j === i ? { ...x, mode: v as PaymentModeValue } : x)))}>
+                        <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
+                        <SelectContent>{PAYMENT_MODES.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <Input aria-label={`Payment ${i + 2} amount`} inputMode="decimal" placeholder="0.00" className="w-40" value={p.rupees} onChange={(e) => setExtraPayments((all) => all.map((x, j) => (j === i ? { ...x, rupees: e.target.value } : x)))} />
+                    <Button type="button" variant="ghost" size="icon" aria-label="Remove payment" onClick={() => setExtraPayments((all) => all.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+                  </div>
+                ))}
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="link" className="h-auto p-0" onClick={() => setExtraPayments((all) => [...all, { mode: "upi", rupees: "" }])}>+ Add Payment type</Button>
+                  <Button type="button" variant="link" className="h-auto p-0" onClick={() => setShowNotes((v) => !v)}>{showNotes ? "Hide description" : "+ Add Description / Terms"}</Button>
+                  <label className="cursor-pointer text-sm font-medium text-primary underline-offset-4 hover:underline">
+                    {uploadingBill ? "Uploading…" : billImageName ? `Bill: ${billImageName} (change)` : "+ Upload Bill (photo / PDF)"}
+                    <input type="file" accept="image/*,application/pdf" className="sr-only" disabled={uploadingBill} onChange={(e) => uploadBill(e.target.files?.[0])} />
+                  </label>
+                  {billImageId && <Button type="button" variant="link" className="h-auto p-0 text-destructive" onClick={() => { setBillImageId(undefined); setBillImageName(""); }}>Remove bill</Button>}
+                </div>
+                {showNotes && (
+                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Description, terms & conditions, remarks…" aria-label="Description and terms" />
+                )}
+
                 <Separator />
 
                 <div className="flex flex-col gap-1 text-sm">
@@ -969,9 +1082,20 @@ export default function NewPurchasePage() {
                     <span className="text-muted-foreground">GST</span>
                     <span>{formatPaise(totals.taxPaise)}</span>
                   </div>
+                  <label className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <Checkbox checked={roundOff} onCheckedChange={(c) => setRoundOff(c === true)} aria-label="Round off" />
+                      Round Off
+                    </span>
+                    <span>{formatPaise(totals.roundOffPaise)}</span>
+                  </label>
                   <div className="flex justify-between text-base font-semibold">
                     <span>Total</span>
                     <span>{formatPaise(totals.totalPaise)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Paid</span>
+                    <span>{formatPaise(totals.amountPaidPaise)}</span>
                   </div>
                   <div className="flex justify-between text-muted-foreground">
                     <span>Balance payable to supplier</span>
