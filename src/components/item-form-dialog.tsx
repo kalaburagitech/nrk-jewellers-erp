@@ -261,9 +261,9 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
               </Select>
             </Field>
             <Field label="Item Code">
-              <div className="flex gap-1.5">
-                <Input value={f.sku} onChange={(e) => set("sku", e.target.value)} placeholder="Item Code" className="font-mono" />
-                <Button type="button" variant="secondary" size="sm" className="h-9 shrink-0" onClick={assignCode}>Assign Code</Button>
+              <div className="relative">
+                <Input value={f.sku} onChange={(e) => set("sku", e.target.value)} placeholder="Item Code" className="pr-28 font-mono" />
+                <Button type="button" variant="secondary" size="sm" className="absolute right-1 top-1/2 h-7 -translate-y-1/2 px-2 text-xs" onClick={assignCode}>Assign Code</Button>
               </div>
             </Field>
             {!isService && (

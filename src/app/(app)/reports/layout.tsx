@@ -77,7 +77,7 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
   return (
     <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
       <div className="lg:hidden print:hidden">
-        <Select value={pathname} onValueChange={(href) => router.push(href)}>
+        <Select value={menu.some((m) => m.items.some((i) => i.href === pathname)) ? pathname : undefined} onValueChange={(href) => router.push(href)}>
           <SelectTrigger className="h-10 w-full font-medium" aria-label="Choose report">
             <SelectValue placeholder="Choose a report" />
           </SelectTrigger>

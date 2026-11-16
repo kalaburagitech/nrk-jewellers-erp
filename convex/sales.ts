@@ -5,6 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf } from "../src/lib/jewelry-calc";
+import { gstRateBp, isInterState } from "../src/lib/gst-rate";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBookingYearOpen } from "./lib/accountingYears";
 import { changeItemStock, isGstCompanyType } from "./lib/itemStock";
@@ -289,6 +290,7 @@ const oldGoldExchangeValidator = v.object({
 type SaleTransactionArgs = {
   customerId: Id<"customers">;
   isGst: boolean;
+  stateOfSupply?: string;
   items: Array<{
     boxItemId?: Id<"boxItems">;
     productId?: Id<"products">;
@@ -334,6 +336,8 @@ async function applySaleTransaction(
 
   const customer = await ctx.db.get(args.customerId);
   if (!customer || customer.deletedAt || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
+  // GST: IGST for a customer in another state, else CGST + SGST — never both.
+  const interState = isInterState(args.stateOfSupply || customer.state, (await ctx.db.get(auth.organizationId))?.state);
 
   // Resolve + lock in every box item up front: must exist, belong to this
   // org, and still be in stock — prevents selling the same physical item
@@ -393,7 +397,7 @@ async function applySaleTransaction(
       if (!taxConfigs.has(item.taxConfigurationId)) {
         const config = await ctx.db.get(item.taxConfigurationId);
         if (!config || config.deletedAt || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
-        taxConfigs.set(item.taxConfigurationId, config.cgstBasisPoints + config.sgstBasisPoints + config.igstBasisPoints);
+        taxConfigs.set(item.taxConfigurationId, gstRateBp(config, interState));
       }
       gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
     }
@@ -462,6 +466,7 @@ async function applySaleTransaction(
   await ctx.db.patch(saleId, {
     customerId: args.customerId,
     isGst: args.isGst,
+    stateOfSupply: args.stateOfSupply?.trim() || undefined,
     subtotalPaise: itemsSubtotalPaise,
     discountPaise,
     oldItemDeductionPaise,
@@ -681,6 +686,7 @@ export const create = mutation({
     invoiceNumber: v.optional(v.string()),
     customerId: v.id("customers"),
     isGst: v.boolean(),
+    stateOfSupply: v.optional(v.string()), // bill's place of supply; decides IGST vs CGST + SGST
     items: v.array(saleLineValidator),
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(), // basis points if percent, paise if fixed
@@ -778,6 +784,7 @@ export const update = mutation({
     saleId: v.id("sales"),
     customerId: v.id("customers"),
     isGst: v.boolean(),
+    stateOfSupply: v.optional(v.string()), // bill's place of supply; decides IGST vs CGST + SGST
     items: v.array(saleLineValidator),
     discountMode: v.union(v.literal("percent"), v.literal("fixed"), v.literal("none")),
     discountValue: v.number(),
@@ -878,6 +885,7 @@ export const createEstimate = mutation({
 
     const customer = await ctx.db.get(args.customerId);
     if (!customer || customer.deletedAt || customer.organizationId !== auth.organizationId) throw new Error("Customer not found");
+    const interState = isInterState(customer.state, (await ctx.db.get(auth.organizationId))?.state);
 
     const taxConfigs = new Map<Id<"taxConfigurations">, number>();
     const computedLines: Array<{ item: (typeof args.items)[number]; computed: ReturnType<typeof computeSaleLine> }> = [];
@@ -893,7 +901,7 @@ export const createEstimate = mutation({
         if (!taxConfigs.has(item.taxConfigurationId)) {
           const config = await ctx.db.get(item.taxConfigurationId);
           if (!config || config.deletedAt || config.organizationId !== auth.organizationId) throw new Error("Tax configuration not found");
-          taxConfigs.set(item.taxConfigurationId, config.cgstBasisPoints + config.sgstBasisPoints + config.igstBasisPoints);
+          taxConfigs.set(item.taxConfigurationId, gstRateBp(config, interState));
         }
         gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
       }

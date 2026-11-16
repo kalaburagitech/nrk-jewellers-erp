@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireAuthContext } from "./lib/auth";
+import { isInterState, splitTax } from "../src/lib/gst-rate";
 
 /**
  * GST sales register: one row per GST-finalized sale in range, with the
@@ -28,6 +29,8 @@ export const getGstSalesRegister = query({
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
     const customerNameById = new Map(customers.map((c) => [c._id, c.name]));
+    const customerStateById = new Map(customers.map((c) => [c._id, c.state]));
+    const shopState = (await ctx.db.get(auth.organizationId))?.state;
 
     const taxConfigCache = new Map<string, { cgstBasisPoints: number; sgstBasisPoints: number; igstBasisPoints: number }>();
 
@@ -58,11 +61,11 @@ export const getGstSalesRegister = query({
         }
         const rates = taxConfigCache.get(key);
         if (!rates) continue;
-        const totalBp = rates.cgstBasisPoints + rates.sgstBasisPoints + rates.igstBasisPoints;
-        if (totalBp === 0) continue;
-        cgstPaise += Math.round((item.lineTaxPaise * rates.cgstBasisPoints) / totalBp);
-        sgstPaise += Math.round((item.lineTaxPaise * rates.sgstBasisPoints) / totalBp);
-        igstPaise += Math.round((item.lineTaxPaise * rates.igstBasisPoints) / totalBp);
+        // One of IGST or CGST + SGST, by the customer's state vs the shop's state.
+        const split = splitTax(item.lineTaxPaise, rates, isInterState(sale.stateOfSupply || customerStateById.get(sale.customerId), shopState));
+        cgstPaise += split.cgstPaise;
+        sgstPaise += split.sgstPaise;
+        igstPaise += split.igstPaise;
       }
 
       rows.push({

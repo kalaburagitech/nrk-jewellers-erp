@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAuthContext } from "./lib/auth";
+import { gstRateBp, isInterState, splitTax } from "../src/lib/gst-rate";
 
 /**
  * GST return working papers in the GST portal's table layout: GSTR-1,
@@ -31,23 +32,23 @@ async function loadOutward(ctx: QueryCtx, org: Id<"organizations">, startDate: n
   const taxById = new Map(taxes.map((t) => [String(t._id), t]));
 
   const docs = [];
+  const shopState = (await ctx.db.get(org))?.state;
   for (const sale of gstSales) {
+    const interState = isInterState(sale.stateOfSupply || customerById.get(String(sale.customerId))?.state, shopState);
     const items = (await ctx.db.query("saleItems").withIndex("by_sale", (q) => q.eq("saleId", sale._id)).collect()).filter((i) => !i.deletedAt);
     const preTax = items.reduce((a, i) => a + i.lineTotalPaise - i.lineTaxPaise, 0);
     const lines = items.map((i) => {
       const tax = i.taxConfigurationId ? taxById.get(String(i.taxConfigurationId)) : undefined;
-      const totalBp = tax ? tax.cgstBasisPoints + tax.sgstBasisPoints + tax.igstBasisPoints : 0;
+      const rateBp = tax ? gstRateBp(tax, interState) : 0;
+      const split = tax ? splitTax(i.lineTaxPaise, tax, interState) : { igstPaise: 0, cgstPaise: 0, sgstPaise: 0 };
       const base = i.lineTotalPaise - i.lineTaxPaise;
       // Bill discount reduces the taxable value; spread it across lines by value.
       const taxable = preTax > 0 ? Math.round(((sale.subtotalPaise - sale.discountPaise) * base) / preTax) : 0;
-      const share = (bp: number) => (totalBp ? Math.round((i.lineTaxPaise * bp) / totalBp) : 0);
       const product = productById.get(String(i.productId));
       return {
         taxablePaise: taxable,
-        igstPaise: share(tax?.igstBasisPoints ?? 0),
-        cgstPaise: share(tax?.cgstBasisPoints ?? 0),
-        sgstPaise: share(tax?.sgstBasisPoints ?? 0),
-        rateBp: totalBp,
+        ...split,
+        rateBp,
         hsn: product?.hsnCode || tax?.hsnCode || "",
         description: product?.name ?? "",
         uqc: product ? UQC[product.unit] : "OTH-OTHERS",

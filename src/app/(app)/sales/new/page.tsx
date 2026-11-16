@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { BarcodeScanInput } from "@/components/barcode-scan-input";
+import { gstRateBp, isInterState } from "@/lib/gst-rate";
 import { MessageCircle, Minus, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { Button } from "@/components/ui/button";
@@ -601,6 +602,7 @@ export default function NewBillPage() {
     setCustomerNameInput(customer?.name ?? "");
     setCustomerPhoneInput(customer?.phone ?? "");
     setIsGst(sale.isGst);
+    if (sale.stateOfSupply) setStateOfSupply(sale.stateOfSupply);
     setOldItemDeductionRupees(((sale.oldItemDeductionPaise ?? 0) / 100).toFixed(2));
     setOldItemEnabled((sale.oldItemDeductionPaise ?? 0) > 0);
     setOldItemDeductionNote(sale.oldItemDeductionNote ?? "");
@@ -776,6 +778,8 @@ export default function NewBillPage() {
     setLines((prev) => prev.filter((_, i) => i !== index));
   }
 
+  // Same rule as the server: customer in another state → IGST, else CGST + SGST.
+  const interState = isInterState(stateOfSupply || customers?.find((c) => c._id === customerId)?.state, access?.organization?.state);
   const computedLines = useMemo(
     () =>
       lines.map((line) => {
@@ -785,8 +789,7 @@ export default function NewBillPage() {
           if (line.isManualTax && line.manualGstPercent) {
             gstBasisPoints = percentToBasisPoints(line.manualGstPercent) ?? 0;
           } else if (taxConfig) {
-            gstBasisPoints =
-              taxConfig.cgstBasisPoints + taxConfig.sgstBasisPoints + taxConfig.igstBasisPoints;
+            gstBasisPoints = gstRateBp(taxConfig, interState);
           }
         }
         const input = {
@@ -803,7 +806,7 @@ export default function NewBillPage() {
         const discount = lineDiscountPaise(line.discount, computeSaleLine(input).taxableValuePaise);
         return computeSaleLine({ ...input, lineDiscountPaise: discount });
       }),
-    [lines, taxConfigs, isGst],
+    [lines, taxConfigs, isGst, interState],
   );
 
   const lineErrors = useMemo(
@@ -978,7 +981,7 @@ export default function NewBillPage() {
             if (line.isManualTax && line.manualGstPercent) {
               const manualBp = percentToBasisPoints(line.manualGstPercent) ?? 0;
               const match = taxConfigs?.find(
-                (t) => t.cgstBasisPoints + t.sgstBasisPoints + t.igstBasisPoints === manualBp,
+                (t) => gstRateBp(t, interState) === manualBp,
               );
               if (match) {
                 taxConfigId = match._id;
@@ -1044,6 +1047,7 @@ export default function NewBillPage() {
           saleId: editSaleId,
           customerId: resolvedCustomerId,
           isGst,
+          stateOfSupply,
           items,
           discountMode,
           discountValue: discountValuePaiseOrBp,
@@ -1062,6 +1066,7 @@ export default function NewBillPage() {
         invoiceNumber: invoiceNumber.trim() || undefined,
         customerId: resolvedCustomerId,
         isGst,
+        stateOfSupply,
         items,
         discountMode,
         discountValue: discountValuePaiseOrBp,
@@ -1125,10 +1130,6 @@ export default function NewBillPage() {
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
-          <Button type="button" variant="outline" size="sm" onClick={() => window.open("/sales/new", "_blank", "noopener")} title="Open another blank bill in a new tab; this one stays open">
-            <Plus className="h-4 w-4" />
-            New Bill Tab
-          </Button>
         </div>
         <p className="text-sm text-muted-foreground">
           {editSaleId

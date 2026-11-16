@@ -469,6 +469,7 @@ export default defineSchema({
     invoiceNumber: v.string(),
     status: v.union(v.literal("finalized"), v.literal("cancelled")),
     isGst: v.boolean(),
+    stateOfSupply: v.optional(v.string()), // decides IGST vs CGST + SGST; unset = customer's state
     subtotalPaise: v.number(),
     discountPaise: v.number(),
     oldItemDeductionPaise: v.optional(v.number()),
