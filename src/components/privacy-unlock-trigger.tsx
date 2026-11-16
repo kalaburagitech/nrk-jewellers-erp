@@ -8,6 +8,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 /** Press-and-hold time before the passcode popup opens. A normal click just follows the home link. */
 const HOLD_MS = 5000;
+/** How far a finger/mouse may drift during the hold before it counts as a drag. */
+const MOVE_TOLERANCE_PX = 12;
 
 /**
  * Hidden owner control for the privacy lock. Renders its children as plain
@@ -24,6 +26,7 @@ export function PrivacyUnlockTrigger({ enabled, className, children }: { enabled
   const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set when a hold opened the popup, so the click the browser fires on release doesn't also go Home.
   const holdFired = useRef(false);
+  const holdStart = useRef<{ x: number; y: number } | null>(null);
 
   if (!enabled) return <span className={className}>{children}</span>;
 
@@ -35,12 +38,30 @@ export function PrivacyUnlockTrigger({ enabled, className, children }: { enabled
   function cancelHold() {
     if (holdTimer.current) clearTimeout(holdTimer.current);
     holdTimer.current = null;
+    holdStart.current = null;
+  }
+  function startHold(x: number, y: number) {
+    cancelHold();
+    holdFired.current = false;
+    holdStart.current = { x, y };
+    holdTimer.current = setTimeout(() => {
+      holdTimer.current = null;
+      holdFired.current = true;
+      show();
+    }, HOLD_MS);
+  }
+  // A finger always wobbles a little; only a real drag/scroll cancels the hold.
+  function moveHold(x: number, y: number) {
+    const start = holdStart.current;
+    if (start && Math.hypot(x - start.x, y - start.y) > MOVE_TOLERANCE_PX) cancelHold();
   }
 
   return (
     <>
       <span
-        className={`select-none [-webkit-touch-callout:none] ${className ?? ""}`}
+        // touch-action:none stops the phone from turning the hold into a scroll (which
+        // cancels pointer events); no callout/selection so the long-press menu stays away.
+        className={`select-none touch-none [-webkit-touch-callout:none] [-webkit-user-select:none] ${className ?? ""}`}
         // A plain click falls through to the surrounding home link. Only the click
         // that ends a successful hold is swallowed.
         onClick={(event) => {
@@ -49,18 +70,38 @@ export function PrivacyUnlockTrigger({ enabled, className, children }: { enabled
           event.preventDefault();
           event.stopPropagation();
         }}
-        onPointerDown={() => {
-          cancelHold();
-          holdFired.current = false;
-          holdTimer.current = setTimeout(() => {
-            holdFired.current = true;
-            show();
-          }, HOLD_MS);
+        // Mouse / pen: pointer events.
+        onPointerDown={(event) => {
+          if (event.pointerType === "touch") return;
+          startHold(event.clientX, event.clientY);
         }}
+        onPointerMove={(event) => {
+          if (event.pointerType !== "touch") moveHold(event.clientX, event.clientY);
+        }}
+        onPointerUp={(event) => {
+          if (event.pointerType !== "touch") cancelHold();
+        }}
+        onPointerLeave={(event) => {
+          if (event.pointerType !== "touch") cancelHold();
+        }}
+        // Phones: touch events. The browser fires pointercancel on a long press
+        // (to show its own menu), so pointer events can't be trusted for touch.
+        onTouchStart={(event) => {
+          const t = event.touches[0];
+          if (event.touches.length !== 1 || !t) return cancelHold();
+          startHold(t.clientX, t.clientY);
+        }}
+        onTouchMove={(event) => {
+          const t = event.touches[0];
+          if (t) moveHold(t.clientX, t.clientY);
+        }}
+        onTouchEnd={(event) => {
+          // A completed hold must not also open the home link.
+          if (holdFired.current) event.preventDefault();
+          cancelHold();
+        }}
+        onTouchCancel={cancelHold}
         onDragStart={(event) => event.preventDefault()}
-        onPointerUp={cancelHold}
-        onPointerLeave={cancelHold}
-        onPointerCancel={cancelHold}
         onContextMenu={(event) => event.preventDefault()}
       >
         {children}
