@@ -37,6 +37,7 @@ import type * as organizations from "../organizations.js";
 import type * as products from "../products.js";
 import type * as purchases from "../purchases.js";
 import type * as reports from "../reports.js";
+import type * as vyaparReports from "../vyaparReports.js";
 import type * as sales from "../sales.js";
 import type * as search from "../search.js";
 import type * as stockAdjustments from "../stockAdjustments.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   products: typeof products;
   purchases: typeof purchases;
   reports: typeof reports;
+  vyaparReports: typeof vyaparReports;
   sales: typeof sales;
   search: typeof search;
   stockAdjustments: typeof stockAdjustments;

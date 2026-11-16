@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
@@ -294,12 +295,13 @@ function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPref
 }
 
 export function GeneralSettings({ initialTab = "general" }: { initialTab?: SettingsTab }) {
-  const [tab, setTab] = useState<SettingsTab>(initialTab);
+  const tab = initialTab;
+  const router = useRouter();
   const preferences = useQuery(api.appPreferences.get);
   const { isOwner } = useAccessInfo();
 
   let content: ReactNode;
-  if (tab === "general") content = <GeneralTab preferences={preferences} onSwitchToPrintTab={() => setTab("print")} />;
+  if (tab === "general") content = <GeneralTab preferences={preferences} onSwitchToPrintTab={() => router.push("/settings/general?tab=print")} />;
   else if (tab === "transaction" || tab === "print") {
     content = preferences === undefined
       ? <p className="text-sm text-muted-foreground">Loading…</p>
@@ -310,29 +312,7 @@ export function GeneralSettings({ initialTab = "general" }: { initialTab?: Setti
   else if (tab === "item") content = <LinkCard title="Items" description="Item list, stock groups and categories, plus custom item fields." links={[{ href: "/inventory/products", label: "Item list" }, { href: "/inventory/groups", label: "Stock groups" }, { href: "/inventory/categories", label: "Stock categories" }, { href: "/settings/custom-fields", label: "Custom fields" }]} />;
   else content = <LinkCard title="Accounting" description="Financial (booking) years for this company, and staff access." links={[{ href: "/settings/accounting-years", label: "Booking years" }, { href: "/settings/users", label: "Users and roles" }]} />;
 
-  return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <div className="border-b pb-4">
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Security, transactions, printing and screen preferences.</p>
-      </div>
-      <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-[220px_1fr]">
-        <nav aria-label="Settings sections" className="flex gap-1 overflow-x-auto rounded-xl border bg-card/60 p-2 md:flex-col">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              type="button"
-              aria-current={tab === id ? "page" : undefined}
-              onClick={() => setTab(id)}
-              className={`flex shrink-0 items-center gap-3 rounded-lg px-3.5 py-2.5 text-left text-xs font-semibold uppercase tracking-wider transition-colors ${tab === id ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-            >
-              <Icon className="h-4 w-4" />
-              {label}
-            </button>
-          ))}
-        </nav>
-        <div className="min-w-0">{content}</div>
-      </div>
-    </div>
-  );
+  // The tab list itself lives in the Settings layout (Vyapar-style dark side panel).
+  void TABS;
+  return <div className="flex w-full max-w-6xl flex-col gap-6 pr-10">{content}</div>;
 }

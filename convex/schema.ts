@@ -230,6 +230,17 @@ export default defineSchema({
     hsnCode: v.optional(v.string()),
     customFields: v.optional(v.record(v.string(), v.string())),
     reorderLevelMg: v.optional(v.number()),
+    // Vyapar "Add Item" pricing / jewellery defaults — all optional, used to prefill bills.
+    salePricePaise: v.optional(v.number()),
+    salePriceIncludesTax: v.optional(v.boolean()),
+    saleDiscountBasisPoints: v.optional(v.number()),
+    purchasePricePaise: v.optional(v.number()),
+    purchasePriceIncludesTax: v.optional(v.boolean()),
+    taxConfigurationId: v.optional(v.id("taxConfigurations")),
+    defaultGrossWeightMg: v.optional(v.number()),
+    defaultNetWeightMg: v.optional(v.number()),
+    defaultMakingChargePaise: v.optional(v.number()),
+    location: v.optional(v.string()),
     isActive: v.boolean(),
     createdAt: v.number(),
   })

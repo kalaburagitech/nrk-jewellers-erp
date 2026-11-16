@@ -1,18 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { ChevronDown, Plus, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Search } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
+  SidebarFooter,
   SidebarHeader,
   SidebarMenu,
-  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSub,
@@ -21,7 +18,7 @@ import {
   SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { NAV_SECTIONS } from "@/lib/nav-data";
+import { NAV_SECTIONS, type NavSection } from "@/lib/nav-data";
 import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { isWriteOnlyPath } from "@/components/access-context";
 import { PrivacyUnlockTrigger } from "@/components/privacy-unlock-trigger";
@@ -35,220 +32,202 @@ const OPTIONAL_DOCUMENT_PATHS = {
   orders: ["/sales/orders", "/purchases/orders"],
   challans: ["/sales/challans"],
 } as const;
-const GROUPS = [
-  {
-    label: "Home",
-    paths: ["/"],
-  },
-  {
-    label: "Transactions",
-    paths: ["/customers", "/inventory/products", "/sales", "/purchases", "/girvi"],
-  },
-  { label: "Stock & money", paths: ["/inventory", "/boxes", "/cash-bank", "/metal-rates"] },
-  { label: "Reports", paths: ["/reports"] },
-  { label: "Settings & data", paths: ["/settings", "/backup", "/manage-data"] },
-];
+
+function pathOf(href: string) {
+  return href.split("?")[0];
+}
+
 export function AppSidebar({ role }: { role: string }) {
   const pathname = usePathname();
   const { isLocked } = usePrivacyLock();
   const { setOpenMobile, state, setOpen } = useSidebar();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
   const term = search.trim().toLowerCase();
   const viewOnly = role === "staff";
   const preferences = useQuery(api.appPreferences.get);
+  const access = useQuery(api.organizations.getMyAccess);
+  const companyType = access?.organization?.companyType;
+  const companyName = access?.organization?.name ?? "NRK Jewellers";
+  // Boxes are only for the Daily Sales company; GST companies keep item-wise stock.
+  const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
+
   const disabledPaths = new Set<string>(
     (Object.keys(OPTIONAL_DOCUMENT_PATHS) as (keyof typeof OPTIONAL_DOCUMENT_PATHS)[])
       .filter((key) => preferences && !preferences.documents[key])
       .flatMap((key) => OPTIONAL_DOCUMENT_PATHS[key]),
   );
-  const access = useQuery(api.organizations.getMyAccess);
-  const companyType = access?.organization?.companyType;
-  // Boxes are only for the Daily Sales company; GST companies keep item-wise stock.
-  const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
-  // Private (non-GST box) screens disappear from the menu while the privacy lock is on.
-  if (isLocked || gstCompany) disabledPaths.add("/reports/boxes");
+
+  // Vyapar's "Open Anything (Ctrl+F)": jump straight to the menu search.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        if (state === "collapsed") setOpen(true);
+        searchRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [state, setOpen]);
+
   function navigate() {
     setOpenMobile(false);
   }
+
+  function sectionVisible(section: NavSection) {
+    if (section.href === "/girvi") return !isLocked && (role === "owner" || role === "admin");
+    if (section.href === "/boxes") return !isLocked && !gstCompany;
+    if (viewOnly && isWriteOnlyPath(section.href)) return false;
+    return true;
+  }
+
+  const sections = NAV_SECTIONS.filter(sectionVisible)
+    .map((section) => ({
+      section,
+      children: section.items?.filter(
+        (item) =>
+          (!viewOnly || !isWriteOnlyPath(item.href)) &&
+          !disabledPaths.has(item.href) &&
+          (!term || section.title.toLowerCase().includes(term) || item.title.toLowerCase().includes(term)),
+      ),
+    }))
+    .filter(
+      ({ section, children }) =>
+        !term || section.title.toLowerCase().includes(term) || (children?.length ?? 0) > 0,
+    );
+
   return (
     <Sidebar collapsible="icon" className="premium-sidebar print:hidden">
-      <SidebarHeader className="gap-4 border-b border-sidebar-border/70 px-4 py-5 group-data-[collapsible=icon]:px-2">
-        <Link
-          href="/"
-          onClick={navigate}
-          className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
-        >
-          <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-sm group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:w-9">
-            <Image
-              src="/nrk-logo-gold.png"
-              alt="NRK Jewellers"
-              width={72}
-              height={44}
-              className="h-full w-full object-contain"
-              priority
-            />
-          </div>
-          <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <p className="text-[15px] font-bold tracking-wide">NRK JEWELLERS</p>
-            <p className="mt-1 text-xs text-sidebar-primary">
-              <PrivacyUnlockTrigger enabled={role === "owner"}>The Name of Purity</PrivacyUnlockTrigger>
-            </p>
-          </div>
-        </Link>
-        {!viewOnly && <Link
-          href="/sales/new"
-          onClick={navigate}
-          className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-sidebar-ring group-data-[collapsible=icon]:hidden"
-        >
-          <Plus className="h-4 w-4" />
-          New Sale
-          <span className="ml-auto rounded border border-white/20 px-1.5 py-0.5 text-xs text-white/70">
-            F2
-          </span>
-        </Link>}
+      <SidebarHeader className="px-3 pb-2 pt-3 group-data-[collapsible=icon]:px-2">
         <label className="relative block group-data-[collapsible=icon]:hidden">
-          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-sidebar-foreground/60" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-white/60" />
           <input
-            aria-label="Search navigation"
+            ref={searchRef}
+            aria-label="Open anything"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search menu"
-            className="h-10 w-full rounded-lg border border-white/10 bg-black/10 pl-9 pr-3 text-sm text-white outline-none placeholder:text-white/50 focus:border-sidebar-primary/60"
+            placeholder="Open Anything (Ctrl+F)"
+            className="h-10 w-full rounded-full border border-white/10 bg-sidebar-accent pl-10 pr-3 text-sm text-white outline-none placeholder:text-white/75 focus:border-white/40"
           />
         </label>
       </SidebarHeader>
-      <SidebarContent className="gap-1 px-2 py-3">
-        {GROUPS.map((group) => {
-          const sections = group.paths
-            .flatMap((path) =>
-              NAV_SECTIONS.filter((section) => section.href === path),
-            )
-            .filter((section) => section.href !== "/girvi" || (!isLocked && (role === "owner" || role === "admin")))
-            .filter((section) => section.href !== "/boxes" || (!isLocked && !gstCompany))
-            .filter((section) => !viewOnly || !isWriteOnlyPath(section.href))
-            .filter(
-              (section) =>
-                !term ||
-                section.title.toLowerCase().includes(term) ||
-                section.items?.some((item) =>
-                  item.title.toLowerCase().includes(term),
-                ),
+      <SidebarContent className="px-0 py-1">
+        <SidebarMenu className="gap-0.5">
+          {sections.map(({ section, children }) => {
+            const active =
+              pathname === section.href ||
+              (section.href !== "/" && pathname.startsWith(section.href + "/")) ||
+              Boolean(section.items?.some((item) => pathname === item.href || pathname.startsWith(item.href + "/")));
+            const hasChildren = Boolean(children && children.length > 0);
+            const isExpanded = hasChildren && (Boolean(term) || (expanded[section.href] ?? active));
+            const subId = `navigation-${section.href.replaceAll("/", "-") || "home"}`;
+            const sectionCreate =
+              section.createHref && !viewOnly && !isWriteOnlyPath(pathOf(section.createHref)) ? section.createHref : undefined;
+            return (
+              <SidebarMenuItem key={section.href}>
+                <div className="flex items-center">
+                  <SidebarMenuButton
+                    asChild
+                    isActive={active && !isExpanded}
+                    tooltip={section.title}
+                    className="h-11 flex-1 rounded-none px-4 text-[15px] font-medium group-data-[collapsible=icon]:px-2"
+                  >
+                    {hasChildren ? (
+                      <button
+                        type="button"
+                        aria-expanded={isExpanded}
+                        aria-controls={subId}
+                        onClick={() => {
+                          if (state === "collapsed") setOpen(true);
+                          setExpanded((prev) => ({ ...prev, [section.href]: !isExpanded }));
+                        }}
+                      >
+                        <section.icon className="size-[19px]!" />
+                        <span className="flex-1 truncate text-left">{section.title}</span>
+                        {!sectionCreate && (
+                          <ChevronDown className={`ml-auto h-4 w-4 opacity-80 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                        )}
+                      </button>
+                    ) : (
+                      <Link href={section.href} onClick={navigate} aria-current={pathname === section.href ? "page" : undefined}>
+                        <section.icon className="size-[19px]!" />
+                        <span className="truncate">{section.title}</span>
+                      </Link>
+                    )}
+                  </SidebarMenuButton>
+                  {sectionCreate && (
+                    <Link
+                      href={sectionCreate}
+                      onClick={navigate}
+                      aria-label={`Add to ${section.title}`}
+                      title={`Add to ${section.title}`}
+                      className="mr-3 flex size-7 shrink-0 items-center justify-center rounded-md text-white/85 hover:bg-white/10 group-data-[collapsible=icon]:hidden"
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Link>
+                  )}
+                </div>
+                {hasChildren && isExpanded && (
+                  <SidebarMenuSub id={subId} className="mx-0 gap-0 border-0 bg-black/15 px-0 py-1">
+                    {children!.map((item) => {
+                      const itemActive = pathname === item.href;
+                      const create =
+                        item.createHref && !viewOnly && !isWriteOnlyPath(pathOf(item.createHref)) ? item.createHref : undefined;
+                      return (
+                        <SidebarMenuSubItem key={item.href} className="flex items-center">
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={itemActive}
+                            className="h-10 flex-1 rounded-none pl-12 pr-2 text-[14px]! text-white/80 data-active:text-white"
+                          >
+                            <Link href={item.href} onClick={navigate} aria-current={itemActive ? "page" : undefined}>
+                              <span className="truncate">{item.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                          {create && (
+                            <Link
+                              href={create}
+                              onClick={navigate}
+                              aria-label={`New ${item.title}`}
+                              title={`New ${item.title}`}
+                              className="mr-3 flex size-7 shrink-0 items-center justify-center rounded-md text-white/80 hover:bg-white/10"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Link>
+                          )}
+                        </SidebarMenuSubItem>
+                      );
+                    })}
+                  </SidebarMenuSub>
+                )}
+              </SidebarMenuItem>
             );
-          if (!sections.length) return null;
-          return (
-            <SidebarGroup key={group.label} className="px-1 py-2">
-              <SidebarGroupLabel className="mb-2 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-sidebar-foreground/65">
-                {group.label}
-              </SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu className="gap-1">
-                  {sections.map((section) => {
-                    const active =
-                      pathname === section.href ||
-                      (section.href !== "/" &&
-                        pathname.startsWith(section.href + "/")) ||
-                      Boolean(section.items?.some(
-                        (item) => pathname === item.href || pathname.startsWith(item.href + "/"),
-                      ));
-                    const isExpanded =
-                      Boolean(term) || (expanded[section.href] ?? active);
-                    const children = section.items?.filter(
-                      (item) => (!viewOnly || !isWriteOnlyPath(item.href)) && !disabledPaths.has(item.href),
-                    ).filter(
-                      (item) =>
-                        !term ||
-                        section.title.toLowerCase().includes(term) ||
-                        item.title.toLowerCase().includes(term),
-                    );
-                    const subId = `navigation-${section.href.replaceAll("/", "-") || "home"}`;
-                    return (
-                      <SidebarMenuItem key={section.href}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={active}
-                          tooltip={section.title}
-                          className="h-11 rounded-xl px-3 text-[15px] font-medium data-active:font-semibold"
-                        >
-                          <Link
-                            href={section.href}
-                            onClick={navigate}
-                            aria-current={
-                              pathname === section.href ? "page" : undefined
-                            }
-                          >
-                            <section.icon className="size-[19px]!" />
-                            <span>{section.title === "Manage / Delete Data" ? "Data & recycle bin" : section.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                        {children && (
-                          <SidebarMenuAction
-                            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${section.title}`}
-                            aria-expanded={isExpanded}
-                            aria-controls={subId}
-                            className="top-2 right-2 size-7 rounded-md"
-                            onClick={() => {
-                              if (state === "collapsed") setOpen(true);
-                              setExpanded((prev) => ({
-                                ...prev,
-                                [section.href]: !isExpanded,
-                              }));
-                            }}
-                          >
-                            <ChevronDown
-                              className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            />
-                          </SidebarMenuAction>
-                        )}
-                        {children && isExpanded && (
-                          <SidebarMenuSub
-                            id={subId}
-                            className="ml-5 mr-1 mt-1 gap-1 border-sidebar-border/70 pl-3"
-                          >
-                            {children.map((item) => (
-                              <SidebarMenuSubItem key={item.href}>
-                                <SidebarMenuSubButton
-                                  asChild
-                                  isActive={pathname === item.href}
-                                  className="h-10 rounded-lg px-3 text-[14px]! text-sidebar-foreground/75 data-active:text-white"
-                                >
-                                  <Link
-                                    href={item.href}
-                                    onClick={navigate}
-                                    aria-current={
-                                      pathname === item.href
-                                        ? "page"
-                                        : undefined
-                                    }
-                                  >
-                                    <span>{item.title}</span>
-                                  </Link>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            ))}
-                          </SidebarMenuSub>
-                        )}
-                      </SidebarMenuItem>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          );
-        })}
-        {term &&
-          !NAV_SECTIONS.some(
-            (section) =>
-              section.title.toLowerCase().includes(term) ||
-              section.items?.some((item) =>
-                item.title.toLowerCase().includes(term),
-              ),
-          ) && (
-            <p className="px-4 py-6 text-sm text-sidebar-foreground/70">
-              No pages match “{search}”.
-            </p>
-          )}
+          })}
+        </SidebarMenu>
+        {term && sections.length === 0 && (
+          <p className="px-4 py-6 text-sm text-white/70">No pages match “{search}”.</p>
+        )}
       </SidebarContent>
+      <SidebarFooter className="p-2">
+        <div className="flex items-center gap-2.5 rounded-lg bg-sidebar-accent px-2.5 py-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-1">
+          <Link href="/settings/companies" onClick={navigate} className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white p-0.5" title={companyName}>
+            <Image src="/nrk-logo-gold.png" alt="" width={32} height={32} className="h-full w-full object-contain" />
+          </Link>
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <Link href="/settings/companies" onClick={navigate} className="block truncate text-[15px] font-semibold text-white">
+              {companyName}
+            </Link>
+            <p className="truncate text-[11px] text-white/60">
+              <PrivacyUnlockTrigger enabled={role === "owner"}>The Name of Purity</PrivacyUnlockTrigger>
+            </p>
+          </div>
+          <Link href="/settings/companies" onClick={navigate} aria-label="Companies" className="text-white/80 group-data-[collapsible=icon]:hidden">
+            <ChevronRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

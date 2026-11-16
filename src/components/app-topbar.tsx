@@ -4,15 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { ArrowLeft, Bell, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
+import Link from "next/link";
+import { ArrowLeft, Building2, EllipsisVertical, KeyRound, LockKeyhole, LogOut, Plus, Printer, Search, Settings } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { TextSizeToggle } from "@/components/text-size-toggle";
-import { NAV_SECTIONS } from "@/lib/nav-data";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ColorThemePicker } from "@/components/color-theme-picker";
 import { getUserErrorMessage } from "@/lib/user-error";
@@ -73,15 +72,15 @@ function GlobalSearch() {
   }
 
   return (
-    <div className="relative hidden w-full max-w-md md:block">
+    <div className="relative hidden w-full max-w-sm md:block">
       <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
       <Input
         value={term}
         onChange={(e) => setTerm(e.target.value)}
         onFocus={() => setFocused(true)}
         onBlur={() => setTimeout(() => setFocused(false), 150)}
-        placeholder="Search transactions, parties, items…"
-        className="h-11 rounded-xl border-border/70 bg-muted/40 pl-9 text-sm"
+        placeholder="Search Transactions"
+        className="h-9 rounded-md border-transparent bg-transparent pl-9 text-[15px] shadow-none focus-visible:border-border focus-visible:bg-muted/40"
       />
       {focused && term.trim().length >= 2 && (
         <div className="absolute left-0 right-0 top-12 z-50 overflow-hidden rounded-md border border-border bg-popover shadow-md">
@@ -157,23 +156,6 @@ function GlobalSearch() {
   );
 }
 
-function NotificationBell() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="outline-none">
-        <div className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground">
-          <Bell className="h-4 w-4" />
-        </div>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <p className="px-2 py-3 text-center text-sm text-muted-foreground">
-          No new notifications.
-        </p>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
 export function AppTopbar({
   organizationName,
   userName,
@@ -205,35 +187,55 @@ export function AppTopbar({
   }, [companies, isLocked, activeOrganizationId]);
   const pathname = usePathname();
   const router = useRouter();
-  const page = NAV_SECTIONS.flatMap((section) => [
-    ...(section.items ?? []),
-    section,
-  ]).find((item) => item.href === pathname);
-  const pageTitle = page?.title ?? "Workspace";
+  const canWrite = role !== "staff";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 sm:h-20 shrink-0 items-center justify-between gap-1.5 sm:gap-5 border-b border-border/70 bg-card/95 px-2.5 sm:px-4 backdrop-blur-xl lg:px-8 print:hidden">
-      <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+    <header className="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-card px-2.5 sm:px-4 print:hidden">
+      <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
         <SidebarTrigger aria-label="Expand or collapse navigation" title="Expand or collapse navigation" />
-        {pathname !== "/" && <Button variant="ghost" size="icon" aria-label="Go back" title="Go back" className="h-8 w-8 sm:h-9 sm:w-9" onClick={() => window.history.length > 1 ? router.back() : router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>}
-        <Separator orientation="vertical" className="h-5" />
-        <div className="min-w-0">
-          <p className="truncate text-sm sm:text-base font-semibold tracking-tight">
-            {pageTitle}
-          </p>
-          <p className="mt-0.5 hidden max-w-52 truncate text-xs text-muted-foreground sm:block">
-            {organizationName || "NRK Jewellers"}
-          </p>
-        </div>
-      </div>
-      <div className="hidden min-w-0 flex-1 justify-center md:flex">
+        {pathname !== "/" && <Button variant="ghost" size="icon" aria-label="Go back" title="Go back" className="h-8 w-8" onClick={() => window.history.length > 1 ? router.back() : router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>}
         <GlobalSearch />
+        <p className="truncate text-sm font-semibold md:hidden">{organizationName || "NRK Jewellers"}</p>
       </div>
-      <div className="flex items-center gap-1 sm:gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2.5">
+        {canWrite && (
+          <>
+            <Link href="/sales/new" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-sale-soft px-3 text-sm font-semibold text-sale transition-colors hover:bg-sale hover:text-white sm:px-4 sm:text-[15px]">
+              <Plus className="h-4 w-4" /><span>Add Sale</span>
+            </Link>
+            <Link href="/purchases/new" className="inline-flex h-9 items-center gap-1.5 rounded-full bg-purchase-soft px-3 text-sm font-semibold text-purchase transition-colors hover:bg-purchase hover:text-white sm:px-4 sm:text-[15px]">
+              <Plus className="h-4 w-4" /><span className="hidden sm:inline">Add Purchase</span><span className="sm:hidden">Purchase</span>
+            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" aria-label="Quick add" title="Quick add" className="hidden h-9 w-9 items-center justify-center rounded-full bg-purchase-soft text-purchase hover:bg-purchase hover:text-white sm:inline-flex">
+                  <Plus className="h-5 w-5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {[
+                  ["Sale Invoice", "/sales/new"],
+                  ["Purchase Bill", "/purchases/new"],
+                  ["Estimate/ Quotation", "/sales/quotations?new=1"],
+                  ["Sale Return", "/sales/returns?new=1"],
+                  ["Purchase Return", "/purchases/returns?new=1"],
+                  ["Expense", "/purchases/expenses?new=1"],
+                  ["Item", "/inventory/products?new=1"],
+                  ["Cash & Bank entry", "/cash-bank"],
+                ].map(([label, href]) => (
+                  <DropdownMenuItem key={href} onSelect={() => router.push(href)}>
+                    <Plus className="h-4 w-4" />{label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        )}
+        <Separator orientation="vertical" className="mx-0.5 hidden h-6 sm:block" />
         {visibleCompanies.length > 1 && <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3 max-w-32 sm:max-w-56 text-xs sm:text-sm">
-              <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+            <Button variant="outline" size="sm" className="hidden h-9 max-w-44 px-2 text-xs lg:inline-flex">
+              <Building2 className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{organizationName ?? "Company"}</span>
             </Button>
           </DropdownMenuTrigger>
@@ -244,31 +246,39 @@ export function AppTopbar({
             </DropdownMenuItem>)}
           </DropdownMenuContent>
         </DropdownMenu>}
-        {role && (
-          <Badge variant="outline" className="hidden xl:inline-flex capitalize">
-            {role.replace("_", " ")}
-          </Badge>
-        )}
-        <div className="hidden md:flex items-center gap-1 sm:gap-2">
+        <div className="hidden items-center gap-1 xl:flex">
           <TextSizeToggle />
           <ColorThemePicker />
+          <ThemeToggle />
         </div>
-        <ThemeToggle />
-        <NotificationBell />
+        <Button variant="ghost" size="icon" aria-label="Print this screen" title="Print" className="hidden h-9 w-9 sm:inline-flex" onClick={() => window.print()}>
+          <Printer className="h-[18px] w-[18px]" />
+        </Button>
         <DropdownMenu>
-          <DropdownMenuTrigger className="outline-none">
-            <Avatar className="h-8 w-8 sm:h-10 sm:w-10 border border-border">
-              <AvatarFallback className="bg-accent text-accent-foreground text-xs font-semibold">
-                {initials(userName)}
-              </AvatarFallback>
-            </Avatar>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="More options" title="More" className="h-9 w-9">
+              <EllipsisVertical className="h-5 w-5" />
+            </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <div className="px-2 py-1.5 text-sm">
-              <p className="font-medium leading-none">
-                {userName ?? "Account"}
-              </p>
+          <DropdownMenuContent align="end" className="w-56">
+            <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+              <Avatar className="h-8 w-8 border border-border">
+                <AvatarFallback className="bg-accent text-accent-foreground text-xs font-semibold">{initials(userName)}</AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="truncate font-medium leading-none">{userName ?? "Account"}</p>
+                {role && <p className="mt-1 text-xs capitalize text-muted-foreground">{role.replace("_", " ")}</p>}
+              </div>
             </div>
+            <div className="flex items-center gap-1 px-1 pb-1 xl:hidden">
+              <TextSizeToggle />
+              <ColorThemePicker />
+              <ThemeToggle />
+            </div>
+            <DropdownMenuItem onSelect={() => router.push("/settings")}>
+              <Settings className="h-4 w-4" />
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={appLock.lock}>
               <LockKeyhole className="h-4 w-4" />
               Lock app

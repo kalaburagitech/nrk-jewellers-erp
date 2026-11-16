@@ -167,7 +167,7 @@ export function PurchaseOrderFormDialog({
     >
       {!purchaseId && (
         <DialogTrigger asChild>
-          <Button>
+          <Button data-create-trigger="">
             <Plus className="h-4 w-4" />
             New Purchase Order
           </Button>

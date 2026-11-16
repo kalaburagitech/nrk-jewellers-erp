@@ -1,36 +1,40 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  LayoutDashboard,
+  Home,
   Receipt,
   ShoppingCart,
   Boxes,
-  PackageSearch,
+  ShoppingBag,
   Users,
   Landmark,
   Coins,
   BarChart3,
   Settings,
+  RefreshCw,
+  Trash2,
+  HandCoins,
 } from "lucide-react";
 
 export type NavItem = {
   title: string;
   href: string;
+  /** Vyapar-style "+" shortcut shown beside the menu entry (opens the create screen). */
+  createHref?: string;
 };
 
 export type NavSection = {
   title: string;
   icon: LucideIcon;
   href: string;
+  /** "+" shortcut on the top-level row (Vyapar shows one on Items). */
+  createHref?: string;
   items?: NavItem[];
 };
 
-// Mirrors the Phase 1 navigation from the SRS (section 5). Sub-items route to
-// not-yet-built screens as placeholders until their milestone lands.
+// Menu laid out like Vyapar desktop: one flat list of sections, each with a
+// chevron to open its sub-menu and a "+" beside entries that can be created.
 export const NAV_SECTIONS: NavSection[] = [
-  { title: "Home", icon: LayoutDashboard, href: "/" },
-  { title: "Girvi / Metal Loans", icon: Landmark, href: "/girvi" },
-  { title: "Backup & Restore", icon: Settings, href: "/backup" },
-  { title: "Manage / Delete Data", icon: Boxes, href: "/manage-data" },
+  { title: "Home", icon: Home, href: "/" },
   { title: "Parties", icon: Users, href: "/customers", items: [
     { title: "Customers", href: "/customers" },
     { title: "Suppliers", href: "/suppliers" },
@@ -38,8 +42,8 @@ export const NAV_SECTIONS: NavSection[] = [
     { title: "Outstanding Balances", href: "/customers/outstanding" },
     { title: "Purchase History", href: "/suppliers/history" },
   ] },
-  { title: "Items", icon: PackageSearch, href: "/inventory/products", items: [
-    { title: "Item List", href: "/inventory/products" },
+  { title: "Items", icon: ShoppingBag, href: "/inventory/products", createHref: "/inventory/products?new=1", items: [
+    { title: "Item List", href: "/inventory/products", createHref: "/inventory/products?new=1" },
     { title: "Stock (Daily / GST)", href: "/inventory/stock" },
     { title: "Stock Groups", href: "/inventory/groups" },
     { title: "Stock Categories", href: "/inventory/categories" },
@@ -49,14 +53,14 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: Receipt,
     href: "/sales",
     items: [
+      { title: "Sale Invoices", href: "/sales/invoices", createHref: "/sales/new" },
       { title: "New Bill", href: "/sales/new" },
-      { title: "Sales Invoices", href: "/sales/invoices" },
-      { title: "Quotations", href: "/sales/quotations" },
-      { title: "Proforma Invoices", href: "/sales/proforma" },
-      { title: "Delivery Challans", href: "/sales/challans" },
-      { title: "Sales Orders", href: "/sales/orders" },
-      { title: "Sales Returns", href: "/sales/returns" },
-      { title: "Credit Notes", href: "/sales/credit-notes" },
+      { title: "Estimate/ Quotation", href: "/sales/quotations", createHref: "/sales/quotations?new=1" },
+      { title: "Proforma Invoice", href: "/sales/proforma", createHref: "/sales/proforma?new=1" },
+      { title: "Sale Order", href: "/sales/orders" },
+      { title: "Delivery Challan", href: "/sales/challans" },
+      { title: "Sale Return", href: "/sales/returns", createHref: "/sales/returns?new=1" },
+      { title: "Credit Note", href: "/sales/credit-notes", createHref: "/sales/credit-notes?new=1" },
     ],
   },
   {
@@ -64,13 +68,14 @@ export const NAV_SECTIONS: NavSection[] = [
     icon: ShoppingCart,
     href: "/purchases",
     items: [
+      { title: "Purchase Bills", href: "/purchases/invoices", createHref: "/purchases/new" },
       { title: "New Purchase", href: "/purchases/new" },
-      { title: "Purchase Invoices", href: "/purchases/invoices" },
-      { title: "Purchase Orders", href: "/purchases/orders" },
-      { title: "Purchase Returns", href: "/purchases/returns" },
-      { title: "Expenses", href: "/purchases/expenses" },
+      { title: "Expenses", href: "/purchases/expenses", createHref: "/purchases/expenses?new=1" },
+      { title: "Purchase Order", href: "/purchases/orders", createHref: "/purchases/orders?new=1" },
+      { title: "Purchase Return/ Dr. Note", href: "/purchases/returns", createHref: "/purchases/returns?new=1" },
     ],
   },
+  { title: "Girvi / Metal Loans", icon: HandCoins, href: "/girvi" },
   {
     title: "Box Management",
     icon: Boxes,
@@ -83,11 +88,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Barcode Labels", href: "/boxes/labels" },
     ],
   },
-  {
-    title: "Cash & Bank",
-    icon: Landmark,
-    href: "/cash-bank",
-  },
+  { title: "Cash & Bank", icon: Landmark, href: "/cash-bank" },
   {
     title: "Metal Rates",
     icon: Coins,
@@ -97,33 +98,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Rate History", href: "/metal-rates/history" },
     ],
   },
-  {
-    title: "Reports",
-    icon: BarChart3,
-    href: "/reports",
-    items: [
-      { title: "Sales Reports", href: "/reports/sales" },
-      { title: "Purchase Reports", href: "/reports/purchases" },
-      { title: "Stock Reports", href: "/reports/stock" },
-      { title: "Box Reports", href: "/reports/boxes" },
-      { title: "GST Reports", href: "/reports/gst" },
-      { title: "Customer Reports", href: "/reports/customers" },
-      { title: "Profitability Reports", href: "/reports/profitability" },
-    ],
-  },
-  {
-    title: "Settings",
-    icon: Settings,
-    href: "/settings",
-    items: [
-      { title: "Business Profile", href: "/settings/business" },
-      { title: "Companies", href: "/settings/companies" },
-      { title: "Booking Years", href: "/settings/accounting-years" },
-      { title: "GST Configuration", href: "/settings/gst" },
-      { title: "Invoice Templates", href: "/settings/invoice-templates" },
-      { title: "Metal Purity Configuration", href: "/settings/purity" },
-      { title: "Users and Roles", href: "/settings/users" },
-      { title: "General Settings", href: "/settings/general" },
-    ],
-  },
+  { title: "Reports", icon: BarChart3, href: "/reports" },
+  { title: "Sync, Share & Backup", icon: RefreshCw, href: "/backup" },
+  { title: "Manage / Delete Data", icon: Trash2, href: "/manage-data" },
+  { title: "Settings", icon: Settings, href: "/settings" },
 ];

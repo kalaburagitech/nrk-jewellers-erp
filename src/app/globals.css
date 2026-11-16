@@ -43,6 +43,10 @@
   --color-success-foreground: var(--success-foreground);
   --color-gold: var(--gold);
   --color-gold-foreground: var(--gold-foreground);
+  --color-sale: var(--sale);
+  --color-sale-soft: var(--sale-soft);
+  --color-purchase: var(--purchase);
+  --color-purchase-soft: var(--purchase-soft);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -53,24 +57,38 @@
 }
 
 :root {
+  /* Default "Vyapar" look: navy sidebar, white panels, blue actions, red sale accent. */
+  --background: #eef1f6; --foreground: #222634;
+  --card: #ffffff; --card-foreground: #222634;
+  --popover: #ffffff; --popover-foreground: #222634;
+  --primary: #1f78e6; --primary-foreground: #ffffff;
+  --secondary: #e8f1fd; --secondary-foreground: #174e94;
+  --muted: #f2f4f8; --muted-foreground: #6b7280;
+  --accent: #e8f1fd; --accent-foreground: #174e94;
+  --destructive: #e3344c; --success: #16a37b; --success-foreground: #ffffff;
+  --gold: #a77e36; --gold-foreground: #ffffff;
+  --sale: #ed1c3a; --sale-soft: #fde4e8; --purchase: #1f78e6; --purchase-soft: #e1eefd;
+  --border: #e2e6ee; --input: #d5dae3; --ring: #5c9cf0;
+  --chart-1: #1f78e6; --chart-2: #16a37b; --chart-3: #f4b860; --chart-4: #ed1c3a; --chart-5: #8a63d2;
+  --radius: 0.5rem;
+  --sidebar: #181b3a; --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ed1c3a; --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #2a2e56; --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #2c3058; --sidebar-ring: #5c9cf0;
+}
+
+:root[data-color-theme="champagne"] {
   --background: #f8f6f0; --foreground: #28251f;
-  --card: #ffffff; --card-foreground: #28251f;
-  --popover: #ffffff; --popover-foreground: #28251f;
   --primary: #94702e; --primary-foreground: #ffffff;
   --secondary: #f1ebdc; --secondary-foreground: #483916;
   --muted: #f1eee7; --muted-foreground: #706b60;
   --accent: #f4ecd9; --accent-foreground: #654c1c;
-  --destructive: #c52e38; --success: #218050; --success-foreground: #ffffff;
-  --gold: #a77e36; --gold-foreground: #ffffff;
-  --border: #e5dfd1; --input: #d6cdb9; --ring: #ad8847;
-  --chart-1: #94702e; --chart-2: #72513a; --chart-3: #c2a66d; --chart-4: #37805a; --chart-5: #bd4f5c;
-  --radius: 0.75rem;
+  --border: #e5dfd1; --input: #d6cdb9; --ring: #ad8847; --chart-1: #94702e;
   --sidebar: #29251d; --sidebar-foreground: #f6f1e6;
   --sidebar-primary: #e6bf78; --sidebar-primary-foreground: #29251d;
   --sidebar-accent: #453b2c; --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #514735; --sidebar-ring: #c3a463;
 }
-
 :root[data-color-theme="rose"] {
   --primary: #a92f60; --primary-foreground: #ffffff;
   --secondary: #f7e6ed; --secondary-foreground: #55213a;
@@ -103,6 +121,7 @@
 }
 
 .dark {
+  --sale: #ff5a70; --sale-soft: #4a1c25; --purchase: #6aa8f5; --purchase-soft: #1d3150;
   --background: oklch(0.17 0.012 50);
   --foreground: oklch(0.95 0.01 80);
   --card: oklch(0.21 0.013 50);
@@ -206,22 +225,21 @@ html[data-reading-size="large"] :is(.erp-shell, [data-slot="dialog-content"], [d
   --navigation-size: 17px;
   --subnavigation-size: 16px;
 }
-.erp-main {
-  background: radial-gradient(ellipse at 75% 0%, rgb(187 205 229 / 15%), transparent 50%), var(--background);
-}
+.erp-main { background: var(--background); }
 .erp-main h1 { line-height: 1.25; letter-spacing: -0.035em; }
 .erp-main :is([data-slot="card"], .selection-toolbar) {
   box-shadow: 0 3px 6px rgb(17 45 78 / 2%), 0 10px 28px rgb(17 45 78 / 3%);
 }
 .erp-main [data-slot="card"] { --card-spacing: 1.35rem; }
-.erp-main [data-slot="table-header"] { background: color-mix(in srgb, var(--secondary) 55%, var(--card)); }
-.erp-main [data-slot="table-head"] { font-size: 0.8125rem; font-weight: 650; color: var(--muted-foreground); }
+.erp-main [data-slot="table-header"] { background: #f5f6f9; }
+.dark .erp-main [data-slot="table-header"] { background: var(--muted); }
+.erp-main [data-slot="table-head"] { font-size: 0.78rem; font-weight: 600; color: #4b5263; text-transform: uppercase; letter-spacing: 0.02em; }
 .erp-main [data-slot="table-cell"] { font-variant-numeric: tabular-nums; }
 .erp-shell [data-slot="button"][data-variant="default"] { box-shadow: 0 2px 4px rgb(17 45 78 / 10%); }
-.premium-sidebar [data-slot="sidebar-inner"] { background: linear-gradient(165deg, color-mix(in srgb, var(--sidebar) 82%, white) 0%, var(--sidebar) 45%, color-mix(in srgb, var(--sidebar) 82%, black) 100%); }
+.premium-sidebar [data-slot="sidebar-inner"] { background: var(--sidebar); }
 .premium-sidebar [data-sidebar="menu-button"] { font-size: var(--navigation-size); }
 .premium-sidebar [data-sidebar="menu-button"][data-active="true"] {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--sidebar-primary) 17%, transparent), rgb(255 255 255 / 7%));
+  background: var(--sidebar-accent);
   box-shadow: inset 3px 0 0 var(--sidebar-primary);
   color: #fff;
 }
@@ -235,5 +253,13 @@ html[data-reading-size="large"] :is(.erp-shell, [data-slot="dialog-content"], [d
   .erp-shell *, [data-slot="dialog-content"] * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
 
-.premium-sidebar[data-mobile="true"] { background: linear-gradient(165deg, color-mix(in srgb, var(--sidebar) 82%, white), var(--sidebar) 48%, color-mix(in srgb, var(--sidebar) 82%, black)); }
+.premium-sidebar[data-mobile="true"] { background: var(--sidebar); }
 html[data-reading-size="large"] .premium-sidebar[data-mobile="true"] { --navigation-size: 17px; --subnavigation-size: 16px; --text-sm: 1.0625rem; --text-xs: 0.9375rem; }
+
+/* Vyapar-style settings: flat sections with an underlined heading instead of floating cards. */
+.vy-settings .erp-main, .vy-settings [data-slot="card"] { box-shadow: none !important; }
+.vy-settings [data-slot="card"] { border: 0; background: transparent; border-radius: 0; padding-top: 0; }
+.vy-settings [data-slot="card-header"] { padding-inline: 0; border-bottom: 1px solid var(--border); padding-bottom: 0.75rem; margin-bottom: 0.25rem; }
+.vy-settings [data-slot="card-title"] { font-size: 1.0625rem; font-weight: 600; }
+.vy-settings [data-slot="card-content"] { padding-inline: 0; }
+.vy-settings h1 { font-size: 1.25rem; }

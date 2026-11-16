@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const THEMES = [
-  { id: "gold", label: "Champagne Gold", swatch: "bg-[#a7833f]" },
+  { id: "gold", label: "Vyapar Blue", swatch: "bg-[#1f78e6]" },
+  { id: "champagne", label: "Champagne Gold", swatch: "bg-[#a7833f]" },
   { id: "rose", label: "Rose Pink", swatch: "bg-[#bd4d79]" },
   { id: "green", label: "Emerald Green", swatch: "bg-[#347a54]" },
   { id: "plum", label: "Royal Plum", swatch: "bg-[#795394]" },

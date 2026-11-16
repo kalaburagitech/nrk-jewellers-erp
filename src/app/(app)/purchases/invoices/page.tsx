@@ -9,10 +9,11 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Eye, Pencil, Plus, Printer, Receipt, Trash2 } from "lucide-react";
+import { EllipsisVertical, Eye, Pencil, Plus, Printer, Receipt, Search, Trash2 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ChipMenu, FirmChip, ListHeader, PeriodChip, useListPeriod, useUserOptions } from "@/components/vyapar/list-kit";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -129,14 +130,18 @@ function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases"
   );
 }
 
+// Purchase Bills — laid out like Vyapar desktop.
 export default function PurchaseInvoicesPage() {
   const purchases = useQuery(api.purchases.list);
   const suppliers = useQuery(api.suppliers.list);
   const access = useQuery(api.organizations.getMyAccess);
+  const router = useRouter();
   const [selected, setSelected] = useState<Doc<"purchases"> | null>(null);
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [status, setStatus] = useState("all");
+  const [user, setUser] = useState("");
+  const period = useListPeriod("all");
+  const userOptions = useUserOptions();
   const canEdit = access?.membership?.role === "owner" || access?.membership?.role === "admin";
 
   const supplierName = useMemo(() => {
@@ -145,122 +150,168 @@ export default function PurchaseInvoicesPage() {
     return map;
   }, [suppliers]);
 
-  const filteredPurchases = useMemo(() => purchases?.filter(row => {
+  const filteredPurchases = useMemo(() => purchases?.filter((row) => {
     const q = search.trim().toLowerCase();
     const supplier = supplierName.get(row.supplierId)?.toLowerCase() ?? "";
-    const day = new Date(row.createdAt).toISOString().slice(0, 10);
-    return (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q)) && (!dateFrom || day >= dateFrom) && (!dateTo || day <= dateTo);
-  }), [purchases, search, dateFrom, dateTo, supplierName]);
-  const selection = useRecordSelection(filteredPurchases?.map(row => row._id) ?? [], `purchases:${search}:${dateFrom}:${dateTo}`);
+    const balance = row.totalPaise - row.amountPaidPaise;
+    return (
+      (!q || row.invoiceNumber.toLowerCase().includes(q) || supplier.includes(q)) &&
+      period.contains(row.createdAt) &&
+      (!user || row.createdByUserId === user) &&
+      (status === "all" || (status === "paid" && balance <= 0) || (status === "unpaid" && balance > 0))
+    );
+  }), [purchases, search, supplierName, period, user, status]);
+  const selection = useRecordSelection(filteredPurchases?.map((row) => row._id) ?? [], `purchases:${search}:${status}:${user}:${period.preset}`);
   const totals = filteredPurchases?.reduce((sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }), { total: 0, paid: 0 });
+  const paid = totals?.paid ?? 0;
+  const total = totals?.total ?? 0;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Purchase Invoices</h1>
-          <p className="text-sm text-muted-foreground">{purchases?.length ?? 0} purchases recorded</p>
-        </div>
-        <div className="flex gap-2">
-          {purchases && (
-            <TransactionReportDialog
-              label={selection.count ? `Export ${selection.count} selected` : "Export all CSV"}
-              filename="purchase-invoices"
-              rows={(selection.count ? (filteredPurchases ?? []).filter(row => selection.has(row._id)) : (filteredPurchases ?? []))}
-              fields={[
-                { id: "date", label: "Date", value: (p) => new Date(p.createdAt).toLocaleDateString("en-IN") },
-                { id: "invoice", label: "Invoice No.", value: (p) => p.invoiceNumber },
-                { id: "party", label: "Party Name", value: (p) => supplierName.get(p.supplierId) ?? "—" },
-                { id: "total", label: "Total", value: (p) => formatPaise(p.totalPaise) },
-                { id: "paid", label: "Paid", value: (p) => formatPaise(p.amountPaidPaise) },
-                { id: "balance", label: "Balance Due", value: (p) => formatPaise(Math.max(0, p.totalPaise - p.amountPaidPaise)) },
-                { id: "status", label: "Payment Status", value: (p) => p.amountPaidPaise >= p.totalPaise ? "Paid" : p.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
-                { id: "phone", label: "Party's Phone No.", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.phone ?? "—" },
-                { id: "gstin", label: "Party's GSTIN", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.gstin ?? "—" },
-                { id: "items", label: "Item Details", value: (p) => p.reportItemDetails },
-                { id: "description", label: "Description", value: (p) => p.reportDescription },
-                { id: "paymentType", label: "Payment Type", value: (p) => p.reportPaymentType },
-                { id: "paymentBreakup", label: "Show Payment Breakup", value: (p) => p.reportPaymentBreakup },
+    <div className="flex flex-col gap-2">
+      <ListHeader title="Purchase Bills">
+        {canEdit && (
+          <Link href="/purchases/new" className="inline-flex h-10 items-center gap-1.5 rounded-full bg-sale px-5 text-[15px] font-semibold text-white shadow-sm hover:bg-sale/90">
+            <Plus className="h-4 w-4" />
+            Add Purchase
+          </Link>
+        )}
+      </ListHeader>
+
+      <div className="flex flex-col gap-4 rounded-md bg-card px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <ChipMenu
+              value={status}
+              onChange={setStatus}
+              className="bg-transparent px-0 text-xl font-semibold hover:bg-transparent"
+              options={[
+                { value: "all", label: "All Purchase Invoices" },
+                { value: "paid", label: "Paid" },
+                { value: "unpaid", label: "Unpaid" },
               ]}
             />
-          )}
-          <Button asChild>
-            <Link href="/purchases/new">
-              <Plus className="h-4 w-4" />
-              New Purchase
-            </Link>
-          </Button>
+            <PeriodChip state={period} />
+            <FirmChip />
+            <ChipMenu value={user} onChange={setUser} options={userOptions} />
+          </div>
+          <div className="flex items-start gap-4">
+            {purchases && (
+              <TransactionReportDialog
+                label="Export to Excel"
+                variant="xls"
+                filename="purchase-invoices"
+                rows={(selection.count ? (filteredPurchases ?? []).filter((row) => selection.has(row._id)) : (filteredPurchases ?? []))}
+                fields={[
+                  { id: "date", label: "Date", value: (p) => new Date(p.createdAt).toLocaleDateString("en-IN") },
+                  { id: "invoice", label: "Invoice No.", value: (p) => p.invoiceNumber },
+                  { id: "party", label: "Party Name", value: (p) => supplierName.get(p.supplierId) ?? "—" },
+                  { id: "total", label: "Total", value: (p) => formatPaise(p.totalPaise) },
+                  { id: "paid", label: "Paid", value: (p) => formatPaise(p.amountPaidPaise) },
+                  { id: "balance", label: "Balance Due", value: (p) => formatPaise(Math.max(0, p.totalPaise - p.amountPaidPaise)) },
+                  { id: "status", label: "Payment Status", value: (p) => p.amountPaidPaise >= p.totalPaise ? "Paid" : p.amountPaidPaise > 0 ? "Partly paid" : "Unpaid" },
+                  { id: "phone", label: "Party's Phone No.", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.phone ?? "—" },
+                  { id: "gstin", label: "Party's GSTIN", value: (p) => suppliers?.find((party) => party._id === p.supplierId)?.gstin ?? "—" },
+                  { id: "items", label: "Item Details", value: (p) => p.reportItemDetails },
+                  { id: "description", label: "Description", value: (p) => p.reportDescription },
+                  { id: "paymentType", label: "Payment Type", value: (p) => p.reportPaymentType },
+                  { id: "paymentBreakup", label: "Show Payment Breakup", value: (p) => p.reportPaymentBreakup },
+                ]}
+              />
+            )}
+            <button type="button" onClick={() => window.print()} className="flex flex-col items-center gap-1 text-[11px] font-medium text-foreground/80 hover:text-primary">
+              <Printer className="h-6 w-6" />
+              Print
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-40 rounded-lg bg-[#b8f0e4] px-4 py-3 text-[#10413a]">
+            <p className="text-[15px]">Paid</p>
+            <p className="text-xl font-semibold tabular-nums">₹ {(paid / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+          </div>
+          <span className="text-2xl font-semibold text-muted-foreground">+</span>
+          <div className="min-w-40 rounded-lg bg-[#cfe3fb] px-4 py-3 text-[#13325a]">
+            <p className="text-[15px]">Unpaid</p>
+            <p className="text-xl font-semibold tabular-nums">₹ {((total - paid) / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+          </div>
+          <span className="text-2xl font-semibold text-muted-foreground">=</span>
+          <div className="min-w-40 rounded-lg bg-[#f8cf8f] px-4 py-3 text-[#4a3108]">
+            <p className="text-[15px]">Total</p>
+            <p className="text-xl font-semibold tabular-nums">₹ {(total / 100).toLocaleString("en-IN", { minimumFractionDigits: 2 })}</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3"><Input placeholder="Search invoice or supplier" value={search} onChange={e => setSearch(e.target.value)} /><Input aria-label="From date" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} /><Input aria-label="To date" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} /></div>
-      <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Paid</p><p className="text-xl font-semibold">{formatPaise(totals?.paid ?? 0)}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Unpaid</p><p className="text-xl font-semibold">{formatPaise((totals?.total ?? 0) - (totals?.paid ?? 0))}</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total</p><p className="text-xl font-semibold">{formatPaise(totals?.total ?? 0)}</p></CardContent></Card></div>
-
       <BulkRecordActions selection={selection} table="purchases" />
 
-      <Card>
-        <CardContent className="p-0">
-          {purchases === undefined ? (
-            <p className="p-6 text-sm text-muted-foreground">Loading…</p>
-          ) : filteredPurchases?.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-12 text-center">
-              <Receipt className="h-8 w-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">No purchases recorded yet.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={checked => selection.selectAll(checked === true)} /></TableHead>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Supplier</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">Paid</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="w-28 text-right">Actions</TableHead>
+      <div className="rounded-md bg-card">
+        <div className="flex flex-col gap-2 px-3 pt-3">
+          <h3 className="text-[15px] font-semibold uppercase">Transactions</h3>
+          <label className="relative block w-56">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input aria-label="Search invoice or supplier" value={search} onChange={(e) => setSearch(e.target.value)} className="h-8 pl-8 text-sm" />
+          </label>
+        </div>
+        {purchases === undefined ? (
+          <p className="p-6 text-sm text-muted-foreground">Loading…</p>
+        ) : filteredPurchases?.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-12 text-center">
+            <Receipt className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No purchases to show.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto p-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10"><Checkbox aria-label="Select all visible records" checked={selection.all ? true : selection.partial ? "indeterminate" : false} onCheckedChange={(checked) => selection.selectAll(checked === true)} /></TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Invoice No.</TableHead>
+                  <TableHead>Party Name</TableHead>
+                  <TableHead>Payment Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Balance Due</TableHead>
+                  <TableHead className="w-32" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPurchases?.map((p) => (
+                  <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined} className="h-12 cursor-pointer text-[15px]" onClick={() => setSelected(p)}>
+                    <TableCell onClick={(e) => e.stopPropagation()}><Checkbox aria-label={`Select ${p.invoiceNumber}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
+                    <TableCell>{new Date(p.createdAt).toLocaleDateString("en-GB")}</TableCell>
+                    <TableCell className="text-right">{p.invoiceNumber}</TableCell>
+                    <TableCell>{supplierName.get(p.supplierId) ?? "—"}</TableCell>
+                    <TableCell className="capitalize">{p.reportPaymentType}</TableCell>
+                    <TableCell className="text-right">{(p.totalPaise / 100).toLocaleString("en-IN")}</TableCell>
+                    <TableCell className={p.totalPaise > p.amountPaidPaise ? "text-right text-destructive" : "text-right"}>{(Math.max(0, p.totalPaise - p.amountPaidPaise) / 100).toLocaleString("en-IN")}</TableCell>
+                    <TableCell onClick={(event) => event.stopPropagation()}>
+                      <div className="flex items-center gap-2.5">
+                        {p.status === "finalized" && (
+                          <Link href={`/purchases/invoices/${p._id}/print`} target="_blank" aria-label={`Print ${p.invoiceNumber}`} title="Print" className="text-foreground/80 hover:text-primary">
+                            <Printer className="h-5 w-5" />
+                          </Link>
+                        )}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger aria-label={`More actions for ${p.invoiceNumber}`} className="rounded p-0.5 text-foreground/80 outline-none hover:bg-muted">
+                            <EllipsisVertical className="h-5 w-5" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onSelect={() => setSelected(p)}><Eye className="h-4 w-4" />View items</DropdownMenuItem>
+                            {canEdit && p.status === "finalized" && (
+                              <DropdownMenuItem onSelect={() => router.push(`/purchases/new?edit=${p._id}`)}><Pencil className="h-4 w-4" />Edit</DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        {canEdit && p.status === "finalized" && <DeleteDocumentButton compact table="purchases" id={p._id} name={p.invoiceNumber} />}
+                      </div>
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredPurchases?.map((p) => (
-                    <TableRow key={p._id} data-state={selection.has(p._id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setSelected(p)}>
-                      <TableCell onClick={e => e.stopPropagation()}><Checkbox aria-label={`Select ${p.invoiceNumber}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} /></TableCell>
-                      <TableCell className="font-medium">{p.invoiceNumber}</TableCell>
-                      <TableCell>{new Date(p.createdAt).toLocaleDateString("en-IN")}</TableCell>
-                      <TableCell>{supplierName.get(p.supplierId) ?? "—"}</TableCell>
-                      <TableCell className="text-right">{formatPaise(p.totalPaise)}</TableCell>
-                      <TableCell className="text-right">{formatPaise(p.amountPaidPaise)}</TableCell>
-                      <TableCell>
-                        <Badge variant={p.status === "finalized" ? "secondary" : "destructive"} className="capitalize">
-                          {p.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right" onClick={(event) => event.stopPropagation()}>
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" title={`View ${p.invoiceNumber}`} aria-label={`View ${p.invoiceNumber}`} onClick={() => setSelected(p)}>
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          {canEdit && p.status === "finalized" && (
-                            <>
-                              <Button asChild variant="ghost" size="icon" title={`Edit ${p.invoiceNumber}`} aria-label={`Edit ${p.invoiceNumber}`}>
-                                <Link href={`/purchases/new?edit=${p._id}`}>
-                                  <Pencil className="h-4 w-4" />
-                                </Link>
-                              </Button>
-                              <DeleteDocumentButton compact table="purchases" id={p._id} name={p.invoiceNumber} />
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
 
       {selected && <PurchaseDetailDialog purchase={selected} onClose={() => setSelected(null)} />}
     </div>

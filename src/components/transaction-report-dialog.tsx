@@ -24,11 +24,14 @@ export function TransactionReportDialog<T>({
   label,
   rows,
   fields,
+  variant = "button",
 }: {
   filename: string;
   label: string;
   rows: T[];
   fields: ReportField<T>[];
+  /** "xls": Vyapar's small green Excel badge instead of an outlined button. */
+  variant?: "button" | "xls";
 }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>(fields.map((field) => field.id));
@@ -46,10 +49,23 @@ export function TransactionReportDialog<T>({
 
   return (
     <>
-      <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={() => setOpen(true)}>
-        <Download className="h-4 w-4" />
-        {label}
-      </Button>
+      {variant === "xls" ? (
+        <button
+          type="button"
+          aria-label={label}
+          title={label}
+          disabled={rows.length === 0}
+          onClick={() => setOpen(true)}
+          className="rounded bg-[#1d9b5c] px-1.5 py-0.5 text-[11px] font-semibold text-white disabled:opacity-40"
+        >
+          xls
+        </button>
+      ) : (
+        <Button variant="outline" size="sm" disabled={rows.length === 0} onClick={() => setOpen(true)}>
+          <Download className="h-4 w-4" />
+          {label}
+        </Button>
+      )}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader><DialogTitle>Select Report Options</DialogTitle></DialogHeader>

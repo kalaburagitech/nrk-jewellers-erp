@@ -22,7 +22,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -34,14 +33,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { DeleteRecordButton } from "@/components/delete-record-button";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
@@ -109,7 +102,33 @@ function ImportProductsDialog({
 
 const NONE = "NONE";
 
-// Add / Edit Product Dialog (matching Vyapar Pages 12-14)
+// Add / Edit Item — laid out like Vyapar's "Add Item" screen.
+function rupeeInput(paise: number | undefined) {
+  return paise === undefined ? "" : String(paise / 100);
+}
+function gramInput(mg: number | undefined) {
+  return mg === undefined ? "" : String(mg / 1000);
+}
+function toPaise(value: string) {
+  const n = Number(value);
+  return value.trim() === "" || !Number.isFinite(n) ? undefined : Math.round(n * 100);
+}
+function toMg(value: string) {
+  const n = Number(value);
+  return value.trim() === "" || !Number.isFinite(n) ? undefined : Math.round(n * 1000);
+}
+
+function FloatingField({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <label className={`relative block ${className ?? ""}`}>
+      <span className="pointer-events-none absolute -top-2 left-2.5 bg-card px-1 text-[11px] text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const fieldClass = "h-10 w-full rounded-md border border-input bg-card px-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary";
+
 function ProductFormDialog({
   product,
   trigger,
@@ -122,82 +141,103 @@ function ProductFormDialog({
   const purities = useQuery(api.metalPurities.list);
   const groups = useQuery(api.stockGroups.list);
   const categories = useQuery(api.stockCategories.list);
+  const taxes = useQuery(api.taxConfigurations.list);
+
+  const initial = () => ({
+    name: product?.name ?? "",
+    sku: product?.sku ?? "",
+    unit: (product?.unit ?? "piece") as "gram" | "kilogram" | "piece" | "carat",
+    itemType: (product?.itemType ?? "product") as "product" | "service",
+    metalPurityId: (product?.metalPurityId as string | undefined) ?? NONE,
+    stockGroupId: (product?.stockGroupId as string | undefined) ?? NONE,
+    stockCategoryId: (product?.stockCategoryId as string | undefined) ?? NONE,
+    hsnCode: product?.hsnCode ?? "",
+    description: product?.description ?? "",
+    customFields: product?.customFields ?? {},
+    salePrice: rupeeInput(product?.salePricePaise),
+    saleWithTax: product?.salePriceIncludesTax ? "with" : "without",
+    saleDiscount: product?.saleDiscountBasisPoints === undefined ? "" : String(product.saleDiscountBasisPoints / 100),
+    purchasePrice: rupeeInput(product?.purchasePricePaise),
+    purchaseWithTax: product?.purchasePriceIncludesTax ? "with" : "without",
+    taxId: (product?.taxConfigurationId as string | undefined) ?? NONE,
+    gross: gramInput(product?.defaultGrossWeightMg),
+    net: gramInput(product?.defaultNetWeightMg),
+    making: rupeeInput(product?.defaultMakingChargePaise),
+    minStock: gramInput(product?.reorderLevelMg),
+    location: product?.location ?? "",
+  });
 
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState(product?.name ?? "");
-  const [sku, setSku] = useState(product?.sku ?? "");
-  const [unit, setUnit] = useState<"gram" | "kilogram" | "piece" | "carat">(
-    product?.unit ?? "piece",
-  );
-  const [itemType, setItemType] = useState<"product" | "service">(
-    product?.itemType ?? "product",
-  );
-  const [metalPurityId, setMetalPurityId] = useState<string>(
-    product?.metalPurityId ?? NONE,
-  );
-  const [stockGroupId, setStockGroupId] = useState<string>(
-    product?.stockGroupId ?? NONE,
-  );
-  const [stockCategoryId, setStockCategoryId] = useState<string>(
-    product?.stockCategoryId ?? NONE,
-  );
-  const [hsnCode, setHsnCode] = useState(product?.hsnCode ?? "");
-  const [description, setDescription] = useState(product?.description ?? "");
-  const [customFields, setCustomFields] = useState<Record<string, string>>(
-    product?.customFields ?? {},
-  );
+  const [form, setForm] = useState(initial);
+  const [tab, setTab] = useState<"pricing" | "stock">("pricing");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const set = <K extends keyof ReturnType<typeof initial>>(key: K, value: ReturnType<typeof initial>[K]) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
 
   const isEdit = !!product;
+  const isService = form.itemType === "service";
 
   function reset() {
-    setName(product?.name ?? "");
-    setSku(product?.sku ?? "");
-    setUnit(product?.unit ?? "piece");
-    setItemType(product?.itemType ?? "product");
-    setMetalPurityId(product?.metalPurityId ?? NONE);
-    setStockGroupId(product?.stockGroupId ?? NONE);
-    setStockCategoryId(product?.stockCategoryId ?? NONE);
-    setHsnCode(product?.hsnCode ?? "");
-    setDescription(product?.description ?? "");
-    setCustomFields(product?.customFields ?? {});
+    setForm(initial());
+    setTab("pricing");
     setError(null);
   }
 
-  async function handleSave() {
-    if (!name.trim()) {
+  async function handleSave(keepOpen: boolean) {
+    if (!form.name.trim()) {
       setError("Item name is required.");
+      return;
+    }
+    const gross = toMg(form.gross);
+    const net = toMg(form.net);
+    if (gross !== undefined && net !== undefined && net > gross) {
+      setError("Net weight cannot be more than gross weight.");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
       const payload = {
-        name: name.trim(),
-        sku: sku.trim() || undefined,
-        unit,
-        itemType,
-        metalPurityId: metalPurityId === NONE ? undefined : (metalPurityId as Id<"metalPurities">),
-        stockGroupId: stockGroupId === NONE ? undefined : (stockGroupId as Id<"stockGroups">),
-        stockCategoryId:
-          stockCategoryId === NONE ? undefined : (stockCategoryId as Id<"stockCategories">),
-        hsnCode: hsnCode.trim() || undefined,
-        description: description.trim() || undefined,
-        customFields,
+        name: form.name.trim(),
+        sku: form.sku.trim() || undefined,
+        unit: form.unit,
+        itemType: form.itemType,
+        metalPurityId: form.metalPurityId === NONE ? undefined : (form.metalPurityId as Id<"metalPurities">),
+        stockGroupId: form.stockGroupId === NONE ? undefined : (form.stockGroupId as Id<"stockGroups">),
+        stockCategoryId: form.stockCategoryId === NONE ? undefined : (form.stockCategoryId as Id<"stockCategories">),
+        hsnCode: form.hsnCode.trim() || undefined,
+        description: form.description.trim() || undefined,
+        customFields: form.customFields,
+        reorderLevelMg: toMg(form.minStock),
+        salePricePaise: toPaise(form.salePrice),
+        salePriceIncludesTax: form.saleWithTax === "with",
+        saleDiscountBasisPoints: toPaise(form.saleDiscount),
+        purchasePricePaise: toPaise(form.purchasePrice),
+        purchasePriceIncludesTax: form.purchaseWithTax === "with",
+        taxConfigurationId: form.taxId === NONE ? undefined : (form.taxId as Id<"taxConfigurations">),
+        defaultGrossWeightMg: gross,
+        defaultNetWeightMg: net,
+        defaultMakingChargePaise: toPaise(form.making),
+        location: form.location.trim() || undefined,
       };
       if (isEdit) {
         await update({ id: product._id, ...payload });
+        setOpen(false);
       } else {
         await create(payload);
+        reset();
+        if (!keepOpen) setOpen(false);
       }
-      setOpen(false);
-      if (!isEdit) reset();
     } catch (e) {
       setError(getUserErrorMessage(e, "Could not save this item."));
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function assignCode() {
+    set("sku", String(Date.now()).slice(-8));
   }
 
   return (
@@ -216,199 +256,199 @@ function ProductFormDialog({
             <Pencil className="h-4 w-4" />
           </Button>
         ) : (
-          <Button className="bg-[#d93025] hover:bg-[#b3261e] text-white font-medium shadow-sm">
+          <Button data-create-trigger="" className="bg-sale hover:bg-sale/90 text-white font-medium shadow-sm">
             <Plus className="h-4 w-4" />
             Add Item
           </Button>
         )}
       </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-        <DialogHeader>
-          <DialogTitle className="text-lg font-bold">
-            {isEdit ? "Edit Item" : "Add Item"}
-          </DialogTitle>
+      <DialogContent className="flex max-h-[92vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
+        <DialogHeader className="flex-row items-center gap-6 space-y-0 border-b px-5 py-4 pr-12">
+          <DialogTitle className="text-xl font-semibold">{isEdit ? "Edit Item" : "Add Item"}</DialogTitle>
+          <div className="flex items-center gap-2 text-[15px]">
+            <span className={isService ? "text-muted-foreground" : "font-medium text-primary"}>Product</span>
+            <Switch
+              aria-label="Service item"
+              checked={isService}
+              onCheckedChange={(checked) => set("itemType", checked ? "service" : "product")}
+            />
+            <span className={isService ? "font-medium text-primary" : "text-muted-foreground"}>Service</span>
+          </div>
+          <Link href="/settings/general?tab=item" className="ml-auto text-muted-foreground hover:text-foreground" aria-label="Item settings" title="Item settings">
+            <Sliders className="h-5 w-5" />
+          </Link>
         </DialogHeader>
 
-        <div className="space-y-4 pt-1">
-          {/* Top Toggle: Product vs Service (Page 12) */}
-          <div className="flex items-center gap-2 border-b pb-3">
-            <span className="text-xs font-semibold text-muted-foreground">Item Type:</span>
-            <div className="inline-flex rounded-lg border p-0.5 bg-muted/40">
-              <button
-                type="button"
-                onClick={() => setItemType("product")}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                  itemType === "product"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_auto] lg:grid-cols-[1fr_1fr_auto_1fr]">
+            <FloatingField label="Item Name *">
+              <input autoFocus value={form.name} onChange={(e) => set("name", e.target.value)} className={fieldClass} aria-label="Item name" />
+            </FloatingField>
+            <FloatingField label="Item HSN">
+              <input value={form.hsnCode} onChange={(e) => set("hsnCode", e.target.value)} className={`${fieldClass} pr-9`} aria-label="Item HSN" />
+              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            </FloatingField>
+            <label className="relative">
+              <span className="sr-only">Unit</span>
+              <select
+                value={form.unit}
+                onChange={(e) => set("unit", e.target.value as typeof form.unit)}
+                className="h-10 rounded-md bg-purchase-soft px-4 text-[15px] font-semibold text-primary outline-none"
               >
-                Product / Ornament
-              </button>
-              <button
-                type="button"
-                onClick={() => setItemType("service")}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition ${
-                  itemType === "service"
-                    ? "bg-primary text-primary-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                Service / Making
-              </button>
-            </div>
+                {UNITS.map((u) => (
+                  <option key={u.value} value={u.value}>
+                    Unit: {u.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="hidden items-center text-sm text-muted-foreground lg:flex">Item images are not stored yet.</span>
           </div>
 
-          {/* Primary Fields (Page 12) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="item-name" className="text-xs font-semibold">
-                Item Name *
-              </Label>
-              <Input
-                id="item-name"
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Gold Chain 22K (Box 112)"
-                className="h-9 text-sm"
-              />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <FloatingField label="Category">
+              <select value={form.stockCategoryId} onChange={(e) => set("stockCategoryId", e.target.value)} className={fieldClass} aria-label="Category">
+                <option value={NONE}>None</option>
+                {categories?.map((c) => (
+                  <option key={c._id} value={c._id}>{c.name}</option>
+                ))}
+              </select>
+            </FloatingField>
+            <div className="flex h-10 items-center gap-2 rounded-md border border-input bg-card pl-3 pr-1.5">
+              <input value={form.sku} onChange={(e) => set("sku", e.target.value)} placeholder="Item Code" aria-label="Item code" className="min-w-0 flex-1 bg-transparent text-sm outline-none" />
+              <button type="button" onClick={assignCode} className="rounded-full bg-purchase-soft px-3 py-1 text-xs font-semibold text-primary">
+                Assign Code
+              </button>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="item-hsn" className="text-xs font-semibold">
-                Item HSN
-              </Label>
-              <Input
-                id="item-hsn"
-                value={hsnCode}
-                onChange={(e) => setHsnCode(e.target.value)}
-                placeholder="HSN Code (e.g. 7113)"
-                className="h-9 text-sm"
-              />
-            </div>
+            <FloatingField label="Stock Group">
+              <select value={form.stockGroupId} onChange={(e) => set("stockGroupId", e.target.value)} className={fieldClass} aria-label="Stock group">
+                <option value={NONE}>None</option>
+                {groups?.map((g) => (
+                  <option key={g._id} value={g._id}>{g.name}</option>
+                ))}
+              </select>
+            </FloatingField>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Unit</Label>
-              <Select value={unit} onValueChange={(v) => setUnit(v as typeof unit)}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UNITS.map((u) => (
-                    <SelectItem key={u.value} value={u.value} className="text-xs">
-                      {u.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Metal Purity</Label>
-              <Select value={metalPurityId} onValueChange={setMetalPurityId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Choose Purity" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE} className="text-xs">
-                    None
-                  </SelectItem>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FloatingField label="Description">
+              <input value={form.description} onChange={(e) => set("description", e.target.value)} className={fieldClass} aria-label="Description" />
+            </FloatingField>
+          </div>
+
+          {!isService && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+              <FloatingField label="Purity">
+                <select value={form.metalPurityId} onChange={(e) => set("metalPurityId", e.target.value)} className={fieldClass} aria-label="Purity">
+                  <option value={NONE}>None</option>
                   {purities?.map((p) => (
-                    <SelectItem key={p._id} value={p._id} className="text-xs">
-                      {p.label} ({p.metal})
-                    </SelectItem>
+                    <option key={p._id} value={p._id}>{p.label} ({p.metal})</option>
                   ))}
-                </SelectContent>
-              </Select>
+                </select>
+              </FloatingField>
+              <FloatingField label="Gross wt(g)">
+                <input inputMode="decimal" value={form.gross} onChange={(e) => set("gross", e.target.value)} className={fieldClass} aria-label="Gross weight in grams" />
+              </FloatingField>
+              <FloatingField label="Net wt(g)">
+                <input inputMode="decimal" value={form.net} onChange={(e) => set("net", e.target.value)} className={fieldClass} aria-label="Net weight in grams" />
+              </FloatingField>
+              <FloatingField label="Making(₹)">
+                <input inputMode="decimal" value={form.making} onChange={(e) => set("making", e.target.value)} className={fieldClass} aria-label="Making charge in rupees" />
+              </FloatingField>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Item Code / SKU</Label>
-              <Input
-                value={sku}
-                onChange={(e) => setSku(e.target.value)}
-                placeholder="Optional SKU"
-                className="h-9 text-sm font-mono"
-              />
-            </div>
+          )}
+
+          <CustomFieldInputs entity="product" values={form.customFields} onChange={(v) => set("customFields", v)} />
+
+          <div className="flex gap-2 border-b">
+            {(["pricing", ...(isService ? [] : ["stock"])] as ("pricing" | "stock")[]).map((t) => (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`-mb-px border-b-2 px-4 py-2.5 text-[15px] font-medium capitalize ${tab === t ? "border-sale text-sale" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              >
+                {t}
+              </button>
+            ))}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Category</Label>
-              <Select value={stockCategoryId} onValueChange={setStockCategoryId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE} className="text-xs">
-                    None
-                  </SelectItem>
-                  {categories?.map((c) => (
-                    <SelectItem key={c._id} value={c._id} className="text-xs">
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {tab === "pricing" || isService ? (
+            <div className="space-y-4">
+              <div className="rounded-md bg-muted/60 p-5">
+                <p className="mb-4 font-medium">Sale Price</p>
+                <div className="flex flex-wrap gap-4">
+                  <div className="flex overflow-hidden rounded-md border border-input bg-card">
+                    <input inputMode="decimal" placeholder="Sale Price" aria-label="Sale price" value={form.salePrice} onChange={(e) => set("salePrice", e.target.value)} className="h-10 w-36 px-3 text-sm outline-none" />
+                    <select aria-label="Sale price tax" value={form.saleWithTax} onChange={(e) => set("saleWithTax", e.target.value)} className="h-10 border-l border-input bg-card px-2 text-sm outline-none">
+                      <option value="without">Without Tax</option>
+                      <option value="with">With Tax</option>
+                    </select>
+                  </div>
+                  <div className="flex overflow-hidden rounded-md border border-input bg-card">
+                    <input inputMode="decimal" placeholder="Disc. On Sale Price" aria-label="Discount on sale price in percent" value={form.saleDiscount} onChange={(e) => set("saleDiscount", e.target.value)} className="h-10 w-40 px-3 text-sm outline-none" />
+                    <span className="flex items-center border-l border-input px-3 text-sm">Percentage</span>
+                  </div>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="rounded-md bg-muted/60 p-5">
+                  <p className="mb-4 font-medium">Purchase Price</p>
+                  <div className="flex w-fit overflow-hidden rounded-md border border-input bg-card">
+                    <input inputMode="decimal" placeholder="Purchase Price" aria-label="Purchase price" value={form.purchasePrice} onChange={(e) => set("purchasePrice", e.target.value)} className="h-10 w-36 px-3 text-sm outline-none" />
+                    <select aria-label="Purchase price tax" value={form.purchaseWithTax} onChange={(e) => set("purchaseWithTax", e.target.value)} className="h-10 border-l border-input bg-card px-2 text-sm outline-none">
+                      <option value="without">Without Tax</option>
+                      <option value="with">With Tax</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="rounded-md bg-muted/60 p-5">
+                  <p className="mb-4 font-medium">Taxes</p>
+                  <FloatingField label="Tax Rate" className="max-w-64">
+                    <select value={form.taxId} onChange={(e) => set("taxId", e.target.value)} className={fieldClass} aria-label="Tax rate">
+                      <option value={NONE}>None</option>
+                      {taxes?.map((t) => (
+                        <option key={t._id} value={t._id}>{t.name}</option>
+                      ))}
+                    </select>
+                  </FloatingField>
+                </div>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs font-semibold">Stock Group</Label>
-              <Select value={stockGroupId} onValueChange={setStockGroupId}>
-                <SelectTrigger className="h-9 text-xs">
-                  <SelectValue placeholder="Select Stock Group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE} className="text-xs">
-                    None
-                  </SelectItem>
-                  {groups?.map((g) => (
-                    <SelectItem key={g._id} value={g._id} className="text-xs">
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <FloatingField label="Min Stock To Maintain (g)">
+                  <input inputMode="decimal" value={form.minStock} onChange={(e) => set("minStock", e.target.value)} className={fieldClass} aria-label="Minimum stock to maintain in grams" />
+                </FloatingField>
+                <FloatingField label="Location">
+                  <input value={form.location} onChange={(e) => set("location", e.target.value)} className={fieldClass} aria-label="Location" />
+                </FloatingField>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Opening stock is added with a Purchase bill (or a Box in the Daily Sales company, a Stock Adjustment in a GST company), so every gram has a record behind it.
+              </p>
             </div>
-          </div>
+          )}
 
-          <div className="space-y-1">
-            <Label htmlFor="item-desc" className="text-xs font-semibold">
-              Description / Notes
-            </Label>
-            <Textarea
-              id="item-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Design details, gemstone specs, weight notes..."
-              rows={2}
-              className="text-sm resize-none"
-            />
-          </div>
-
-          <CustomFieldInputs entity="product" values={customFields} onChange={setCustomFields} />
-
-          {error && <p className="text-xs text-destructive font-medium">{error}</p>}
+          {error && <p role="alert" className="text-sm font-medium text-destructive">{error}</p>}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0 pt-2">
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} className="h-9">
-            Cancel
+        <div className="flex justify-end gap-3 border-t px-5 py-3">
+          {!isEdit && (
+            <Button type="button" variant="outline" disabled={submitting} onClick={() => handleSave(true)} className="h-10 px-4">
+              Save &amp; New
+            </Button>
+          )}
+          <Button onClick={() => handleSave(false)} disabled={submitting} className="h-10 bg-primary px-6 text-white">
+            {submitting ? "Saving…" : "Save"}
           </Button>
-          <Button
-            onClick={handleSave}
-            disabled={submitting}
-            className="h-9 bg-[#1a73e8] hover:bg-[#1557b0] text-white"
-          >
-            {submitting ? "Saving…" : isEdit ? "Update Item" : "Save Item"}
-          </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-// Stock Adjustment Modal Dialog (Page 11)
 function AdjustItemDialog({ product }: { product: Doc<"products"> }) {
   const [open, setOpen] = useState(false);
   const [adjustType, setAdjustType] = useState<"add" | "reduce">("add");

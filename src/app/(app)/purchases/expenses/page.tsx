@@ -110,7 +110,7 @@ function AddExpenseDialog({ accounts }: { accounts: Doc<"bankAccounts">[] }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button>
+        <Button data-create-trigger="">
           <Plus className="h-4 w-4" />
           Add Expense
         </Button>

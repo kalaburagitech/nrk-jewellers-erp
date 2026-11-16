@@ -114,7 +114,7 @@ export function SalesReturnFormDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button>
+        <Button data-create-trigger="">
           <Plus className="h-4 w-4" />
           {triggerLabel}
         </Button>

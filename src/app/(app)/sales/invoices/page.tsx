@@ -6,30 +6,30 @@ import Link from "next/link";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import {
+  BarChart3,
+  ChevronDown,
+  EllipsisVertical,
   Eye,
+  Forward,
   Pencil,
   Plus,
   Printer,
   Receipt,
   Search,
-  Filter,
-  Calendar,
-  Building2,
-  FileSpreadsheet,
+  Settings,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ChipMenu, FirmChip, ListHeader, PeriodChip, rupeeShort, useListPeriod, useUserOptions } from "@/components/vyapar/list-kit";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { TransactionReportDialog } from "@/components/transaction-report-dialog";
 import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { useRecordSelection } from "@/hooks/use-record-selection";
@@ -144,17 +144,19 @@ function SaleDetailDialog({
   );
 }
 
-// Sale Invoices matching Page 16 of Client PDF
+// Sale Invoices — laid out like Vyapar desktop.
 export default function SalesInvoicesPage() {
   const sales = useQuery(api.sales.list);
   const customers = useQuery(api.customers.list);
   const access = useQuery(api.organizations.getMyAccess);
+  const router = useRouter();
   const [selected, setSelected] = useState<Id<"sales"> | null>(null);
   const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [timePeriod, setTimePeriod] = useState("this-month");
-  const [firmFilter, setFirmFilter] = useState("all");
+  const [showSearch, setShowSearch] = useState(false);
+  const [status, setStatus] = useState("all");
+  const [user, setUser] = useState("");
+  const period = useListPeriod("all");
+  const userOptions = useUserOptions();
 
   const canEdit =
     access?.membership?.role === "owner" || access?.membership?.role === "admin";
@@ -169,251 +171,188 @@ export default function SalesInvoicesPage() {
     return sales?.filter((row) => {
       const q = search.trim().toLowerCase();
       const customer = customerName.get(row.customerId)?.toLowerCase() ?? "";
-      const day = new Date(row.createdAt).toISOString().slice(0, 10);
+      const balance = row.totalPaise - row.amountPaidPaise;
       return (
         (!q || row.invoiceNumber.toLowerCase().includes(q) || customer.includes(q)) &&
-        (!dateFrom || day >= dateFrom) &&
-        (!dateTo || day <= dateTo)
+        period.contains(row.createdAt) &&
+        (!user || row.createdByUserId === user) &&
+        (status === "all" ||
+          (status === "paid" && balance <= 0) ||
+          (status === "unpaid" && row.amountPaidPaise === 0 && balance > 0) ||
+          (status === "partial" && row.amountPaidPaise > 0 && balance > 0) ||
+          (status === "gst" && row.isGst) ||
+          (status === "daily" && !row.isGst))
       );
     });
-  }, [sales, search, dateFrom, dateTo, customerName]);
+  }, [sales, search, customerName, period, user, status]);
 
   const selection = useRecordSelection(
     filteredSales?.map((row) => row._id) ?? [],
-    `sales:${search}:${dateFrom}:${dateTo}`,
+    `sales:${search}:${status}:${user}:${period.preset}`,
   );
 
   const totals = filteredSales?.reduce(
-    (sum, row) => ({
-      total: sum.total + row.totalPaise,
-      paid: sum.paid + row.amountPaidPaise,
-    }),
+    (sum, row) => ({ total: sum.total + row.totalPaise, paid: sum.paid + row.amountPaidPaise }),
     { total: 0, paid: 0 },
   );
-
   const totalAmount = totals?.total ?? 0;
   const receivedAmount = totals?.paid ?? 0;
   const balanceAmount = Math.max(0, totalAmount - receivedAmount);
+  const exportRowsList = selection.count
+    ? (filteredSales ?? []).filter((row) => selection.has(row._id))
+    : filteredSales ?? [];
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-5">
-      {/* Top Header & New Bill Button */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Sale Invoices</h1>
-          <p className="text-xs text-muted-foreground">
-            Manage sales bills, invoices, received amounts, and outstanding customer balances.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {sales && (
-            <TransactionReportDialog
-              label={selection.count ? `Export ${selection.count} selected` : "Export Excel / CSV"}
-              filename="sales-invoices"
-              rows={
-                selection.count
-                  ? (filteredSales ?? []).filter((row) => selection.has(row._id))
-                  : filteredSales ?? []
-              }
-              fields={[
-                {
-                  id: "date",
-                  label: "Date",
-                  value: (s) => new Date(s.createdAt).toLocaleDateString("en-IN"),
-                },
-                { id: "invoice", label: "Invoice No.", value: (s) => s.invoiceNumber },
-                {
-                  id: "party",
-                  label: "Party Name",
-                  value: (s) => customerName.get(s.customerId) ?? "—",
-                },
-                { id: "total", label: "Total", value: (s) => formatPaise(s.totalPaise) },
-                { id: "paid", label: "Received / Paid", value: (s) => formatPaise(s.amountPaidPaise) },
-                {
-                  id: "balance",
-                  label: "Balance Due",
-                  value: (s) => formatPaise(Math.max(0, s.totalPaise - s.amountPaidPaise)),
-                },
-                { id: "gst", label: "GST Type", value: (s) => (s.isGst ? "GST" : "Non-GST") },
-                {
-                  id: "payment",
-                  label: "Payment Status",
-                  value: (s) =>
-                    s.amountPaidPaise >= s.totalPaise
-                      ? "Paid"
-                      : s.amountPaidPaise > 0
-                        ? "Partly paid"
-                        : "Unpaid",
-                },
-              ]}
-            />
-          )}
-          <Button
-            asChild
-            className="bg-[#d93025] hover:bg-[#b3261e] text-white font-medium shadow-sm"
+    <div className="flex flex-col gap-2">
+      <ListHeader
+        title={
+          <DropdownMenu>
+            <DropdownMenuTrigger className="inline-flex items-center gap-2 outline-none">
+              Sale Invoices <ChevronDown className="h-5 w-5" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              {[
+                ["Sale Invoices", "/sales/invoices"],
+                ["Estimate/ Quotation", "/sales/quotations"],
+                ["Proforma Invoice", "/sales/proforma"],
+                ["Sale Order", "/sales/orders"],
+                ["Delivery Challan", "/sales/challans"],
+                ["Sale Return", "/sales/returns"],
+                ["Credit Note", "/sales/credit-notes"],
+              ].map(([label, href]) => (
+                <DropdownMenuItem key={href} onSelect={() => router.push(href)}>{label}</DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      >
+        {canEdit && (
+          <Link
+            href="/sales/new"
+            className="inline-flex h-10 items-center gap-1.5 rounded-full bg-sale px-5 text-[15px] font-semibold text-white shadow-sm hover:bg-sale/90"
           >
-            <Link href="/sales/new">
-              <Plus className="h-4 w-4" />
-              Add Sale
-            </Link>
-          </Button>
-        </div>
+            <Plus className="h-4 w-4" />
+            Add Sale
+          </Link>
+        )}
+        <Link href="/settings/general?tab=transaction" aria-label="Transaction settings" title="Transaction settings" className="text-muted-foreground hover:text-foreground">
+          <Settings className="h-5 w-5" />
+        </Link>
+      </ListHeader>
+
+      <div className="flex flex-wrap items-center gap-2 rounded-md bg-card px-4 py-3">
+        <span className="mr-1 text-[15px] font-medium">Filter by :</span>
+        <ChipMenu
+          value={status}
+          onChange={setStatus}
+          options={[
+            { value: "all", label: "All Sale Invoices" },
+            { value: "paid", label: "Paid" },
+            { value: "unpaid", label: "Unpaid" },
+            { value: "partial", label: "Partially Paid" },
+            { value: "gst", label: "GST Bills" },
+            { value: "daily", label: "Daily Sales Bills" },
+          ]}
+        />
+        <PeriodChip state={period} />
+        <FirmChip />
+        <ChipMenu value={user} onChange={setUser} options={userOptions} />
       </div>
 
-      {/* Filter Bar matching Page 16 (Filter by: [This Month] [Date Range] [All Firms]) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4 shadow-xs">
-        <div className="flex flex-wrap items-center gap-2.5">
-          <span className="text-xs font-semibold text-muted-foreground">Filter by :</span>
-          <Select value={timePeriod} onValueChange={setTimePeriod}>
-            <SelectTrigger className="h-8.5 w-32 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="this-month">This Month</SelectItem>
-              <SelectItem value="last-month">Last Month</SelectItem>
-              <SelectItem value="this-quarter">This Quarter</SelectItem>
-              <SelectItem value="this-year">This Year</SelectItem>
-              <SelectItem value="all-time">All Time</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <div className="flex items-center gap-1.5">
-            <Input
-              type="date"
-              aria-label="From date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-8.5 text-xs w-32"
-            />
-            <span className="text-xs text-muted-foreground">To</span>
-            <Input
-              type="date"
-              aria-label="To date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-8.5 text-xs w-32"
-            />
-          </div>
-
-          <Select value={firmFilter} onValueChange={setFirmFilter}>
-            <SelectTrigger className="h-8.5 w-28 text-xs">
-              <SelectValue placeholder="All Firms" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Firms</SelectItem>
-              <SelectItem value="primary">Primary Firm</SelectItem>
-            </SelectContent>
-          </Select>
+      <div className="rounded-md bg-card px-4 py-3">
+        <div className="inline-flex min-w-72 flex-col rounded-lg border border-[#dcd3f3] bg-[#f6f3fe] px-4 py-3 dark:border-border dark:bg-accent">
+          <span className="text-[15px] text-muted-foreground">Total Sales Amount</span>
+          <span className="text-2xl font-semibold tabular-nums">{rupeeShort(totalAmount)}</span>
+          <span className="mt-2 text-[15px] text-muted-foreground">
+            Received: <b className="font-semibold text-foreground">{rupeeShort(receivedAmount)}</b>
+            <span className="mx-2 text-border">|</span>
+            Balance: <b className="font-semibold text-foreground">{rupeeShort(balanceAmount)}</b>
+          </span>
         </div>
-
-        <div className="relative w-full sm:w-64">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search invoice or customer"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8.5 h-8.5 text-xs rounded-lg"
-          />
-        </div>
-      </div>
-
-      {/* 3 Summary Cards matching Page 16 (Total Sales Amount / Received / Balance) */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4 sm:p-5">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Total Sales Amount
-              </p>
-              <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded">
-                0% ↗ vs last month
-              </span>
-            </div>
-            <h2 className="mt-2 text-2xl font-bold text-foreground tabular-nums">
-              {formatPaise(totalAmount)}
-            </h2>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4 sm:p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Received
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-emerald-600 tabular-nums">
-              {formatPaise(receivedAmount)}
-            </h2>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4 sm:p-5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Balance Due
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-rose-600 tabular-nums">
-              {formatPaise(balanceAmount)}
-            </h2>
-          </CardContent>
-        </Card>
       </div>
 
       <BulkRecordActions selection={selection} table="sales" />
 
-      {/* Transactions Table matching Page 16 */}
-      <Card className="border-border/80 shadow-xs">
-        <div className="flex items-center justify-between border-b px-5 py-3.5 bg-muted/10">
-          <h3 className="font-semibold text-sm">Transactions</h3>
-          <span className="text-xs text-muted-foreground">
-            {filteredSales ? `${filteredSales.length} Invoices` : "Loading…"}
-          </span>
+      <div className="rounded-md bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <h3 className="text-lg font-semibold">Transactions</h3>
+          <div className="flex items-center gap-3">
+            {showSearch && (
+              <Input
+                autoFocus
+                placeholder="Search invoice or party"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 w-56 text-sm"
+              />
+            )}
+            <button type="button" aria-label="Search transactions" title="Search" onClick={() => setShowSearch((v) => !v)} className="text-foreground/80 hover:text-primary">
+              <Search className="h-5 w-5" />
+            </button>
+            <Link href="/reports/sale" aria-label="Sale report" title="Sale report" className="text-foreground/80 hover:text-primary">
+              <BarChart3 className="h-5 w-5" />
+            </Link>
+            {sales && (
+              <TransactionReportDialog
+                label="Export to Excel"
+                variant="xls"
+                filename="sales-invoices"
+                rows={exportRowsList}
+                fields={[
+                  { id: "date", label: "Date", value: (s) => new Date(s.createdAt).toLocaleDateString("en-IN") },
+                  { id: "invoice", label: "Invoice No.", value: (s) => s.invoiceNumber },
+                  { id: "party", label: "Party Name", value: (s) => customerName.get(s.customerId) ?? "—" },
+                  { id: "total", label: "Total", value: (s) => formatPaise(s.totalPaise) },
+                  { id: "paid", label: "Received / Paid", value: (s) => formatPaise(s.amountPaidPaise) },
+                  { id: "balance", label: "Balance Due", value: (s) => formatPaise(Math.max(0, s.totalPaise - s.amountPaidPaise)) },
+                  { id: "gst", label: "GST Type", value: (s) => (s.isGst ? "GST" : "Non-GST") },
+                  { id: "payment", label: "Payment Type", value: (s) => s.reportPaymentType },
+                ]}
+              />
+            )}
+            <button type="button" aria-label="Print list" title="Print" onClick={() => window.print()} className="text-foreground/80 hover:text-primary">
+              <Printer className="h-5 w-5" />
+            </button>
+          </div>
         </div>
-        <CardContent className="p-0">
-          {sales === undefined ? (
-            <p className="p-6 text-sm text-muted-foreground text-center">Loading invoices…</p>
-          ) : filteredSales?.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-14 text-center">
-              <Receipt className="h-8 w-8 text-muted-foreground/50" />
-              <p className="text-sm font-medium text-foreground">No Transaction Found</p>
-              <p className="text-xs text-muted-foreground">We could not find any transactions.</p>
-              <Button
-                asChild
-                size="sm"
-                className="mt-2 bg-[#d93025] hover:bg-[#b3261e] text-white"
-              >
-                <Link href="/sales/new">Add Sale</Link>
-              </Button>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="border-b bg-muted/30 text-xs text-muted-foreground">
-                    <TableHead className="w-10">
-                      <Checkbox
-                        aria-label="Select all"
-                        checked={
-                          selection.all ? true : selection.partial ? "indeterminate" : false
-                        }
-                        onCheckedChange={(checked) => selection.selectAll(checked === true)}
-                      />
-                    </TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Invoice no</TableHead>
-                    <TableHead>Party Name</TableHead>
-                    <TableHead>Transaction</TableHead>
-                    <TableHead>Payment Type</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Balance</TableHead>
-                    <TableHead className="w-24 text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredSales?.map((s) => (
+        {sales === undefined ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">Loading invoices…</p>
+        ) : filteredSales?.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-14 text-center">
+            <Receipt className="h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm font-medium text-foreground">No Transaction Found</p>
+            <p className="text-xs text-muted-foreground">We could not find any transactions.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto px-2 pb-2">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      aria-label="Select all"
+                      checked={selection.all ? true : selection.partial ? "indeterminate" : false}
+                      onCheckedChange={(checked) => selection.selectAll(checked === true)}
+                    />
+                  </TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Invoice no</TableHead>
+                  <TableHead>Party Name</TableHead>
+                  <TableHead>Transaction</TableHead>
+                  <TableHead>Payment Type</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead className="w-28">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredSales?.map((s) => {
+                  const balance = Math.max(0, s.totalPaise - s.amountPaidPaise);
+                  return (
                     <TableRow
                       key={s._id}
                       data-state={selection.has(s._id) ? "selected" : undefined}
-                      className="cursor-pointer hover:bg-muted/30"
+                      className="h-14 cursor-pointer text-[15px]"
                       onClick={() => setSelected(s._id)}
                     >
                       <TableCell onClick={(e) => e.stopPropagation()}>
@@ -423,79 +362,45 @@ export default function SalesInvoicesPage() {
                           onCheckedChange={() => selection.toggle(s._id)}
                         />
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(s.createdAt).toLocaleDateString("en-IN")}
-                      </TableCell>
-                      <TableCell className="font-semibold text-xs text-primary">
-                        {s.invoiceNumber}
-                      </TableCell>
-                      <TableCell className="font-medium text-xs">
-                        {customerName.get(s.customerId) ?? "Cash Customer"}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Badge variant="outline" className="text-[11px] font-normal">
-                          {s.isGst ? "GST Sale" : "Retail Sale"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-xs capitalize text-muted-foreground">
-                        {s.reportPaymentType || "Cash / Mixed"}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-xs tabular-nums text-foreground">
-                        {formatPaise(s.totalPaise)}
-                      </TableCell>
-                      <TableCell className="text-right font-medium text-xs tabular-nums">
-                        {s.totalPaise - s.amountPaidPaise > 0 ? (
-                          <span className="text-rose-600">
-                            {formatPaise(s.totalPaise - s.amountPaidPaise)}
-                          </span>
-                        ) : (
-                          <span className="text-emerald-600">₹ 0.00</span>
-                        )}
-                      </TableCell>
-                      <TableCell
-                        className="text-right"
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <div className="flex justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7"
-                            title={`View ${s.invoiceNumber}`}
-                            onClick={() => setSelected(s._id)}
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                            <Link href={`/sales/invoices/${s._id}/print`} target="_blank">
-                              <Printer className="h-3.5 w-3.5" />
-                            </Link>
-                          </Button>
+                      <TableCell>{new Date(s.createdAt).toLocaleDateString("en-GB")}</TableCell>
+                      <TableCell className="text-right">{s.invoiceNumber}</TableCell>
+                      <TableCell>{customerName.get(s.customerId) ?? "Cash Sale"}</TableCell>
+                      <TableCell>{s.isGst ? "Sale (GST)" : "Sale"}</TableCell>
+                      <TableCell className="capitalize">{s.reportPaymentType === "upi" ? "G-Pay/Phone" : s.reportPaymentType}</TableCell>
+                      <TableCell className="text-right">{rupeeShort(s.totalPaise)}</TableCell>
+                      <TableCell className={balance > 0 ? "text-right text-destructive" : "text-right"}>{rupeeShort(balance)}</TableCell>
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        <div className="flex items-center gap-2.5">
+                          <Link href={`/sales/invoices/${s._id}/print`} target="_blank" aria-label={`Print ${s.invoiceNumber}`} title="Print" className="text-foreground/80 hover:text-primary">
+                            <Printer className="h-5 w-5" />
+                          </Link>
+                          <Link href={`/sales/invoices/${s._id}/print?autoShare=1`} target="_blank" aria-label={`Share ${s.invoiceNumber}`} title="Share" className="text-foreground/80 hover:text-primary">
+                            <Forward className="h-5 w-5" />
+                          </Link>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger aria-label={`More actions for ${s.invoiceNumber}`} className="rounded p-0.5 text-foreground/80 outline-none hover:bg-muted">
+                              <EllipsisVertical className="h-5 w-5" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onSelect={() => setSelected(s._id)}><Eye className="h-4 w-4" />View items</DropdownMenuItem>
+                              {canEdit && s.status === "finalized" && (
+                                <DropdownMenuItem onSelect={() => router.push(`/sales/new?edit=${s._id}`)}><Pencil className="h-4 w-4" />Edit</DropdownMenuItem>
+                              )}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                           {canEdit && s.status === "finalized" && (
-                            <>
-                              <Button asChild variant="ghost" size="icon" className="h-7 w-7">
-                                <Link href={`/sales/new?edit=${s._id}`}>
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Link>
-                              </Button>
-                              <DeleteDocumentButton
-                                compact
-                                table="sales"
-                                id={s._id}
-                                name={s.invoiceNumber}
-                              />
-                            </>
+                            <DeleteDocumentButton compact table="sales" id={s._id} name={s.invoiceNumber} />
                           )}
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
 
       {selected && <SaleDetailDialog saleId={selected} onClose={() => setSelected(null)} />}
     </div>

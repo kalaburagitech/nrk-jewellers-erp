@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, useEffect, useRef } from "react";
+import { ReactNode, Suspense, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { usePathname } from "next/navigation";
@@ -12,6 +12,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { AppLockGate } from "@/components/app-lock-gate";
 import { PrivacyLockProvider } from "@/components/privacy-lock-context";
+import { CreateParamOpener } from "@/components/create-param-opener";
 
 function CenteredState({ children }: { children: ReactNode }) {
   return (
@@ -84,7 +85,8 @@ export function AccessGate({ children }: { children: ReactNode }) {
                 <span><strong>View only.</strong> You can see records but cannot add, edit or delete. Ask the Owner for changes.</span>
               </div>
             )}
-            <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
+            <main className="erp-main flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5 print:overflow-visible print:p-0">
+              <Suspense fallback={null}><CreateParamOpener /></Suspense>
               {blocked ? (
                 <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
                   <Lock className="h-8 w-8 text-muted-foreground" />
