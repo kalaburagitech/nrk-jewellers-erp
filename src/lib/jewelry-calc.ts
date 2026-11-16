@@ -35,6 +35,8 @@ export type PurchaseLineInput = {
   ratePerGramPaise: number;
   makingChargePaise: number;
   stoneChargePaise: number;
+  /** Per-line discount (Vyapar line "Discount"), taken off the line value. */
+  lineDiscountPaise?: number;
 };
 
 export type PurchaseLineResult = PurchaseLineInput & {
@@ -50,7 +52,7 @@ export function computePurchaseLine(input: PurchaseLineInput): PurchaseLineResul
     ...input,
     netWeightMg: net,
     metalValuePaise: metalValue,
-    lineTotalPaise: metalValue + input.makingChargePaise + input.stoneChargePaise,
+    lineTotalPaise: Math.max(0, metalValue + input.makingChargePaise + input.stoneChargePaise - (input.lineDiscountPaise ?? 0)),
   };
 }
 
@@ -74,6 +76,8 @@ export type SaleLineInput = {
   makingChargePaise: number;
   stoneChargePaise: number;
   gstBasisPoints: number; // 0 for a non-GST bill
+  /** Per-line discount, taken off before GST (Vyapar: line discount first, then tax). */
+  lineDiscountPaise?: number;
 };
 
 export type SaleLineResult = SaleLineInput & {
@@ -90,7 +94,7 @@ export function computeSaleLine(input: SaleLineInput): SaleLineResult {
   const net = Math.max(0, availableNetMg - input.otherDeductionMg);
   const metalValue = metalValuePaise(net, input.ratePerGramPaise);
   const wastageValue = basisPointsOf(metalValue, input.wastageBasisPoints);
-  const taxableValue = metalValue + wastageValue + input.makingChargePaise + input.stoneChargePaise;
+  const taxableValue = Math.max(0, metalValue + wastageValue + input.makingChargePaise + input.stoneChargePaise - (input.lineDiscountPaise ?? 0));
   const tax = basisPointsOf(taxableValue, input.gstBasisPoints);
   return {
     ...input,

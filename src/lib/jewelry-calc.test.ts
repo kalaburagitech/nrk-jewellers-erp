@@ -128,3 +128,16 @@ describe("computeOldGoldExchange", () => {
     expect(result.exchangeValuePaise).toBe(500000);
   });
 });
+
+describe("line discount", () => {
+  it("is taken off before GST on a sale line and never below zero", () => {
+    const base = { grossWeightMg: 10_000, stoneWeightMg: 0, otherDeductionMg: 0, ratePerGramPaise: 600_000, wastageBasisPoints: 0, makingChargePaise: 50_000, stoneChargePaise: 0, gstBasisPoints: 300 };
+    const r = computeSaleLine({ ...base, lineDiscountPaise: 50_000 });
+    expect(r.taxableValuePaise).toBe(6_000_000); // 60,500 − 500
+    expect(r.lineTaxPaise).toBe(180_000); // 3% of the discounted value
+    expect(computeSaleLine({ ...base, lineDiscountPaise: 99_999_999 }).lineTotalPaise).toBe(0);
+  });
+  it("reduces a purchase line total", () => {
+    expect(computePurchaseLine({ grossWeightMg: 1000, stoneWeightMg: 0, ratePerGramPaise: 100_000, makingChargePaise: 0, stoneChargePaise: 0, lineDiscountPaise: 10_000 }).lineTotalPaise).toBe(90_000);
+  });
+});

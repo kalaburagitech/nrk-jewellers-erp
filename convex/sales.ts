@@ -212,6 +212,12 @@ export const listByCustomer = query({
 
 // A line is either a box piece (Daily Sales company: boxItemId) or a manually
 // typed item (GST company: productId + weights + pieces, taken from item stock).
+function checkedDiscount(paise: number | undefined) {
+  if (paise === undefined) return undefined;
+  if (!Number.isSafeInteger(paise) || paise < 0) throw new Error("Line discount must be a valid amount of zero or more");
+  return paise;
+}
+
 const saleLineValidator = v.object({
   boxItemId: v.optional(v.id("boxItems")),
   productId: v.optional(v.id("products")),
@@ -225,6 +231,7 @@ const saleLineValidator = v.object({
   makingChargePaise: v.number(),
   stoneChargePaise: v.number(),
   taxConfigurationId: v.optional(v.id("taxConfigurations")),
+  lineDiscountPaise: v.optional(v.number()),
 });
 
 const paymentSplitValidator = v.object({
@@ -255,6 +262,7 @@ type SaleTransactionArgs = {
     makingChargePaise: number;
     stoneChargePaise: number;
     taxConfigurationId?: Id<"taxConfigurations">;
+    lineDiscountPaise?: number;
   }>;
   discountMode: "percent" | "fixed" | "none";
   discountValue: number;
@@ -360,6 +368,7 @@ async function applySaleTransaction(
       makingChargePaise: item.makingChargePaise,
       stoneChargePaise: item.stoneChargePaise,
       gstBasisPoints,
+      lineDiscountPaise: checkedDiscount(item.lineDiscountPaise),
     });
     computedLines.push({ item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, computed });
   }
@@ -443,6 +452,7 @@ async function applySaleTransaction(
       stoneChargePaise: item.stoneChargePaise,
       taxConfigurationId: item.taxConfigurationId,
       lineTaxPaise: computed.lineTaxPaise,
+      lineDiscountPaise: computed.lineDiscountPaise || undefined,
       lineTotalPaise: computed.lineTotalPaise,
     });
 
@@ -783,6 +793,7 @@ const estimateLineValidator = v.object({
   makingChargePaise: v.number(),
   stoneChargePaise: v.number(),
   taxConfigurationId: v.optional(v.id("taxConfigurations")),
+  lineDiscountPaise: v.optional(v.number()),
 });
 
 const ESTIMATE_PREFIX: Record<string, string> = {
@@ -855,6 +866,7 @@ export const createEstimate = mutation({
         makingChargePaise: item.makingChargePaise,
         stoneChargePaise: item.stoneChargePaise,
         gstBasisPoints,
+        lineDiscountPaise: checkedDiscount(item.lineDiscountPaise),
       });
       computedLines.push({ item, computed });
     }
@@ -920,6 +932,7 @@ export const createEstimate = mutation({
         stoneChargePaise: item.stoneChargePaise,
         taxConfigurationId: item.taxConfigurationId,
         lineTaxPaise: computed.lineTaxPaise,
+        lineDiscountPaise: computed.lineDiscountPaise || undefined,
         lineTotalPaise: computed.lineTotalPaise,
       });
     }

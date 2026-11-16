@@ -436,6 +436,7 @@ export default defineSchema({
     ratePerGramPaise: v.number(),
     makingChargePaise: v.number(),
     stoneChargePaise: v.number(),
+    lineDiscountPaise: v.optional(v.number()),
     lineTotalPaise: v.number(),
     // GST company line: added to item stock (productStock) instead of a box.
     toItemStock: v.optional(v.boolean()),
@@ -498,6 +499,7 @@ export default defineSchema({
     stoneChargePaise: v.number(),
     taxConfigurationId: v.optional(v.id("taxConfigurations")),
     lineTaxPaise: v.number(),
+    lineDiscountPaise: v.optional(v.number()),
     lineTotalPaise: v.number(),
     // GST company line: typed in manually and deducted from item stock (productStock), not a box piece.
     fromItemStock: v.optional(v.boolean()),

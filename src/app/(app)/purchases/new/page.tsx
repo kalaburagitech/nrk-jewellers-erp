@@ -58,6 +58,7 @@ function emptyLine() {
     ratePerGramRupees: "",
     makingChargeRupees: "",
     stoneChargeRupees: "",
+    discountRupees: "",
   };
 }
 
@@ -182,6 +183,7 @@ export default function NewPurchasePage() {
         ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
         makingChargeRupees: (item.makingChargePaise / 100).toFixed(2),
         stoneChargeRupees: (item.stoneChargePaise / 100).toFixed(2),
+        discountRupees: item.lineDiscountPaise ? (item.lineDiscountPaise / 100).toFixed(2) : "",
       })),
     });
     setPrefilled(true);
@@ -254,6 +256,7 @@ export default function NewPurchasePage() {
         ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
         makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
         stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
+        lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") ?? 0,
       }),
     );
     const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
@@ -305,6 +308,7 @@ export default function NewPurchasePage() {
         ratePerGramPaise: number;
         makingChargePaise: number;
         stoneChargePaise: number;
+        lineDiscountPaise?: number;
       }> = [];
 
       for (let i = 0; i < values.items.length; i++) {
@@ -376,6 +380,7 @@ export default function NewPurchasePage() {
           ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
           makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
           stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
+          lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") || undefined,
         });
       }
 
@@ -441,7 +446,13 @@ export default function NewPurchasePage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{editPurchaseId ? "Edit Purchase" : "New Purchase"}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{editPurchaseId ? "Edit Purchase" : "New Purchase"}</h1>
+          <Button type="button" variant="outline" size="sm" onClick={() => window.open("/purchases/new", "_blank", "noopener")} title="Open another blank bill in a new tab; this one stays open">
+            <Plus className="h-4 w-4" />
+            New Bill Tab
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground">
           {editPurchaseId
             ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
@@ -946,6 +957,19 @@ export default function NewPurchasePage() {
                               <FormLabel>Stone chg (₹)</FormLabel>
                               <FormControl>
                                 <Input {...field} inputMode="decimal" placeholder="0.00" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`items.${index}.discountRupees`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Discount (₹)</FormLabel>
+                              <FormControl>
+                                <Input {...field} value={field.value ?? ""} inputMode="decimal" placeholder="0.00" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>

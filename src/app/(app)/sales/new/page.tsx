@@ -69,6 +69,17 @@ function numberFieldError(raw: string, opts?: { max?: number }): string | null {
   return null;
 }
 
+/** "5%" → 5% of the line's value; "200" → ₹200. Blank or invalid → no discount. */
+function lineDiscountPaise(raw: string | undefined, taxablePaise: number): number {
+  const text = (raw ?? "").trim();
+  if (!text) return 0;
+  if (text.endsWith("%")) {
+    const bp = percentToBasisPoints(text.slice(0, -1).trim());
+    return bp === null ? 0 : Math.round((taxablePaise * bp) / 10000);
+  }
+  return Math.min(rupeesToPaise(text) ?? 0, taxablePaise);
+}
+
 type BillLine = {
   /** Stable row key: the box piece id, or a generated id for a manual GST line. */
   key: string;
@@ -88,6 +99,8 @@ type BillLine = {
   wastagePercent: string;
   makingChargeRupees: string;
   stoneChargeRupees: string;
+  /** Line discount, as a % ("5%") or rupees ("200"). Taken off before GST. */
+  discount?: string;
   taxConfigurationId: string;
   manualGstPercent?: string;
   isManualTax?: boolean;
@@ -600,6 +613,7 @@ export default function NewBillPage() {
         wastagePercent: item.wastageBasisPoints ? (item.wastageBasisPoints / 100).toFixed(2) : "",
         makingChargeRupees: item.makingChargePaise ? (item.makingChargePaise / 100).toFixed(2) : "",
         stoneChargeRupees: item.stoneChargePaise ? (item.stoneChargePaise / 100).toFixed(2) : "",
+        discount: item.lineDiscountPaise ? (item.lineDiscountPaise / 100).toFixed(2) : "",
         taxConfigurationId: item.taxConfigurationId ?? "",
       })),
     );
@@ -750,7 +764,7 @@ export default function NewBillPage() {
               taxConfig.cgstBasisPoints + taxConfig.sgstBasisPoints + taxConfig.igstBasisPoints;
           }
         }
-        return computeSaleLine({
+        const input = {
           grossWeightMg: line.grossWeightMg,
           stoneWeightMg: line.stoneWeightMg,
           stockNetWeightMg: line.stockNetWeightMg,
@@ -760,7 +774,9 @@ export default function NewBillPage() {
           makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
           stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
           gstBasisPoints,
-        });
+        };
+        const discount = lineDiscountPaise(line.discount, computeSaleLine(input).taxableValuePaise);
+        return computeSaleLine({ ...input, lineDiscountPaise: discount });
       }),
     [lines, taxConfigs, isGst],
   );
@@ -923,7 +939,7 @@ export default function NewBillPage() {
           });
 
       const items = await Promise.all(
-        lines.map(async (line) => {
+        lines.map(async (line, index) => {
           let taxConfigId: Id<"taxConfigurations"> | undefined = undefined;
           if (isGst) {
             if (line.isManualTax && line.manualGstPercent) {
@@ -960,6 +976,7 @@ export default function NewBillPage() {
             makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
             stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
             taxConfigurationId: taxConfigId,
+            lineDiscountPaise: computedLines[index]?.lineDiscountPaise || undefined,
           };
         }),
       );
@@ -1066,7 +1083,13 @@ export default function NewBillPage() {
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
+          <Button type="button" variant="outline" size="sm" onClick={() => window.open("/sales/new", "_blank", "noopener")} title="Open another blank bill in a new tab; this one stays open">
+            <Plus className="h-4 w-4" />
+            New Bill Tab
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground">
           {editSaleId
             ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
@@ -1313,6 +1336,7 @@ export default function NewBillPage() {
                       <th className="py-2.5 px-3">MAKING (₹)</th>
                       <th className="py-2.5 px-3">QTY</th>
                       <th className="py-2.5 px-3">RATE / G (₹)</th>
+                      <th className="py-2.5 px-3">DISC. (₹ / %)</th>
                       {isGst && <th className="py-2.5 px-3">TAX (GST)</th>}
                       <th className="py-2.5 px-3 text-right">AMOUNT (₹)</th>
                       <th className="py-2.5 px-3 text-center w-10">ACTION</th>
@@ -1360,6 +1384,15 @@ export default function NewBillPage() {
                               value={line.ratePerGramRupees}
                               onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })}
                               className="h-8 w-24 text-xs font-mono text-right"
+                            />
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <Input
+                              aria-label="Line discount"
+                              placeholder="0 or 5%"
+                              value={line.discount ?? ""}
+                              onChange={(e) => updateLine(index, { discount: e.target.value })}
+                              className="h-8 w-20 text-xs text-right"
                             />
                           </td>
                           {isGst && (

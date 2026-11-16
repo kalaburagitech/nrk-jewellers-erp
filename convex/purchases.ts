@@ -202,6 +202,7 @@ const purchaseLineValidator = v.object({
   ratePerGramPaise: v.number(),
   makingChargePaise: v.number(),
   stoneChargePaise: v.number(),
+  lineDiscountPaise: v.optional(v.number()),
 });
 
 type PurchaseTransactionArgs = {
@@ -217,6 +218,7 @@ type PurchaseTransactionArgs = {
     ratePerGramPaise: number;
     makingChargePaise: number;
     stoneChargePaise: number;
+    lineDiscountPaise?: number;
   }>;
   gstBasisPoints: number;
   amountPaidPaise: number;
@@ -275,6 +277,9 @@ async function applyPurchaseTransaction(
     throw new Error("GST % must be between 0 and 100");
   }
 
+  for (const item of args.items) {
+    if (item.lineDiscountPaise !== undefined && (!Number.isSafeInteger(item.lineDiscountPaise) || item.lineDiscountPaise < 0)) throw new Error("Line discount must be a valid amount of zero or more");
+  }
   const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
   const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
   const taxPaise = basisPointsOf(subtotalPaise, args.gstBasisPoints);
@@ -364,6 +369,7 @@ async function applyPurchaseTransaction(
       ratePerGramPaise: item.ratePerGramPaise,
       makingChargePaise: item.makingChargePaise,
       stoneChargePaise: item.stoneChargePaise,
+      lineDiscountPaise: item.lineDiscountPaise || undefined,
       lineTotalPaise: computed.lineTotalPaise,
     });
 

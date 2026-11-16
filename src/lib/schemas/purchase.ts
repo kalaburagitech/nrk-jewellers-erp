@@ -29,6 +29,7 @@ export const purchaseLineFormSchema = z
     ratePerGramRupees: positiveNumberString("Rate per gram is required"),
     makingChargeRupees: nonNegativeNumberString("Invalid making charge"),
     stoneChargeRupees: nonNegativeNumberString("Invalid stone charge"),
+    discountRupees: nonNegativeNumberString("Invalid discount").optional(),
   })
   .refine((data) => Boolean(data.productId || data.manualProductName?.trim()), {
     message: "Select or type a product name",
