@@ -39,7 +39,7 @@ const DOCUMENT_TITLE: Record<string, string> = {
 };
 
 const TEMPLATES = [
-  { value: "half-a4", label: "A5 Landscape · NRK Invoice" },
+  { value: "half-a4", label: "A5 Landscape · NRK Invoice (Default)" },
   { value: "full-a4", label: "A4 Landscape" },
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
@@ -315,8 +315,8 @@ export default function PrintInvoicePage({
             {sharing ? "Preparing PDF…" : "Share via WhatsApp"}
           </Button>
           <Button onClick={() => window.print()}>
-            <Printer className="h-4 w-4" />
-            Print
+            <Printer className="h-4 w-4 mr-1.5" />
+            Print A5 Invoice
           </Button>
         </div>
       </div>

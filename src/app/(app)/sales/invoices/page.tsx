@@ -96,7 +96,7 @@ function SaleDetailDialog({
             <Button variant="outline" size="sm" asChild>
               <Link href={`/sales/invoices/${saleId}/print`} target="_blank">
                 <Printer className="h-4 w-4" />
-                Print / Share
+                Print A5 / Share
               </Link>
             </Button>
           </div>

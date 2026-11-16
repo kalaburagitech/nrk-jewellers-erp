@@ -46,7 +46,7 @@ const DOCUMENT_OPTIONS: { key: keyof AppPreferences["documents"]; label: string;
 ];
 
 const PRINT_OPTIONS: { value: AppPreferences["defaultPrintTemplate"]; label: string; description: string }[] = [
-  { value: "half-a4", label: "A5 Landscape (NRK invoice)", description: "Half-A4 bill, 210 × 148 mm. Recommended." },
+  { value: "half-a4", label: "A5 Landscape (NRK Invoice · Default)", description: "Standard Half-A4 bill, 210 × 148 mm. Recommended for all invoices, counter bills, purchases, and loan receipts." },
   { value: "full-a4", label: "A4 Landscape", description: "Full page, 297 × 210 mm." },
   { value: "thermal", label: "Thermal receipt (80 mm)", description: "Roll printer receipt." },
 ];
@@ -171,10 +171,13 @@ function PreferencesEditor({ initial, tab, canEdit }: { initial: AppPreferences;
   );
 }
 
-function GeneralTab() {
+function GeneralTab({ preferences, onSwitchToPrintTab }: { preferences?: AppPreferences; onSwitchToPrintTab: () => void }) {
   const appLock = useAppLock();
   const access = useQuery(api.organizations.getMyAccess);
   const scale = useViewScale();
+  const currentFormat = preferences?.defaultPrintTemplate ?? "half-a4";
+  const formatLabel = currentFormat === "half-a4" ? "A5 Landscape (210 × 148 mm · Half-A4)" : currentFormat === "full-a4" ? "A4 Landscape (297 × 210 mm)" : "Thermal Receipt (80 mm)";
+
   return (
     <div className="flex flex-col gap-5">
       <Card>
@@ -189,6 +192,56 @@ function GeneralTab() {
             control={<Button variant="outline" size="sm" onClick={appLock.lock}><Lock className="h-4 w-4" />Lock now</Button>}
           />
           <SettingRow title="Business currency" description="Amounts are stored and printed in rupees." control={<span className="text-sm font-medium">₹ INR</span>} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-start justify-between pb-2">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Printer className="h-4 w-4 text-amber-500" />
+              Invoice Printing & Paper Size
+            </CardTitle>
+            <CardDescription>
+              All customer bills, GST tax invoices, counter sales, purchase bills, and girvi receipts default to this format.
+            </CardDescription>
+          </div>
+          <span className="rounded-full bg-amber-500/10 px-2.5 py-0.5 text-xs font-semibold text-amber-600 border border-amber-500/20">
+            A5 Default Active
+          </span>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <SettingRow
+            title="Default Invoice Size"
+            description={formatLabel}
+            control={
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-600 border border-amber-500/20">
+                  A5 Landscape
+                </span>
+                <Button variant="outline" size="sm" onClick={onSwitchToPrintTab}>
+                  Change
+                </Button>
+              </div>
+            }
+          />
+          <SettingRow
+            title="All Invoices Print Mode"
+            description="Sales Tax Invoices, Daily Counter Bills, Purchases, and Girvi Pawn Receipts print in A5 size."
+            control={
+              <span className="text-xs font-semibold uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                A5 Standard
+              </span>
+            }
+          />
+          <div className="rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground flex flex-col gap-1">
+            <p className="font-medium text-foreground">A5 Print Details:</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li>Paper Dimensions: 210 × 148 mm (A5 Landscape / Half-A4 sheet)</li>
+              <li>Print Margins: 5 mm safety margin with full single-sheet auto-fit</li>
+              <li>All billing screens (Sales [F2], Purchases, Girvi) default to this size</li>
+            </ul>
+          </div>
         </CardContent>
       </Card>
 
@@ -246,7 +299,7 @@ export function GeneralSettings({ initialTab = "general" }: { initialTab?: Setti
   const { isOwner } = useAccessInfo();
 
   let content: ReactNode;
-  if (tab === "general") content = <GeneralTab />;
+  if (tab === "general") content = <GeneralTab preferences={preferences} onSwitchToPrintTab={() => setTab("print")} />;
   else if (tab === "transaction" || tab === "print") {
     content = preferences === undefined
       ? <p className="text-sm text-muted-foreground">Loading…</p>
