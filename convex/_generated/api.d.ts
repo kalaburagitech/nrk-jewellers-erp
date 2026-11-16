@@ -34,6 +34,7 @@ import type * as metalPurities from "../metalPurities.js";
 import type * as metalRates from "../metalRates.js";
 import type * as organizationBootstrap from "../organizationBootstrap.js";
 import type * as organizations from "../organizations.js";
+import type * as partyReports from "../partyReports.js";
 import type * as products from "../products.js";
 import type * as purchases from "../purchases.js";
 import type * as reports from "../reports.js";
@@ -78,6 +79,7 @@ declare const fullApi: ApiFromModules<{
   metalRates: typeof metalRates;
   organizationBootstrap: typeof organizationBootstrap;
   organizations: typeof organizations;
+  partyReports: typeof partyReports;
   products: typeof products;
   purchases: typeof purchases;
   reports: typeof reports;

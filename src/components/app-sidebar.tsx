@@ -68,6 +68,7 @@ export function AppSidebar({ role }: { role: string }) {
   const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
   // Private (non-GST box) screens disappear from the menu while the privacy lock is on.
   if (isLocked || gstCompany) disabledPaths.add("/reports/boxes");
+  if (isLocked) disabledPaths.add("/reports/profit-loss");
   function navigate() {
     setOpenMobile(false);
   }

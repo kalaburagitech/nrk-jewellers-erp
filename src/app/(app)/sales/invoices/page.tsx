@@ -18,6 +18,7 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { periodRange } from "@/components/report-kit";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -144,6 +145,11 @@ function SaleDetailDialog({
   );
 }
 
+const localDay = (ms: number) => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
 // Sale Invoices matching Page 16 of Client PDF
 export default function SalesInvoicesPage() {
   const sales = useQuery(api.sales.list);
@@ -153,8 +159,22 @@ export default function SalesInvoicesPage() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [timePeriod, setTimePeriod] = useState("this-month");
-  const [firmFilter, setFirmFilter] = useState("all");
+  const [timePeriod, setTimePeriod] = useState("all-time");
+  const [userFilter, setUserFilter] = useState("all");
+  const members = useQuery(api.memberships.listMembers);
+  const selectCompany = useMutation(api.organizations.selectCompany);
+
+  function applyPeriod(value: string) {
+    setTimePeriod(value);
+    if (value === "all-time") {
+      setDateFrom("");
+      setDateTo("");
+    } else if (value !== "custom") {
+      const r = periodRange(value as Parameters<typeof periodRange>[0]);
+      setDateFrom(localDay(r.startDate));
+      setDateTo(localDay(r.endDate));
+    }
+  }
 
   const canEdit =
     access?.membership?.role === "owner" || access?.membership?.role === "admin";
@@ -169,18 +189,19 @@ export default function SalesInvoicesPage() {
     return sales?.filter((row) => {
       const q = search.trim().toLowerCase();
       const customer = customerName.get(row.customerId)?.toLowerCase() ?? "";
-      const day = new Date(row.createdAt).toISOString().slice(0, 10);
+      const day = localDay(row.createdAt);
       return (
         (!q || row.invoiceNumber.toLowerCase().includes(q) || customer.includes(q)) &&
+        (userFilter === "all" || row.createdByUserId === userFilter) &&
         (!dateFrom || day >= dateFrom) &&
         (!dateTo || day <= dateTo)
       );
     });
-  }, [sales, search, dateFrom, dateTo, customerName]);
+  }, [sales, search, dateFrom, dateTo, userFilter, customerName]);
 
   const selection = useRecordSelection(
     filteredSales?.map((row) => row._id) ?? [],
-    `sales:${search}:${dateFrom}:${dateTo}`,
+    `sales:${search}:${dateFrom}:${dateTo}:${userFilter}`,
   );
 
   const totals = filteredSales?.reduce(
@@ -264,16 +285,19 @@ export default function SalesInvoicesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-3 sm:p-4 shadow-xs">
         <div className="flex flex-wrap items-center gap-2.5">
           <span className="text-xs font-semibold text-muted-foreground">Filter by :</span>
-          <Select value={timePeriod} onValueChange={setTimePeriod}>
-            <SelectTrigger className="h-8.5 w-32 text-xs">
+          <Select value={timePeriod} onValueChange={applyPeriod}>
+            <SelectTrigger className="h-8.5 w-40 text-xs" aria-label="Period">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="all-time">All Sale Invoices</SelectItem>
+              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="this-week">This Week</SelectItem>
               <SelectItem value="this-month">This Month</SelectItem>
               <SelectItem value="last-month">Last Month</SelectItem>
               <SelectItem value="this-quarter">This Quarter</SelectItem>
-              <SelectItem value="this-year">This Year</SelectItem>
-              <SelectItem value="all-time">All Time</SelectItem>
+              <SelectItem value="this-fy">This Financial Year</SelectItem>
+              <SelectItem value="custom">Custom</SelectItem>
             </SelectContent>
           </Select>
 
@@ -282,7 +306,7 @@ export default function SalesInvoicesPage() {
               type="date"
               aria-label="From date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
+              onChange={(e) => { setDateFrom(e.target.value); setTimePeriod("custom"); }}
               className="h-8.5 text-xs w-32"
             />
             <span className="text-xs text-muted-foreground">To</span>
@@ -290,18 +314,37 @@ export default function SalesInvoicesPage() {
               type="date"
               aria-label="To date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
+              onChange={(e) => { setDateTo(e.target.value); setTimePeriod("custom"); }}
               className="h-8.5 text-xs w-32"
             />
           </div>
 
-          <Select value={firmFilter} onValueChange={setFirmFilter}>
-            <SelectTrigger className="h-8.5 w-28 text-xs">
-              <SelectValue placeholder="All Firms" />
+          {/* Each firm (company) keeps its own books, so picking another firm switches to it. */}
+          {access?.organization && (
+            <Select
+              value={access.organization._id}
+              onValueChange={(id) => id !== access.organization?._id && void selectCompany({ organizationId: id as Id<"organizations"> })}
+            >
+              <SelectTrigger className="h-8.5 max-w-52 text-xs" aria-label="Firm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {access.companies.map((c) => (
+                  <SelectItem key={c.organizationId} value={c.organizationId}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <Select value={userFilter} onValueChange={setUserFilter}>
+            <SelectTrigger className="h-8.5 w-32 text-xs" aria-label="User">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Firms</SelectItem>
-              <SelectItem value="primary">Primary Firm</SelectItem>
+              <SelectItem value="all">All Users</SelectItem>
+              {members?.map((m) => (
+                <SelectItem key={m._id} value={m.userId}>{m.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>
