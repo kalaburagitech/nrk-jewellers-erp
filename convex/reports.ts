@@ -117,7 +117,7 @@ export const getGstPurchaseRegister = query({
   },
 });
 
-/** Sales report: totals + daily breakdown + payment-mode breakdown for a date range. */
+/** Sales report: totals + transaction list matching Vyapar Sale Report columns + daily & payment-mode breakdown. */
 export const getSalesReport = query({
   args: { startDate: v.number(), endDate: v.number() },
   handler: async (ctx, args) => {
@@ -132,6 +132,13 @@ export const getSalesReport = query({
       .collect()
     ).filter((s) => s.status === "finalized");
 
+    const customers = await ctx.db
+      .query("customers")
+      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
+      .filter((q) => q.eq(q.field("deletedAt"), undefined))
+      .collect();
+    const customerMap = new Map(customers.map((c) => [c._id, c]));
+
     const payments = (
       await ctx.db
         .query("payments")
@@ -142,13 +149,18 @@ export const getSalesReport = query({
       .collect()
     ).filter(
       (p) =>
-        // Old gold exchange credits are stored with sourceTable
-        // "old_gold_exchanges" (linking to their own audit record) rather
-        // than "sales" — include them here too, or this breakdown would
-        // under-count and silently disagree with Total Sales.
         (p.sourceTable === "sales" || p.sourceTable === "old_gold_exchanges") &&
         p.direction === "receipt",
     );
+
+    const paymentsBySale = new Map<string, Array<{ mode: string; amountPaise: number }>>();
+    for (const p of payments) {
+      if (p.sourceId) {
+        const list = paymentsBySale.get(p.sourceId) ?? [];
+        list.push({ mode: p.mode, amountPaise: p.amountPaise });
+        paymentsBySale.set(p.sourceId, list);
+      }
+    }
 
     const byPaymentMode = new Map<string, number>();
     for (const p of payments) {
@@ -164,9 +176,74 @@ export const getSalesReport = query({
       byDay.set(dayKey, existing);
     }
 
+    const transactions = await Promise.all(
+      sales.map(async (sale) => {
+        const items = await ctx.db
+          .query("saleItems")
+          .withIndex("by_sale", (q) => q.eq("saleId", sale._id))
+          .filter((q) => q.eq(q.field("deletedAt"), undefined))
+          .collect();
+
+        const grossWeightMg = items.reduce((sum, item) => sum + (item.grossWeightMg ?? item.netWeightMg), 0);
+        const stoneWeightMg = items.reduce((sum, item) => sum + (item.stoneWeightMg ?? 0), 0);
+        const netWeightMg = items.reduce((sum, item) => sum + item.netWeightMg, 0);
+        const pieces = items.reduce((sum, item) => sum + (item.pieces ?? 1), 0);
+
+        const pmList = paymentsBySale.get(sale._id) ?? [];
+        const paymentModes = [...new Set(pmList.map((p) => p.mode))];
+        const paymentType = paymentModes.length > 0 ? paymentModes.join(", ") : "Credit";
+
+        const balancePaise = Math.max(0, sale.totalPaise - sale.amountPaidPaise);
+        const status =
+          balancePaise === 0
+            ? "Paid"
+            : sale.amountPaidPaise > 0
+              ? "Partial"
+              : "Unpaid";
+
+        return {
+          _id: sale._id,
+          createdAt: sale.createdAt,
+          invoiceNumber: sale.invoiceNumber,
+          customerId: sale.customerId,
+          partyName: customerMap.get(sale.customerId)?.name ?? "Walk-in Customer",
+          partyPhone: customerMap.get(sale.customerId)?.phone,
+          isGst: sale.isGst,
+          paymentType,
+          pieces,
+          grossWeightMg,
+          stoneWeightMg,
+          netWeightMg,
+          subtotalPaise: sale.subtotalPaise,
+          discountPaise: sale.discountPaise,
+          taxPaise: sale.taxPaise,
+          totalPaise: sale.totalPaise,
+          amountPaidPaise: sale.amountPaidPaise,
+          balancePaise,
+          status,
+        };
+      })
+    );
+
+    const totalGrossWeightMg = transactions.reduce((sum, t) => sum + t.grossWeightMg, 0);
+    const totalStoneWeightMg = transactions.reduce((sum, t) => sum + t.stoneWeightMg, 0);
+    const totalNetWeightMg = transactions.reduce((sum, t) => sum + t.netWeightMg, 0);
+    const totalPieces = transactions.reduce((sum, t) => sum + t.pieces, 0);
+    const totalPaidPaise = transactions.reduce((sum, t) => sum + t.amountPaidPaise, 0);
+    const totalBalancePaise = transactions.reduce((sum, t) => sum + t.balancePaise, 0);
+    const totalTaxPaise = transactions.reduce((sum, t) => sum + t.taxPaise, 0);
+
     return {
       totalSalesPaise: sales.reduce((sum, s) => sum + s.totalPaise, 0),
       totalInvoiceCount: sales.length,
+      totalGrossWeightMg,
+      totalStoneWeightMg,
+      totalNetWeightMg,
+      totalPieces,
+      totalPaidPaise,
+      totalBalancePaise,
+      totalTaxPaise,
+      transactions,
       byPaymentMode: Array.from(byPaymentMode.entries()).map(([mode, amountPaise]) => ({ mode, amountPaise })),
       byDay: Array.from(byDay.entries())
         .map(([date, v]) => ({ date, ...v }))
@@ -200,30 +277,43 @@ export const getStockByPurity = query({
     ]);
 
     const productById = new Map(products.map((p) => [p._id, p]));
-    const byPurity = new Map<string, { netWeightMg: number; pieceCount: number }>();
-    let unassigned = { netWeightMg: 0, pieceCount: 0 };
+    const byPurity = new Map<string, { grossWeightMg: number; stoneWeightMg: number; netWeightMg: number; pieceCount: number }>();
+    let unassigned = { grossWeightMg: 0, stoneWeightMg: 0, netWeightMg: 0, pieceCount: 0 };
 
     for (const item of boxItems) {
       const purityId = productById.get(item.productId)?.metalPurityId;
+      const gross = item.grossWeightMg ?? item.netWeightMg;
+      const stone = item.stoneWeightMg ?? 0;
+      const net = item.netWeightMg;
       if (!purityId) {
-        unassigned = { netWeightMg: unassigned.netWeightMg + item.netWeightMg, pieceCount: unassigned.pieceCount + 1 };
+        unassigned = {
+          grossWeightMg: unassigned.grossWeightMg + gross,
+          stoneWeightMg: unassigned.stoneWeightMg + stone,
+          netWeightMg: unassigned.netWeightMg + net,
+          pieceCount: unassigned.pieceCount + 1,
+        };
         continue;
       }
-      const existing = byPurity.get(purityId) ?? { netWeightMg: 0, pieceCount: 0 };
-      existing.netWeightMg += item.netWeightMg;
+      const existing = byPurity.get(purityId) ?? { grossWeightMg: 0, stoneWeightMg: 0, netWeightMg: 0, pieceCount: 0 };
+      existing.grossWeightMg += gross;
+      existing.stoneWeightMg += stone;
+      existing.netWeightMg += net;
       existing.pieceCount += 1;
       byPurity.set(purityId, existing);
     }
 
     const rows = purities
-      .map((p) => ({ purity: p, ...(byPurity.get(p._id) ?? { netWeightMg: 0, pieceCount: 0 }) }))
+      .map((p) => ({
+        purity: p,
+        ...(byPurity.get(p._id) ?? { grossWeightMg: 0, stoneWeightMg: 0, netWeightMg: 0, pieceCount: 0 }),
+      }))
       .filter((r) => r.pieceCount > 0);
 
     return { rows, unassigned };
   },
 });
 
-/** Purchase report: supplier-wise totals and purity-wise weight breakdown for a date range. */
+/** Purchase report: supplier-wise totals, purity-wise weight breakdown, and transaction register for a date range. */
 export const getPurchaseReport = query({
   args: { startDate: v.number(), endDate: v.number() },
   handler: async (ctx, args) => {
@@ -243,12 +333,12 @@ export const getPurchaseReport = query({
       .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
-    const supplierNameById = new Map(suppliers.map((s) => [s._id, s.name]));
+    const supplierMap = new Map(suppliers.map((s) => [s._id, s]));
 
     const bySupplier = new Map<string, { name: string; totalPaise: number; count: number }>();
     for (const p of purchases) {
       const key = p.supplierId;
-      const existing = bySupplier.get(key) ?? { name: supplierNameById.get(key) ?? "—", totalPaise: 0, count: 0 };
+      const existing = bySupplier.get(key) ?? { name: supplierMap.get(key)?.name ?? "—", totalPaise: 0, count: 0 };
       existing.totalPaise += p.totalPaise;
       existing.count += 1;
       bySupplier.set(key, existing);
@@ -261,25 +351,75 @@ export const getPurchaseReport = query({
       .collect();
     const purityById = new Map(purities.map((p) => [p._id, p]));
 
-    const byPurity = new Map<string, { label: string; netWeightMg: number }>();
-    for (const p of purchases) {
-      const items = await ctx.db
-        .query("purchaseItems")
-        .withIndex("by_purchase", (q) => q.eq("purchaseId", p._id))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect();
-      for (const item of items) {
-        const key = item.metalPurityId ?? "unassigned";
-        const label = item.metalPurityId ? (purityById.get(item.metalPurityId)?.label ?? "Unknown") : "No purity set";
-        const existing = byPurity.get(key) ?? { label, netWeightMg: 0 };
-        existing.netWeightMg += item.netWeightMg;
-        byPurity.set(key, existing);
-      }
-    }
+    const byPurity = new Map<string, { label: string; grossWeightMg: number; stoneWeightMg: number; netWeightMg: number }>();
+
+    const transactions = await Promise.all(
+      purchases.map(async (p) => {
+        const items = await ctx.db
+          .query("purchaseItems")
+          .withIndex("by_purchase", (q) => q.eq("purchaseId", p._id))
+          .filter((q) => q.eq(q.field("deletedAt"), undefined))
+          .collect();
+
+        const grossWeightMg = items.reduce((sum, item) => sum + (item.grossWeightMg ?? item.netWeightMg), 0);
+        const stoneWeightMg = items.reduce((sum, item) => sum + (item.stoneWeightMg ?? 0), 0);
+        const netWeightMg = items.reduce((sum, item) => sum + item.netWeightMg, 0);
+        const pieces = items.reduce((sum, item) => sum + (item.pieces ?? 1), 0);
+
+        for (const item of items) {
+          const key = item.metalPurityId ?? "unassigned";
+          const label = item.metalPurityId ? (purityById.get(item.metalPurityId)?.label ?? "Unknown") : "No purity set";
+          const existing = byPurity.get(key) ?? { label, grossWeightMg: 0, stoneWeightMg: 0, netWeightMg: 0 };
+          existing.grossWeightMg += item.grossWeightMg ?? item.netWeightMg;
+          existing.stoneWeightMg += item.stoneWeightMg ?? 0;
+          existing.netWeightMg += item.netWeightMg;
+          byPurity.set(key, existing);
+        }
+
+        const balancePaise = Math.max(0, p.totalPaise - p.amountPaidPaise);
+        const status =
+          balancePaise === 0
+            ? "Paid"
+            : p.amountPaidPaise > 0
+              ? "Partial"
+              : "Unpaid";
+
+        return {
+          _id: p._id,
+          createdAt: p.createdAt,
+          invoiceNumber: p.invoiceNumber,
+          supplierName: supplierMap.get(p.supplierId)?.name ?? "Supplier",
+          supplierPhone: supplierMap.get(p.supplierId)?.phone,
+          pieces,
+          grossWeightMg,
+          stoneWeightMg,
+          netWeightMg,
+          taxPaise: p.taxPaise,
+          totalPaise: p.totalPaise,
+          amountPaidPaise: p.amountPaidPaise,
+          balancePaise,
+          status,
+        };
+      })
+    );
+
+    const totalGrossWeightMg = transactions.reduce((sum, t) => sum + t.grossWeightMg, 0);
+    const totalStoneWeightMg = transactions.reduce((sum, t) => sum + t.stoneWeightMg, 0);
+    const totalNetWeightMg = transactions.reduce((sum, t) => sum + t.netWeightMg, 0);
+    const totalPieces = transactions.reduce((sum, t) => sum + t.pieces, 0);
+    const totalPaidPaise = transactions.reduce((sum, t) => sum + t.amountPaidPaise, 0);
+    const totalBalancePaise = transactions.reduce((sum, t) => sum + t.balancePaise, 0);
 
     return {
       totalPurchasesPaise: purchases.reduce((sum, p) => sum + p.totalPaise, 0),
       totalInvoiceCount: purchases.length,
+      totalGrossWeightMg,
+      totalStoneWeightMg,
+      totalNetWeightMg,
+      totalPieces,
+      totalPaidPaise,
+      totalBalancePaise,
+      transactions,
       bySupplier: Array.from(bySupplier.values()).sort((a, b) => b.totalPaise - a.totalPaise),
       byPurity: Array.from(byPurity.values()),
     };

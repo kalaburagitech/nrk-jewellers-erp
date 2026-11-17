@@ -51,8 +51,13 @@ export const searchItems = query({
 
     return boxItems
       .filter((item) => {
-        const productName = productById.get(String(item.productId))?.name ?? "";
-        return item.label.toLowerCase().includes(term) || productName.toLowerCase().includes(term);
+        const product = productById.get(String(item.productId));
+        return (
+          item.label.toLowerCase().includes(term) ||
+          (product?.name ?? "").toLowerCase().includes(term) ||
+          (product?.sku ?? "").toLowerCase().includes(term) ||
+          (item.barcode ?? "").toLowerCase() === term
+        );
       })
       .slice(0, 30)
       .map((item) => {
@@ -64,6 +69,9 @@ export const searchItems = query({
           label: item.label,
           productName: productById.get(String(item.productId))?.name ?? "Item",
           netWeightMg: item.netWeightMg,
+          boxLabel: box?.label,
+          // Full piece, so billing can add a search hit straight onto the bill.
+          boxItem: item,
         };
       });
   },
@@ -118,17 +126,50 @@ export const getInventoryOverview = query({
       const items = await ctx.db.query("boxItems").withIndex("by_box", q => q.eq("boxId", box._id))
         .filter(q => q.eq(q.field("status"), "in_stock"))
         .filter(q => q.eq(q.field("deletedAt"), undefined)).collect();
-      return { box, items, weightMg: items.reduce((sum, item) => sum + item.netWeightMg, 0), quantity: items.length };
+      const grossWeightMg = items.reduce((sum, item) => sum + item.grossWeightMg, 0);
+      const stoneWeightMg = items.reduce((sum, item) => sum + item.stoneWeightMg, 0);
+      const netWeightMg = items.reduce((sum, item) => sum + item.netWeightMg, 0);
+      return {
+        box,
+        items,
+        grossWeightMg,
+        stoneWeightMg,
+        netWeightMg,
+        weightMg: netWeightMg,
+        quantity: items.length,
+      };
     }));
-    return { boxes: summaries, totalBoxes: boxes.length,
-      totalWeightMg: summaries.reduce((sum, row) => sum + row.weightMg, 0),
-      totalQuantity: summaries.reduce((sum, row) => sum + row.quantity, 0) };
+    return {
+      boxes: summaries,
+      totalBoxes: boxes.length,
+      totalGrossWeightMg: summaries.reduce((sum, row) => sum + row.grossWeightMg, 0),
+      totalStoneWeightMg: summaries.reduce((sum, row) => sum + row.stoneWeightMg, 0),
+      totalNetWeightMg: summaries.reduce((sum, row) => sum + row.netWeightMg, 0),
+      totalWeightMg: summaries.reduce((sum, row) => sum + row.netWeightMg, 0),
+      totalQuantity: summaries.reduce((sum, row) => sum + row.quantity, 0),
+    };
   },
 });
 
 /** Manually chosen number, with an automatic fallback for existing callers. */
+const boxDetailFields = {
+  category: v.optional(v.string()),
+  boxType: v.optional(v.string()),
+  description: v.optional(v.string()),
+};
+
+function cleanBoxDetails(args: { category?: string; boxType?: string; description?: string }) {
+  const category = args.category?.trim() || undefined;
+  const boxType = args.boxType?.trim() || undefined;
+  const description = args.description?.trim() || undefined;
+  if (category && category.length > 40) throw new Error("Box category must be 40 characters or fewer");
+  if (boxType && boxType.length > 40) throw new Error("Box type must be 40 characters or fewer");
+  if (description && description.length > 300) throw new Error("Box description must be 300 characters or fewer");
+  return { category, boxType, description };
+}
+
 export const createNext = mutation({
-  args: { label: v.optional(v.string()), boxNumber: v.optional(v.number()) },
+  args: { label: v.optional(v.string()), boxNumber: v.optional(v.number()), ...boxDetailFields },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -145,10 +186,13 @@ export const createNext = mutation({
     const duplicate = await ctx.db.query("boxes").withIndex("by_org_and_number", q => q.eq("organizationId", auth.organizationId).eq("boxNumber", boxNumber))
       .first();
     if (duplicate) throw new Error("That box number is already in use. Please choose a different number.");
+    const label = args.label?.trim() || undefined;
+    if (label && label.length > 60) throw new Error("Box name must be 60 characters or fewer");
     return await ctx.db.insert("boxes", {
       organizationId: auth.organizationId,
       boxNumber,
-      label: args.label?.trim() || undefined,
+      label,
+      ...cleanBoxDetails(args),
       itemCount: 0,
       isActive: true,
       createdAt: Date.now(),
@@ -158,7 +202,14 @@ export const createNext = mutation({
 
 /** Change an existing box's number and/or label. Items reference the box by id, so renumbering is safe. */
 export const update = mutation({
-  args: { boxId: v.id("boxes"), boxNumber: v.number(), label: v.optional(v.string()) },
+  args: {
+    boxId: v.id("boxes"),
+    boxNumber: v.number(),
+    label: v.optional(v.string()),
+    ...boxDetailFields,
+    // Box status. Omitted by older callers → status unchanged.
+    isActive: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -173,7 +224,18 @@ export const update = mutation({
     }
     const label = args.label?.trim() || undefined;
     if (label && label.length > 60) throw new Error("Box label must be 60 characters or fewer");
-    await ctx.db.patch(box._id, { boxNumber: args.boxNumber, label });
+    // Only replace the detail fields when the caller sent any of them, so the
+    // older "number + label only" edit dialog can't wipe them.
+    const sentDetails = args.category !== undefined || args.boxType !== undefined || args.description !== undefined;
+    if (args.isActive === false && box.isActive && (box.itemCount ?? 0) > 0) {
+      throw new Error("Move or sell the pieces in this box before marking it inactive");
+    }
+    await ctx.db.patch(box._id, {
+      boxNumber: args.boxNumber,
+      label,
+      ...(sentDetails ? cleanBoxDetails(args) : {}),
+      ...(args.isActive === undefined ? {} : { isActive: args.isActive }),
+    });
   },
 });
 
@@ -246,6 +308,8 @@ export const quickAddItem = mutation({
       boxItemId,
       boxId: args.boxId,
       direction: "in",
+      grossWeightMg: args.grossWeightMg,
+      stoneWeightMg: args.stoneWeightMg,
       netWeightMg,
       quantity: 1,
       sourceTable: "stock_adjustments",
@@ -298,6 +362,8 @@ export const transferItem = mutation({
         boxItemId: boxItem._id,
         boxId,
         direction,
+        grossWeightMg: boxItem.grossWeightMg,
+        stoneWeightMg: boxItem.stoneWeightMg,
         netWeightMg: boxItem.netWeightMg,
         quantity: 1,
         sourceTable: "box_transfers",

@@ -90,7 +90,7 @@ function PurchaseDetailDialog({ purchase, onClose }: { purchase: Doc<"purchases"
                   <TableRow key={item._id}>
                     <TableCell className="font-medium">{item.label}</TableCell>
                     <TableCell>{mgToGramsDisplay(item.netWeightMg)}</TableCell>
-                    <TableCell>{formatPaise(item.ratePerGramPaise)}</TableCell>
+                    <TableCell>{item.unitPricePaise ? `${formatPaise(item.unitPricePaise)}/pc` : formatPaise(item.ratePerGramPaise)}</TableCell>
                     <TableCell className="text-right">{formatPaise(item.lineTotalPaise)}</TableCell>
                   </TableRow>
                 ))}

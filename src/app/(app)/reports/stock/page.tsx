@@ -19,6 +19,8 @@ export default function StockReportPage() {
     if (latest) rateByPurity.set(purity._id, latest.ratePerGramPaise);
   });
 
+  const totalGrossWeightMg = stock?.rows.reduce((sum, r) => sum + (r.grossWeightMg ?? r.netWeightMg), 0) ?? 0;
+  const totalStoneWeightMg = stock?.rows.reduce((sum, r) => sum + (r.stoneWeightMg ?? 0), 0) ?? 0;
   const totalNetWeightMg = stock?.rows.reduce((sum, r) => sum + r.netWeightMg, 0) ?? 0;
   const estimatedValuePaise =
     stock?.rows.reduce((sum, r) => {
@@ -27,43 +29,66 @@ export default function StockReportPage() {
     }, 0) ?? 0;
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Report</h1>
-          <p className="text-sm text-muted-foreground">Current in-stock weight and piece count by purity.</p>
+          <p className="text-sm text-muted-foreground">Current in-stock gross, stone, and net weight by purity.</p>
         </div>
         {stock && (
           <ExportCsvButton
             filename="stock-report"
-            headers={["Purity", "Metal", "Pieces", "Net Weight (g)"]}
-            rows={stock.rows.map((r) => [r.purity.label, r.purity.metal, r.pieceCount, Number(mgToGramsDisplay(r.netWeightMg))])}
+            headers={["Purity", "Metal", "Pieces", "Gross Wt (g)", "Stone Wt (g)", "Net Wt (g)"]}
+            rows={stock.rows.map((r) => [
+              r.purity.label,
+              r.purity.metal,
+              r.pieceCount,
+              Number(mgToGramsDisplay(r.grossWeightMg ?? r.netWeightMg)),
+              Number(mgToGramsDisplay(r.stoneWeightMg ?? 0)),
+              Number(mgToGramsDisplay(r.netWeightMg)),
+            ])}
           />
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="pb-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total Net Weight</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground">Total Gross Wt</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-semibold tracking-tight">{mgToGramsDisplay(totalNetWeightMg)}g</p>
+            <p className="text-xl font-bold tracking-tight">{mgToGramsDisplay(totalGrossWeightMg)}g</p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-0">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Est. Value (current rates)</CardTitle>
+            <CardTitle className="text-xs font-medium text-muted-foreground">Total Stone Wt</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-semibold tracking-tight">{formatPaise(estimatedValuePaise)}</p>
+            <p className="text-xl font-bold tracking-tight text-muted-foreground">{mgToGramsDisplay(totalStoneWeightMg)}g</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-0">
+            <CardTitle className="text-xs font-medium text-muted-foreground">Total Net Wt</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold tracking-tight text-emerald-600">{mgToGramsDisplay(totalNetWeightMg)}g</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-0">
+            <CardTitle className="text-xs font-medium text-muted-foreground">Est. Value (current)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xl font-bold tracking-tight">{formatPaise(estimatedValuePaise)}</p>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">By Purity</CardTitle>
+          <CardTitle className="text-base">Stock by Purity</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {stock === undefined ? (
@@ -80,7 +105,9 @@ export default function StockReportPage() {
                   <TableHead>Purity</TableHead>
                   <TableHead>Metal</TableHead>
                   <TableHead>Pieces</TableHead>
-                  <TableHead className="text-right">Net Weight</TableHead>
+                  <TableHead className="text-right">Gross Wt</TableHead>
+                  <TableHead className="text-right">Stone Wt</TableHead>
+                  <TableHead className="text-right">Net Wt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -93,7 +120,15 @@ export default function StockReportPage() {
                       </Badge>
                     </TableCell>
                     <TableCell>{r.pieceCount}</TableCell>
-                    <TableCell className="text-right">{mgToGramsDisplay(r.netWeightMg)}g</TableCell>
+                    <TableCell className="text-right tabular-nums font-mono">
+                      {mgToGramsDisplay(r.grossWeightMg ?? r.netWeightMg)}g
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono text-muted-foreground">
+                      {mgToGramsDisplay(r.stoneWeightMg ?? 0)}g
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono font-medium text-emerald-600">
+                      {mgToGramsDisplay(r.netWeightMg)}g
+                    </TableCell>
                   </TableRow>
                 ))}
                 {stock.unassigned.pieceCount > 0 && (
@@ -101,7 +136,15 @@ export default function StockReportPage() {
                     <TableCell className="text-muted-foreground">No purity set</TableCell>
                     <TableCell>—</TableCell>
                     <TableCell>{stock.unassigned.pieceCount}</TableCell>
-                    <TableCell className="text-right">{mgToGramsDisplay(stock.unassigned.netWeightMg)}g</TableCell>
+                    <TableCell className="text-right tabular-nums font-mono">
+                      {mgToGramsDisplay(stock.unassigned.grossWeightMg ?? stock.unassigned.netWeightMg)}g
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono text-muted-foreground">
+                      {mgToGramsDisplay(stock.unassigned.stoneWeightMg ?? 0)}g
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums font-mono font-medium text-emerald-600">
+                      {mgToGramsDisplay(stock.unassigned.netWeightMg)}g
+                    </TableCell>
                   </TableRow>
                 )}
               </TableBody>

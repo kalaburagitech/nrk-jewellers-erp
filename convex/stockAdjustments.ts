@@ -20,8 +20,12 @@ export const correctWeight = mutation({
     const deltaMg = args.newNetWeightMg - boxItem.netWeightMg;
     if (deltaMg === 0) throw new Error("New weight matches the current weight — nothing to adjust");
 
+    const newGrossWeightMg = args.newNetWeightMg + boxItem.stoneWeightMg;
     const now = Date.now();
-    await ctx.db.patch(args.boxItemId, { netWeightMg: args.newNetWeightMg });
+    await ctx.db.patch(args.boxItemId, {
+      netWeightMg: args.newNetWeightMg,
+      grossWeightMg: newGrossWeightMg,
+    });
 
     await ctx.db.insert("stockMovements", {
       organizationId: auth.organizationId,
@@ -29,6 +33,8 @@ export const correctWeight = mutation({
       boxItemId: args.boxItemId,
       boxId: boxItem.boxId,
       direction: deltaMg > 0 ? "in" : "out",
+      grossWeightMg: Math.abs(deltaMg),
+      stoneWeightMg: 0,
       netWeightMg: Math.abs(deltaMg),
       quantity: 0,
       sourceTable: "stock_adjustments",
@@ -74,6 +80,8 @@ export const writeOff = mutation({
       boxItemId: args.boxItemId,
       boxId: boxItem.boxId,
       direction: "out",
+      grossWeightMg: boxItem.grossWeightMg,
+      stoneWeightMg: boxItem.stoneWeightMg,
       netWeightMg: boxItem.netWeightMg,
       quantity: 1,
       sourceTable: "stock_adjustments",
@@ -138,7 +146,20 @@ export const adjustBox = mutation({
     const now = Date.now();
     for (const item of removed) {
       await ctx.db.patch(item._id, { status: "written_off" });
-      await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: item.productId, boxItemId: item._id, boxId: box._id, direction: "out", netWeightMg: item.netWeightMg, quantity: 1, sourceTable: "stock_adjustments", sourceId: item._id, createdAt: now });
+      await ctx.db.insert("stockMovements", {
+        organizationId: auth.organizationId,
+        productId: item.productId,
+        boxItemId: item._id,
+        boxId: box._id,
+        direction: "out",
+        grossWeightMg: item.grossWeightMg,
+        stoneWeightMg: item.stoneWeightMg,
+        netWeightMg: item.netWeightMg,
+        quantity: 1,
+        sourceTable: "stock_adjustments",
+        sourceId: item._id,
+        createdAt: now,
+      });
     }
     if (args.addPieces) {
       let template: { productId: (typeof items)[number]["productId"]; label: string } | undefined = retained[0] ?? items[0];
@@ -158,7 +179,20 @@ export const adjustBox = mutation({
       for (let i = 0; i < args.addPieces; i++) {
         const weight = base + (remainder-- > 0 ? 1 : 0);
         const id = await ctx.db.insert("boxItems", { organizationId: auth.organizationId, boxId: box._id, productId: template.productId, label: template.label, grossWeightMg: weight, stoneWeightMg: 0, netWeightMg: weight, status: "in_stock", createdAt: now });
-        await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: template.productId, boxItemId: id, boxId: box._id, direction: "in", netWeightMg: weight, quantity: 1, sourceTable: "stock_adjustments", sourceId: id, createdAt: now });
+        await ctx.db.insert("stockMovements", {
+          organizationId: auth.organizationId,
+          productId: template.productId,
+          boxItemId: id,
+          boxId: box._id,
+          direction: "in",
+          grossWeightMg: weight,
+          stoneWeightMg: 0,
+          netWeightMg: weight,
+          quantity: 1,
+          sourceTable: "stock_adjustments",
+          sourceId: id,
+          createdAt: now,
+        });
       }
     }
     const retainedWeight = retained.reduce((sum, item) => sum + item.netWeightMg, 0);
@@ -168,8 +202,28 @@ export const adjustBox = mutation({
     for (const item of retained) {
       if (!delta) break;
       const step = delta > 0 ? delta : -Math.min(item.netWeightMg, -delta);
-      await ctx.db.patch(item._id, { netWeightMg: item.netWeightMg + step });
-      if (step) await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: item.productId, boxItemId: item._id, boxId: box._id, direction: step > 0 ? "in" : "out", netWeightMg: Math.abs(step), quantity: 0, sourceTable: "stock_adjustments", sourceId: item._id, createdAt: now });
+      const newNetWeightMg = item.netWeightMg + step;
+      const newGrossWeightMg = newNetWeightMg + item.stoneWeightMg;
+      await ctx.db.patch(item._id, {
+        netWeightMg: newNetWeightMg,
+        grossWeightMg: newGrossWeightMg,
+      });
+      if (step) {
+        await ctx.db.insert("stockMovements", {
+          organizationId: auth.organizationId,
+          productId: item.productId,
+          boxItemId: item._id,
+          boxId: box._id,
+          direction: step > 0 ? "in" : "out",
+          grossWeightMg: Math.abs(step),
+          stoneWeightMg: 0,
+          netWeightMg: Math.abs(step),
+          quantity: 0,
+          sourceTable: "stock_adjustments",
+          sourceId: item._id,
+          createdAt: now,
+        });
+      }
       delta -= step;
     }
     await ctx.db.patch(box._id, { itemCount: finalCount });

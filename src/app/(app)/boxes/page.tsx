@@ -17,15 +17,20 @@ import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { toast } from "@/components/toaster";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
-function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
+function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; productName?: string; grossWeightMg?: number; stoneWeightMg?: number; netWeightMg: number } }) {
   const renameItem = useMutation(api.boxes.renameItem);
   const writeOff = useMutation(api.stockAdjustments.writeOff);
   const [editing, setEditing] = useState(false);
@@ -63,7 +68,7 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
   if (confirmingDelete) {
     return (
       <li className="flex flex-col gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm">
-        <p className="font-medium">Remove {item.label} ({(item.netWeightMg / 1000).toFixed(3)}g) from this box?</p>
+        <p className="font-medium">Remove {item.label} (Gross: {((item.grossWeightMg ?? item.netWeightMg) / 1000).toFixed(3)}g, Net: {(item.netWeightMg / 1000).toFixed(3)}g) from this box?</p>
         <Input aria-label="Reason for removing" value={deleteReason} maxLength={200} onChange={(e) => setDeleteReason(e.target.value)} className="h-8" />
         <div className="flex justify-end gap-2">
           <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => { setConfirmingDelete(false); setError(""); }}>Cancel</Button>
@@ -111,7 +116,12 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
   return (
     <li className="flex items-center justify-between rounded-md border border-border p-3 text-sm">
       <span>
-        {item.label} — {(item.netWeightMg / 1000).toFixed(3)}g net
+        <span className="font-medium">{item.label}</span>
+        {item.productName && item.productName !== item.label && <span className="ml-1 text-xs text-muted-foreground">({item.productName})</span>}
+        <span className="ml-2 text-xs text-muted-foreground">
+          Gross: {((item.grossWeightMg ?? item.netWeightMg) / 1000).toFixed(3)}g · Net: {(item.netWeightMg / 1000).toFixed(3)}g
+          {item.stoneWeightMg ? ` (Stone: ${(item.stoneWeightMg / 1000).toFixed(3)}g)` : ""}
+        </span>
       </span>
       <span className="flex shrink-0 items-center gap-1">
       <Button type="button" size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setEditing(true)} aria-label={`Rename ${item.label}`}>
@@ -125,19 +135,153 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
   );
 }
 
-/** Edit a box's number and label — works for empty boxes too. */
-function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; label?: string } }) {
+export const BOX_CATEGORIES = [
+  "Ring Box",
+  "Chain Box",
+  "Necklace Box",
+  "Bangle Box",
+  "Bracelet Box",
+  "Earring Box",
+  "Pendant Box",
+  "General Jewellery Box",
+];
+const BOX_TYPES = ["Display Tray", "Storage Box", "Counter Box", "Locker / Safe"];
+const NO_VALUE = "__none__";
+
+type BoxRecord = {
+  _id: Id<"boxes">;
+  boxNumber: number;
+  label?: string;
+  category?: string;
+  boxType?: string;
+  description?: string;
+  isActive: boolean;
+  itemCount?: number;
+};
+
+/** Shared fields for Add Box and Edit Box, so both capture the same box details. */
+function BoxFields({
+  idPrefix,
+  number, setNumber, label, setLabel, category, setCategory, boxType, setBoxType, description, setDescription,
+}: {
+  idPrefix: string;
+  number: string; setNumber: (v: string) => void;
+  label: string; setLabel: (v: string) => void;
+  category: string; setCategory: (v: string) => void;
+  boxType: string; setBoxType: (v: string) => void;
+  description: string; setDescription: (v: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-1">
+        <Label htmlFor={`${idPrefix}-number`} className="text-xs">Box Number *</Label>
+        <Input id={`${idPrefix}-number`} type="number" min="1" step="1" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g. 101" />
+      </div>
+      <div className="grid gap-1">
+        <Label htmlFor={`${idPrefix}-label`} className="text-xs">Box Name</Label>
+        <Input id={`${idPrefix}-label`} value={label} maxLength={60} placeholder="e.g. Ring Box" onChange={(e) => setLabel(e.target.value)} />
+      </div>
+      <div className="grid gap-1">
+        <Label className="text-xs">Box Category</Label>
+        <Select value={category || NO_VALUE} onValueChange={(v) => setCategory(v === NO_VALUE ? "" : v)}>
+          <SelectTrigger aria-label="Box Category"><SelectValue placeholder="Choose category" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_VALUE}>Not set</SelectItem>
+            {[...new Set([...BOX_CATEGORIES, ...(category ? [category] : [])])].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-1">
+        <Label className="text-xs">Box Type</Label>
+        <Select value={boxType || NO_VALUE} onValueChange={(v) => setBoxType(v === NO_VALUE ? "" : v)}>
+          <SelectTrigger aria-label="Box Type"><SelectValue placeholder="Choose type" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_VALUE}>Not set</SelectItem>
+            {[...new Set([...BOX_TYPES, ...(boxType ? [boxType] : [])])].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-1 sm:col-span-2">
+        <Label htmlFor={`${idPrefix}-desc`} className="text-xs">Box Description</Label>
+        <Textarea id={`${idPrefix}-desc`} rows={2} maxLength={300} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Top counter, left drawer — 22K ladies rings" className="resize-none" />
+      </div>
+    </div>
+  );
+}
+
+function CreateBoxDialog() {
+  const createNext = useMutation(api.boxes.createNext);
+  const [open, setOpen] = useState(false);
+  const [number, setNumber] = useState("");
+  const [label, setLabel] = useState("");
+  const [category, setCategory] = useState("");
+  const [boxType, setBoxType] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  function reset() {
+    setNumber(""); setLabel(""); setCategory(""); setBoxType(""); setDescription(""); setError("");
+  }
+
+  async function create() {
+    setError("");
+    const parsed = Number(number);
+    if (!number.trim() || !Number.isInteger(parsed) || parsed < 1) return setError("Enter a positive whole box number.");
+    setBusy(true);
+    try {
+      await createNext({ boxNumber: parsed, label: label.trim() || undefined, category: category || undefined, boxType: boxType || undefined, description: description.trim() || undefined });
+      toast.success(`Box ${parsed}${label.trim() ? ` (${label.trim()})` : ""} created`);
+      reset();
+      setOpen(false);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Unable to create box"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); }}>
+      <DialogTrigger asChild>
+        <Button><Plus className="h-4 w-4" />Add Box</Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader><DialogTitle>Add Box</DialogTitle></DialogHeader>
+        <form id="create-box-form" onSubmit={(e) => { e.preventDefault(); void create(); }}>
+          <BoxFields idPrefix="new-box" {...{ number, setNumber, label, setLabel, category, setCategory, boxType, setBoxType, description, setDescription }} />
+        </form>
+        {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button type="submit" form="create-box-form" disabled={busy}>{busy ? "Creating…" : "Create Box"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Edit a box's number, name, category, type, description and status — works for empty boxes too. */
+function BoxEditForm({ box }: { box: BoxRecord }) {
   const updateBox = useMutation(api.boxes.update);
   const [number, setNumber] = useState(String(box.boxNumber));
   const [label, setLabel] = useState(box.label ?? "");
+  const [category, setCategory] = useState(box.category ?? "");
+  const [boxType, setBoxType] = useState(box.boxType ?? "");
+  const [description, setDescription] = useState(box.description ?? "");
+  const [isActive, setIsActive] = useState(box.isActive);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
-  const dirty = number.trim() !== String(box.boxNumber) || label.trim() !== (box.label ?? "");
+  const dirty =
+    number.trim() !== String(box.boxNumber) ||
+    label.trim() !== (box.label ?? "") ||
+    category !== (box.category ?? "") ||
+    boxType !== (box.boxType ?? "") ||
+    description.trim() !== (box.description ?? "") ||
+    isActive !== box.isActive;
 
   async function save() {
     setError("");
-    setSaved(false);
     const parsed = Number(number);
     if (!Number.isInteger(parsed) || parsed < 1) {
       setError("Enter a positive whole box number.");
@@ -145,8 +289,16 @@ function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; labe
     }
     setBusy(true);
     try {
-      await updateBox({ boxId: box._id, boxNumber: parsed, label: label.trim() || undefined });
-      setSaved(true);
+      await updateBox({
+        boxId: box._id,
+        boxNumber: parsed,
+        label: label.trim() || undefined,
+        category,
+        boxType,
+        description: description.trim(),
+        isActive,
+      });
+      toast.success(`Box ${parsed} updated`);
     } catch (e) {
       setError(getUserErrorMessage(e, "Could not update the box."));
     } finally {
@@ -156,26 +308,30 @@ function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; labe
 
   return (
     <form
-      className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3"
+      className="flex flex-col gap-3 rounded-lg border bg-muted/30 p-3"
       onSubmit={(event) => {
         event.preventDefault();
         void save();
       }}
     >
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Edit box</p>
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="grid gap-1">
-          <label htmlFor="edit-box-number" className="text-xs text-muted-foreground">Box no.</label>
-          <Input id="edit-box-number" type="number" min="1" step="1" value={number} onChange={(e) => { setNumber(e.target.value); setSaved(false); }} className="w-24" />
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Box details</p>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-muted-foreground">Status</span>
+          <Select value={isActive ? "active" : "inactive"} onValueChange={(v) => setIsActive(v === "active")}>
+            <SelectTrigger className="h-8 w-28 text-xs" aria-label="Box Status"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div className="grid min-w-40 flex-1 gap-1">
-          <label htmlFor="edit-box-label" className="text-xs text-muted-foreground">Label</label>
-          <Input id="edit-box-label" value={label} maxLength={60} placeholder="e.g. Chains" onChange={(e) => { setLabel(e.target.value); setSaved(false); }} />
-        </div>
-        <Button type="submit" disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</Button>
+      </div>
+      <BoxFields idPrefix="edit-box" {...{ number, setNumber, label, setLabel, category, setCategory, boxType, setBoxType, description, setDescription }} />
+      <div className="flex justify-end">
+        <Button type="submit" disabled={busy || !dirty}>{busy ? "Saving…" : "Save box"}</Button>
       </div>
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-      {saved && !dirty && <p role="status" className="text-xs text-success">Box updated.</p>}
     </form>
   );
 }
@@ -258,7 +414,19 @@ function AddBoxItemForm({ boxId }: { boxId: Id<"boxes"> }) {
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="grid gap-1">
           <label className="text-xs text-muted-foreground">Product</label>
-          <Select value={productId} onValueChange={setProductId}>
+          <Select
+            value={productId}
+            onValueChange={(id) => {
+              setProductId(id);
+              // Assigning a catalogue item: start from its saved name and standard weights.
+              const product = products?.find((p) => p._id === id);
+              if (product) {
+                if (!label.trim()) setLabel(product.name);
+                if (product.grossWeightMg !== undefined && !gross) setGross((product.grossWeightMg / 1000).toFixed(3));
+                if (product.stoneWeightMg !== undefined && !stone) setStone((product.stoneWeightMg / 1000).toFixed(3));
+              }
+            }}
+          >
             <SelectTrigger aria-label="Product"><SelectValue placeholder={products === undefined ? "Loading…" : "Choose product"} /></SelectTrigger>
             <SelectContent>
               <SelectItem value={NEW_PRODUCT}>+ New product…</SelectItem>
@@ -299,18 +467,36 @@ function BoxDetailDialog({
   box,
   onClose,
 }: {
-  box: { _id: Id<"boxes">; boxNumber: number; label?: string };
+  box: BoxRecord;
   onClose: () => void;
 }) {
   const items = useQuery(api.boxes.getItems, { boxId: box._id });
+  const products = useQuery(api.products.list);
+  const productName = new Map((products ?? []).map((p) => [p._id as string, p.name]));
+  const totals = (items ?? []).reduce(
+    (acc, item) => ({ gross: acc.gross + item.grossWeightMg, stone: acc.stone + item.stoneWeightMg, net: acc.net + item.netWeightMg }),
+    { gross: 0, stone: 0, net: 0 },
+  );
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90svh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}
+            {box.category && <Badge variant="outline" className="text-xs font-normal">{box.category}</Badge>}
+            {!box.isActive && <Badge variant="destructive" className="text-xs font-normal">Inactive</Badge>}
+          </DialogTitle>
         </DialogHeader>
-        <BoxEditForm key={`${box.boxNumber}-${box.label ?? ""}`} box={box} />
+        {items && (
+          <div className="grid grid-cols-2 gap-2 rounded-lg border p-3 text-xs sm:grid-cols-4">
+            <div><p className="text-muted-foreground">Available items</p><p className="text-base font-semibold">{items.length}</p></div>
+            <div><p className="text-muted-foreground">Gross</p><p className="font-mono font-semibold">{mgToGramsDisplay(totals.gross)}g</p></div>
+            <div><p className="text-muted-foreground">Stone</p><p className="font-mono font-semibold">{mgToGramsDisplay(totals.stone)}g</p></div>
+            <div><p className="text-muted-foreground">Net</p><p className="font-mono font-semibold">{mgToGramsDisplay(totals.net)}g</p></div>
+          </div>
+        )}
+        <BoxEditForm key={`${box.boxNumber}-${box.label ?? ""}-${box.category ?? ""}-${box.boxType ?? ""}-${box.isActive}`} box={box} />
         <AddBoxItemForm boxId={box._id} />
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -322,11 +508,14 @@ function BoxDetailDialog({
             </p>
           </div>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {items.map((item) => (
-              <BoxItemRow key={item._id} item={item} />
-            ))}
-          </ul>
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Assigned jewellery items</p>
+            <ul className="flex flex-col gap-2">
+              {items.map((item) => (
+                <BoxItemRow key={item._id} item={{ ...item, productName: productName.get(item.productId) }} />
+              ))}
+            </ul>
+          </div>
         )}
       </DialogContent>
     </Dialog>
@@ -337,25 +526,23 @@ export default function BoxOverviewPage() {
   const boxes = useQuery(api.boxes.list);
   const boxReport = useQuery(api.reports.getBoxReport);
   const reportByBoxId = useMemo(() => new Map((boxReport ?? []).map((row) => [row.boxId, row])), [boxReport]);
-  const createNext = useMutation(api.boxes.createNext);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const itemMatches = useQuery(api.boxes.searchItems, search.trim().length >= 2 ? { term: search } : "skip");
   const [selectedBox, setSelectedBox] = useState<Id<"boxes"> | null>(null);
-  const [boxNumber, setBoxNumber] = useState("");
-  const [label, setLabel] = useState("");
-  const [error, setError] = useState("");
-  const [creating, setCreating] = useState(false);
-
   const filtered = useMemo(() => {
     if (!boxes) return undefined;
-    const q = search.trim();
-    if (!q) return boxes;
+    const q = search.trim().toLowerCase();
     return boxes.filter(
       (b) =>
-        String(b.boxNumber).includes(q) ||
-        b.label?.toLowerCase().includes(q.toLowerCase()),
+        (categoryFilter === "all" || (b.category ?? "") === categoryFilter) &&
+        (!q ||
+          String(b.boxNumber).includes(q) ||
+          b.label?.toLowerCase().includes(q) ||
+          b.category?.toLowerCase().includes(q)),
     );
-  }, [boxes, search]);
+  }, [boxes, search, categoryFilter]);
+  const usedCategories = useMemo(() => [...new Set((boxes ?? []).map((b) => b.category).filter((c): c is string => Boolean(c)))].sort(), [boxes]);
 
   // Live record, so the dialog title and edit form follow saved changes.
   const selectedBoxRecord = selectedBox ? boxes?.find((b) => b._id === selectedBox) : undefined;
@@ -364,21 +551,6 @@ export default function BoxOverviewPage() {
     filtered?.map((box) => box._id) ?? [],
     `boxes:${search}`,
   );
-
-  async function handleCreate() {
-    setCreating(true);
-    try {
-      setError("");
-      if (!boxNumber.trim()) throw new Error("Enter a box number");
-      await createNext({ boxNumber: Number(boxNumber), label });
-      setBoxNumber("");
-      setLabel("");
-    } catch (e) {
-      setError(getUserErrorMessage(e, "Unable to create box"));
-    } finally {
-      setCreating(false);
-    }
-  }
 
   return (
     <PrivacyLockGate>
@@ -389,47 +561,29 @@ export default function BoxOverviewPage() {
             Box Overview
           </h1>
           <p className="text-sm text-muted-foreground">
-            {boxes?.length ?? 0} boxes
+            {boxes?.length ?? 0} boxes · ring, chain, necklace and other jewellery boxes with their assigned items
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Input
-            aria-label="Box number"
-            type="number"
-            min="1"
-            step="1"
-            value={boxNumber}
-            onChange={(e) => setBoxNumber(e.target.value)}
-            placeholder="Box no."
-            className="w-28"
-          />
-          <Input
-            aria-label="Box label"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Label (optional)"
-            className="w-44"
-          />
-          <Button onClick={handleCreate} disabled={creating}>
-            <Plus className="h-4 w-4" />
-            {creating ? "Creating…" : "Create Box"}
-          </Button>
-        </div>
+        <CreateBoxDialog />
       </div>
 
-      {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="relative max-w-sm">
-        <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="pl-9"
-          placeholder="Search box number, or an item like 'ring'"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-sm">
+          <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Search box number, name, or an item like 'ring'"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <SelectTrigger className="w-52" aria-label="Filter by category"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {usedCategories.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
       {itemMatches && itemMatches.length > 0 && (
@@ -487,9 +641,15 @@ export default function BoxOverviewPage() {
                   <Package className="h-5 w-5 text-primary" />
                   <p className="text-lg font-semibold">{box.boxNumber}</p>
                   {box.label && (
-                    <p className="truncate text-xs text-muted-foreground">
+                    <p className="max-w-full truncate text-xs text-muted-foreground">
                       {box.label}
                     </p>
+                  )}
+                  {(box.category || !box.isActive) && (
+                    <span className="flex flex-wrap justify-center gap-1">
+                      {box.category && <Badge variant="outline" className="max-w-full truncate text-[10px] font-normal">{box.category}</Badge>}
+                      {!box.isActive && <Badge variant="destructive" className="text-[10px] font-normal">Inactive</Badge>}
+                    </span>
                   )}
                   <Badge variant="secondary" className="text-xs font-normal">
                     {(reportByBoxId.get(box._id)?.itemCount ?? box.itemCount)

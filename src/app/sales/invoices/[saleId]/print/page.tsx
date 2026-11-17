@@ -409,38 +409,44 @@ export default function PrintInvoicePage({
             <table className="w-full table-fixed border-collapse border border-[#655c36] leading-tight" data-invoice-items-table>
               <colgroup>
                 {(sale.isGst
-                  ? ["5%", "20%", "10%", "6%", "9%", "9%", "10%", "11%", "10%", "10%"]
-                  : ["5%", "24%", "12%", "6%", "10%", "10%", "11%", "11%", "11%"]
+                  ? ["4%", "16%", "7%", "5%", "8%", "7%", "8%", "9%", "8%", "7%", "9%", "12%"]
+                  : ["4%", "19%", "8%", "5%", "9%", "8%", "9%", "10%", "9%", "8%", "11%"]
                 ).map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>
               <thead>
                 <tr className="bg-[#f4f0df] text-center font-bold text-[#13253f]">
-                  <th className="border border-[#655c36] px-1 py-2">Sl.No</th>
-                  <th className="border border-[#655c36] px-1 py-2 text-left">
+                  <th className="border border-[#655c36] px-1 py-1.5">Sl.No</th>
+                  <th className="border border-[#655c36] px-1 py-1.5 text-left">
                     Description
                   </th>
-                  <th className="border border-[#655c36] px-1 py-2">Purity</th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <th className="border border-[#655c36] px-1 py-1.5">Purity</th>
+                  <th className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                     Qty
                   </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <th className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                     Gross Wt
                   </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <th className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
+                    Stone Wt
+                  </th>
+                  <th className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                     Net Wt
                   </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                     Rate(₹)
                   </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                     Making(₹)
                   </th>
+                  <th className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
+                    Wastage
+                  </th>
                   {sale.isGst && (
-                    <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <th className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                       Tax(₹)
                     </th>
                   )}
-                  <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <th className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                     Total(₹)
                   </th>
                 </tr>
@@ -448,36 +454,42 @@ export default function PrintInvoicePage({
               <tbody>
                 {items.map((item, i) => (
                   <tr key={item._id}>
-                    <td className="border border-[#655c36] px-1 py-2">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center">
                       {i + 1}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2">
+                    <td className="border border-[#655c36] px-1 py-1.5 truncate">
                       {item.label}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center">
                       {item.purityLabel ?? "—"}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                       {item.pieces ?? 1}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.grossWeightMg)}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
+                      {mgToGramsDisplay(item.stoneWeightMg)}
+                    </td>
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                      {formatPaise(item.ratePerGramPaise)}
+                    <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
+                      {item.unitPricePaise ? `${formatPaise(item.unitPricePaise)}/pc` : formatPaise(item.ratePerGramPaise)}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.makingChargePaise)}
                     </td>
+                    <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
+                      {item.wastageBasisPoints ? `${(item.wastageBasisPoints / 100).toFixed(1)}%` : "—"}
+                    </td>
                     {sale.isGst && (
-                      <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                      <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                         {formatPaise(item.lineTaxPaise)}
                       </td>
                     )}
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.lineTotalPaise)}
                     </td>
                   </tr>
@@ -489,74 +501,80 @@ export default function PrintInvoicePage({
                     the blank space — just empty space within the columns. */}
                 {Array.from({ length: Math.max(0, MIN_INVOICE_ITEM_ROWS - items.length) }, (_, i) => (
                   <tr key={`blank-${i}`}>
-                    {Array.from({ length: sale.isGst ? 10 : 9 }, (_, col) => (
-                      <td key={col} className="border-x border-[#655c36] px-1 py-2">
+                    {Array.from({ length: sale.isGst ? 12 : 11 }, (_, col) => (
+                      <td key={col} className="border-x border-[#655c36] px-1 py-1.5">
                         &nbsp;
                       </td>
                     ))}
                   </tr>
                 ))}
                 <tr className="bg-[#f4f0df] font-bold">
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={3}>
+                  <td className="border border-[#655c36] px-1 py-1.5" colSpan={3}>
                     Sub Total
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    {items.length}
+                  <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
+                    {items.reduce((sum, i) => sum + (i.pieces ?? 1), 0)}
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
                       items.reduce((sum, i) => sum + i.grossWeightMg, 0),
                     )}
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                  <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
+                    {mgToGramsDisplay(
+                      items.reduce((sum, i) => sum + i.stoneWeightMg, 0),
+                    )}
+                  </td>
+                  <td className="border border-[#655c36] px-1 py-1.5 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(
                       items.reduce((sum, i) => sum + i.netWeightMg, 0),
                     )}
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2" />
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#655c36] px-1 py-1.5" />
+                  <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                     {formatPaise(
                       items.reduce((sum, i) => sum + i.makingChargePaise, 0),
                     )}
                   </td>
+                  <td className="border border-[#655c36] px-1 py-1.5" />
                   {sale.isGst && (
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(
                         items.reduce((sum, i) => sum + i.lineTaxPaise, 0),
                       )}
                     </td>
                   )}
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                  <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums">
                     {formatPaise(
                       items.reduce((sum, i) => sum + i.lineTotalPaise, 0),
                     )}
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                  <td className="border border-[#655c36] px-1 py-1.5" colSpan={sale.isGst ? 9 : 8} />
+                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-1.5 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Discount
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                  <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                     -{formatPaise(sale.discountPaise)}
                   </td>
                 </tr>
                 <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                  <td className="border border-[#655c36] px-1 py-1.5" colSpan={sale.isGst ? 9 : 8} />
+                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-1.5 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                     Old Item Deduction{sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                  <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                     -{formatPaise(sale.oldItemDeductionPaise ?? 0)}
                   </td>
                 </tr>
                 {oldGoldExchange && (
                   <tr>
-                    <td className="border border-[#655c36] px-1 py-2" colSpan={sale.isGst ? 7 : 6} />
-                    <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
+                    <td className="border border-[#655c36] px-1 py-1.5" colSpan={sale.isGst ? 9 : 8} />
+                    <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-1.5 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
                       Old Gold / Silver Exchange
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
+                    <td className="border border-[#655c36] px-1 py-1.5 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
                       -{formatPaise(oldGoldExchange.exchangeValuePaise)}
                     </td>
                   </tr>
@@ -648,15 +666,15 @@ export default function PrintInvoicePage({
               )}
             </div>
 
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b border-gray-200 text-left">
+                <tr className="border-b border-gray-200 text-left font-semibold">
                   <th className="py-1">Item</th>
-                  {template !== "thermal" && (
-                    <th className="py-1 text-right">Gross Wt (g)</th>
-                  )}
-                  <th className="py-1 text-right">Net Wt (g)</th>
-                  <th className="py-1 text-right">Rate/g</th>
+                  <th className="py-1 text-center">Qty</th>
+                  <th className="py-1 text-right">Gross Wt</th>
+                  <th className="py-1 text-right">Stone Wt</th>
+                  <th className="py-1 text-right">Net Wt</th>
+                  <th className="py-1 text-right">Rate</th>
                   {template !== "thermal" && (
                     <th className="py-1 text-right">Making</th>
                   )}
@@ -667,29 +685,31 @@ export default function PrintInvoicePage({
               <tbody>
                 {items.map((item) => (
                   <tr key={item._id} className="border-b border-gray-200/60">
-                    <td className="py-1">{item.label}</td>
-                    {template !== "thermal" && (
-                      <td className="py-1 text-right">
-                        {mgToGramsDisplay(item.grossWeightMg)}
-                      </td>
-                    )}
-                    <td className="py-1 text-right">
+                    <td className="py-1">{item.label}{item.purityLabel ? ` (${item.purityLabel})` : ""}</td>
+                    <td className="py-1 text-center">{item.pieces ?? 1}</td>
+                    <td className="py-1 text-right tabular-nums">
+                      {mgToGramsDisplay(item.grossWeightMg)}
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-gray-500">
+                      {mgToGramsDisplay(item.stoneWeightMg)}
+                    </td>
+                    <td className="py-1 text-right tabular-nums font-medium">
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
-                    <td className="py-1 text-right">
-                      {formatPaise(item.ratePerGramPaise)}
+                    <td className="py-1 text-right tabular-nums">
+                      {item.unitPricePaise ? `${formatPaise(item.unitPricePaise)}/pc` : formatPaise(item.ratePerGramPaise)}
                     </td>
                     {template !== "thermal" && (
-                      <td className="py-1 text-right">
+                      <td className="py-1 text-right tabular-nums">
                         {formatPaise(item.makingChargePaise)}
                       </td>
                     )}
                     {sale.isGst && (
-                      <td className="py-1 text-right">
+                      <td className="py-1 text-right tabular-nums">
                         {formatPaise(item.lineTaxPaise)}
                       </td>
                     )}
-                    <td className="py-1 text-right">
+                    <td className="py-1 text-right tabular-nums">
                       {formatPaise(item.lineTotalPaise)}
                     </td>
                   </tr>

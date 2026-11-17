@@ -29,6 +29,30 @@ import {
 } from "@/components/ui/select";
 import { computeOldGoldExchange, computeSaleLine, gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
+import { toast } from "@/components/toaster";
+
+const INDIAN_STATES = [
+  "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh",
+  "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir",
+  "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
+  "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
+  "Uttar Pradesh", "Uttarakhand", "West Bengal",
+];
+
+/** Item-master defaults a new bill line starts from, so the operator doesn't retype saved prices. */
+function lineDefaultsFromProduct(product: Doc<"products"> | undefined, fallbackTaxId: string) {
+  const hasPrice = product?.sellingPricePaise !== undefined;
+  return {
+    sku: product?.sku,
+    unitPriceRupees: hasPrice ? (product!.sellingPricePaise! / 100).toFixed(2) : "",
+    savedUnitPricePaise: product?.sellingPricePaise,
+    purchasePricePaise: product?.purchasePricePaise,
+    // Fixed-price items already include making; rate/gram items start from the item's saved charges.
+    makingChargeRupees: !hasPrice && product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
+    wastagePercent: !hasPrice && product?.wastageBasisPoints ? (product.wastageBasisPoints / 100).toFixed(2) : "",
+    taxConfigurationId: product?.taxConfigurationId ?? fallbackTaxId,
+  };
+}
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const PAYMENT_MODES = [
@@ -90,6 +114,13 @@ type BillLine = {
   taxConfigurationId: string;
   manualGstPercent?: string;
   isManualTax?: boolean;
+  sku?: string;
+  /** Fixed selling price per piece. "" → priced by net weight × rate per gram. */
+  unitPriceRupees: string;
+  /** The item master's saved selling price, to detect (and gate) an override. */
+  savedUnitPricePaise?: number;
+  /** Internal per-piece cost — only present for roles allowed to see it. */
+  purchasePricePaise?: number;
 };
 
 /**
@@ -243,12 +274,22 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
   function add() {
     const grossWeightMg = gramsToMg(gross || "0");
     const stoneWeightMg = gramsToMg(stone || "0");
+    const netWeightMg = grossWeightMg - stoneWeightMg;
     const pcs = Number(pieces || "1");
     if (!selected) return setError("Choose an item.");
     if (grossWeightMg <= 0) return setError("Enter the gross weight.");
+    if (stoneWeightMg < 0) return setError("Stone weight cannot be negative.");
     if (stoneWeightMg > grossWeightMg) return setError("Stone weight cannot be more than gross weight.");
     if (!Number.isInteger(pcs) || pcs < 1) return setError("Pieces must be 1 or more.");
-    if (grossWeightMg - stoneWeightMg > selected.weightMg) return setError(`Only ${mgToGramsDisplay(selected.weightMg)} g of ${selected.name} is in GST stock.`);
+
+    const availableGross = selected.grossWeightMg ?? selected.weightMg;
+    const availableNet = selected.netWeightMg ?? selected.weightMg;
+    if (grossWeightMg > availableGross) {
+      return setError(`Only ${mgToGramsDisplay(availableGross)} g gross weight of ${selected.name} is in GST stock.`);
+    }
+    if (netWeightMg > availableNet) {
+      return setError(`Only ${mgToGramsDisplay(availableNet)} g net weight of ${selected.name} is in GST stock.`);
+    }
     setError(null);
     const product = products?.find((p) => p._id === productId);
     onAdd({ productId, name: selected.name, metalPurityId: product?.metalPurityId, grossWeightMg, stoneWeightMg, pieces: pcs });
@@ -261,16 +302,27 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
     <Card className="border-border/80 shadow-xs">
       <CardHeader className="p-4 pb-2">
         <CardTitle className="text-sm font-bold uppercase tracking-wide">Add item (GST stock)</CardTitle>
-        <p className="text-xs text-muted-foreground">Pick the item and type its weight. The net weight is deducted from GST item stock.</p>
+        <p className="text-xs text-muted-foreground">Pick the item and type its weight. Available stock: Gross, Stone, and Net are deducted separately from GST item stock balances.</p>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-2 p-4 pt-0 sm:grid-cols-[2fr_1fr_1fr_0.7fr_auto] sm:items-end">
         <div className="col-span-2 sm:col-span-1">
           <Label className="text-[10px] text-muted-foreground">Item</Label>
-          <Select value={productId || undefined} onValueChange={setProductId}>
+          <Select
+            value={productId || undefined}
+            onValueChange={(id) => {
+              setProductId(id);
+              // Start from the item's saved per-piece weights.
+              const product = products?.find((p) => p._id === id);
+              if (product?.grossWeightMg !== undefined) setGross((product.grossWeightMg / 1000).toFixed(3));
+              if (product?.stoneWeightMg !== undefined) setStone((product.stoneWeightMg / 1000).toFixed(3));
+            }}
+          >
             <SelectTrigger className="h-9 w-full text-xs"><SelectValue placeholder={stock === undefined ? "Loading…" : "Choose item"} /></SelectTrigger>
             <SelectContent>
               {stock?.map((s) => (
-                <SelectItem key={s.productId} value={s.productId}>{s.name} · {mgToGramsDisplay(s.weightMg)} g · {s.pieces} pcs</SelectItem>
+                <SelectItem key={s.productId} value={s.productId}>
+                  {s.name} · Gross: {mgToGramsDisplay(s.grossWeightMg ?? s.weightMg)}g · Net: {mgToGramsDisplay(s.netWeightMg ?? s.weightMg)}g · {s.pieces} pcs
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -307,6 +359,8 @@ function BoxItemPicker({
   alreadyAddedIds: Set<string>;
 }) {
   const [boxNumberInput, setBoxNumberInput] = useState("");
+  const [itemSearch, setItemSearch] = useState("");
+  const itemMatches = useQuery(api.boxes.searchItems, itemSearch.trim().length >= 2 ? { term: itemSearch } : "skip");
   const [boxListOpen, setBoxListOpen] = useState(false);
   const boxListRef = useRef<HTMLDivElement>(null);
   const matchedBox = useMemo(
@@ -345,6 +399,33 @@ function BoxItemPicker({
         <CardTitle className="text-base">Add items to this bill</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
+          <Label htmlFor="bill-item-search" className="text-xs font-semibold text-muted-foreground">Search item by name or code (all boxes)</Label>
+          <div className="relative max-w-md">
+            <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input id="bill-item-search" className="pl-9" placeholder="e.g. Gold Ring, GR-101" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} />
+          </div>
+          {itemSearch.trim().length >= 2 && itemMatches?.length === 0 && <p className="text-xs text-muted-foreground">No in-stock item matches “{itemSearch}”.</p>}
+          {itemMatches && itemMatches.length > 0 && (
+            <div className="flex max-h-60 flex-col gap-1 overflow-y-auto rounded-md border p-1">
+              {itemMatches.map((match) => {
+                const added = alreadyAddedIds.has(match.boxItemId);
+                return (
+                  <div key={match.boxItemId} className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-sm hover:bg-muted/40">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{match.label} <span className="text-xs font-normal text-muted-foreground">· {match.productName}</span></p>
+                      <p className="text-xs text-muted-foreground">Box {match.boxNumber ?? "—"}{match.boxLabel ? ` (${match.boxLabel})` : ""} · {mgToGramsDisplay(match.netWeightMg)}g net</p>
+                    </div>
+                    <Button type="button" size="sm" variant={added ? "secondary" : "outline"} disabled={added} onClick={() => onAdd(match.boxItem)}>
+                      {added ? "Added" : "Add"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <Label className="text-xs font-semibold text-muted-foreground">…or open a box</Label>
         <div ref={boxListRef} className="relative max-w-xs">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -526,6 +607,9 @@ export default function NewBillPage() {
   const updateSale = useMutation(api.sales.update);
   const createCustomer = useMutation(api.customers.create);
   const createTaxConfig = useMutation(api.taxConfigurations.create);
+  const pricing = useQuery(api.products.myPricingAccess);
+  const showCost = pricing?.canViewCost ?? false;
+  const canOverride = pricing?.canOverridePrice ?? false;
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -538,8 +622,9 @@ export default function NewBillPage() {
   const [oldItemDeductionRupees, setOldItemDeductionRupees] = useState("0");
   const [oldItemEnabled, setOldItemEnabled] = useState(false);
   const [oldItemDeductionNote, setOldItemDeductionNote] = useState("");
-  const [discountMode, setDiscountMode] = useState<"none" | "percent" | "fixed">("none");
-  const [discountValue, setDiscountValue] = useState("");
+  // No discount on new bills. A discount already saved on an older bill is kept
+  // (read-only) when that bill is edited, so its total doesn't silently change.
+  const [legacyDiscountPaise, setLegacyDiscountPaise] = useState(0);
   const [payments, setPayments] = useState<{ mode: PaymentMode; amountRupees: string }[]>([
     { mode: "cash", amountRupees: "" },
   ]);
@@ -565,12 +650,18 @@ export default function NewBillPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the company type once it loads; the operator can still toggle.
     if (!editSaleId) setIsGst(gstCompany);
   }, [editSaleId, gstCompany]);
+  const companyState = access?.organization?.state;
+  useEffect(() => {
+    // Default place of supply = the company's own state (intra-state → CGST + SGST).
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time default once the company loads.
+    if (!editSaleId && companyState) setStateOfSupply(companyState);
+  }, [editSaleId, companyState]);
 
   // One-time prefill once the existing invoice loads, in edit mode — guarded
   // by `prefilled` so it never re-runs after the user starts editing.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!editSaleId || !existingSale || prefilled) return;
+    if (!editSaleId || !existingSale || !products || prefilled) return;
     const { sale, items, customer, oldGoldExchange, payments: existingPayments } = existingSale;
     setInvoiceNumber(sale.invoiceNumber);
     setBillDate(timestampToDateInput(sale.createdAt));
@@ -599,12 +690,15 @@ export default function NewBillPage() {
         makingChargeRupees: item.makingChargePaise ? (item.makingChargePaise / 100).toFixed(2) : "",
         stoneChargeRupees: item.stoneChargePaise ? (item.stoneChargePaise / 100).toFixed(2) : "",
         taxConfigurationId: item.taxConfigurationId ?? "",
+        boxNumber: item.boxNumber,
+        sku: item.sku,
+        unitPriceRupees: item.unitPricePaise ? (item.unitPricePaise / 100).toFixed(2) : "",
+        savedUnitPricePaise: products?.find((p) => p._id === item.productId)?.sellingPricePaise,
+        purchasePricePaise: products?.find((p) => p._id === item.productId)?.purchasePricePaise,
       })),
     );
-    if (sale.discountPaise > 0) {
-      setDiscountMode("fixed");
-      setDiscountValue((sale.discountPaise / 100).toFixed(2));
-    }
+    setLegacyDiscountPaise(sale.discountPaise);
+    if (sale.stateOfSupply) setStateOfSupply(sale.stateOfSupply);
     const nonExchangePayments = existingPayments.filter((p) => p.mode !== "old_gold_exchange");
     if (nonExchangePayments.length > 0) {
       setPayments(
@@ -622,7 +716,7 @@ export default function NewBillPage() {
       setOldGoldRateRupees((oldGoldExchange.ratePerGramPaise / 100).toFixed(2));
     }
     setPrefilled(true);
-  }, [editSaleId, existingSale, prefilled]);
+  }, [editSaleId, existingSale, prefilled, products]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const productById = useMemo(() => {
@@ -692,10 +786,8 @@ export default function NewBillPage() {
         metalPurityId: purityId,
         otherDeductionGrams: "",
         ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
-        wastagePercent: "",
-        makingChargeRupees: "",
         stoneChargeRupees: "",
-        taxConfigurationId: taxConfigs?.[0]?._id ?? "",
+        ...lineDefaultsFromProduct(product, taxConfigs?.[0]?._id ?? ""),
       },
     ]);
   }
@@ -717,10 +809,8 @@ export default function NewBillPage() {
         metalPurityId: purityId,
         otherDeductionGrams: "",
         ratePerGramRupees: defaultRatePaise ? (defaultRatePaise / 100).toFixed(2) : "",
-        wastagePercent: "",
-        makingChargeRupees: "",
         stoneChargeRupees: "",
-        taxConfigurationId: taxConfigs?.[0]?._id ?? "",
+        ...lineDefaultsFromProduct(productById.get(item.productId), taxConfigs?.[0]?._id ?? ""),
       },
     ]);
   }
@@ -756,6 +846,8 @@ export default function NewBillPage() {
           makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
           stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
           gstBasisPoints,
+          unitPricePaise: line.unitPriceRupees.trim() ? rupeesToPaise(line.unitPriceRupees) ?? 0 : 0,
+          pieces: line.pieces ?? 1,
         });
       }),
     [lines, taxConfigs, isGst],
@@ -764,30 +856,34 @@ export default function NewBillPage() {
   const lineErrors = useMemo(
     () =>
       lines.map((line, index) => {
+        const fixed = line.unitPriceRupees.trim().length > 0;
         const checks: [string, string | null][] = [
           ["Other deduction", numberFieldError(line.otherDeductionGrams, { max: line.stockNetWeightMg / 1000 })],
-          ["Rate/g", numberFieldError(line.ratePerGramRupees)],
+          ["Selling price", fixed ? numberFieldError(line.unitPriceRupees) : null],
+          ["Rate/g", fixed ? null : numberFieldError(line.ratePerGramRupees)],
           ["Wastage %", numberFieldError(line.wastagePercent, { max: 100 })],
           ["Making charge", numberFieldError(line.makingChargeRupees)],
           ["Stone charge", numberFieldError(line.stoneChargeRupees)],
         ];
         const failed = checks.find(([, error]) => error);
-        if (failed) return `${failed[0]}: ${failed[1]}`;
+        if (failed) return `${line.label} — ${failed[0]}: ${failed[1]}`;
+        const billedPaise = fixed ? rupeesToPaise(line.unitPriceRupees) ?? 0 : 0;
+        if (!fixed && !(Number(line.ratePerGramRupees) > 0)) return `${line.label} — enter the rate per gram.`;
+        if (fixed && billedPaise <= 0) return `${line.label} — enter the selling price.`;
+        const overridden = line.savedUnitPricePaise !== undefined ? billedPaise !== line.savedUnitPricePaise : fixed;
+        if (overridden && !canOverride) {
+          return line.savedUnitPricePaise !== undefined
+            ? `${line.label} — only the Owner or an Admin can change the saved selling price (${formatPaise(line.savedUnitPricePaise)}).`
+            : `${line.label} — has no saved selling price; bill it by rate per gram.`;
+        }
         const computed = computedLines[index];
         if (computed?.netWeightMg === 0 && computed.lineTotalPaise === 0) {
           return "This item has zero net weight and zero value. Check its box stock weight and deductions before billing.";
         }
         return null;
       }),
-    [lines, computedLines],
+    [lines, computedLines, canOverride],
   );
-
-  const discountError = useMemo(() => {
-    if (discountMode === "none") return null;
-    return discountMode === "percent"
-      ? numberFieldError(discountValue, { max: 100 })
-      : numberFieldError(discountValue);
-  }, [discountMode, discountValue]);
 
   const paymentErrors = useMemo(() => payments.map((p) => numberFieldError(p.amountRupees)), [payments]);
 
@@ -812,13 +908,9 @@ export default function NewBillPage() {
   const totals = useMemo(() => {
     const subtotalPaise = computedLines.reduce((sum, l) => sum + l.taxableValuePaise, 0);
     const taxPaise = computedLines.reduce((sum, l) => sum + l.lineTaxPaise, 0);
-    let discountPaise = 0;
-    if (discountMode === "percent") {
-      discountPaise = Math.round((subtotalPaise * (percentToBasisPoints(discountValue || "0") ?? 0)) / 10000);
-    } else if (discountMode === "fixed") {
-      discountPaise = rupeesToPaise(discountValue || "0") ?? 0;
-    }
-    discountPaise = Math.min(discountPaise, subtotalPaise);
+    const discountPaise = Math.min(legacyDiscountPaise, subtotalPaise);
+    const costPaise = lines.reduce((sum, l) => (l.purchasePricePaise === undefined ? sum : sum + l.purchasePricePaise * (l.pieces ?? 1)), 0);
+    const costKnown = lines.length > 0 && lines.every((l) => l.purchasePricePaise !== undefined);
     const beforeOldItemDeductionPaise = subtotalPaise - discountPaise + taxPaise;
     const oldItemDeductionPaise = rupeesToPaise(oldItemDeductionRupees || "0") ?? 0;
     const preRound = beforeOldItemDeductionPaise - oldItemDeductionPaise;
@@ -831,6 +923,7 @@ export default function NewBillPage() {
       subtotalPaise,
       taxPaise,
       discountPaise,
+      marginPaise: costKnown ? subtotalPaise - discountPaise - costPaise : null,
       oldItemDeductionPaise,
       beforeOldItemDeductionPaise,
       roundOffPaise,
@@ -839,12 +932,12 @@ export default function NewBillPage() {
       amountPaidPaise,
       balancePaise: roundedTotal - amountPaidPaise,
     };
-  }, [computedLines, discountMode, discountValue, oldItemDeductionRupees, payments, oldGoldComputed]);
+  }, [computedLines, lines, legacyDiscountPaise, oldItemDeductionRupees, payments, oldGoldComputed]);
 
   const oldItemDeductionError =
     numberFieldError(oldItemDeductionRupees) ??
     (totals.oldItemDeductionPaise > totals.beforeOldItemDeductionPaise
-      ? "Cannot exceed the bill amount after discount."
+      ? "Cannot exceed the bill amount."
       : null);
 
   /** Clears the form back to a blank bill so the operator can keep billing the next customer without leaving the page. */
@@ -858,8 +951,7 @@ export default function NewBillPage() {
     setOldItemDeductionRupees("0");
     setOldItemEnabled(false);
     setOldItemDeductionNote("");
-    setDiscountMode("none");
-    setDiscountValue("");
+    setLegacyDiscountPaise(0);
     setPayments([{ mode: "cash", amountRupees: "" }]);
     setOldGoldEnabled(false);
     setOldGoldPurityId("");
@@ -881,10 +973,6 @@ export default function NewBillPage() {
     const firstLineError = lineErrors.find(Boolean);
     if (firstLineError) {
       setServerError(firstLineError);
-      return;
-    }
-    if (discountError) {
-      setServerError(`Discount: ${discountError}`);
       return;
     }
     if (oldItemDeductionError) {
@@ -952,15 +1040,13 @@ export default function NewBillPage() {
             makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
             stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
             taxConfigurationId: taxConfigId,
+            unitPricePaise: line.unitPriceRupees.trim() ? rupeesToPaise(line.unitPriceRupees) ?? 0 : undefined,
           };
         }),
       );
-      const discountValuePaiseOrBp =
-        discountMode === "percent"
-          ? percentToBasisPoints(discountValue || "0") ?? 0
-          : discountMode === "fixed"
-            ? rupeesToPaise(discountValue || "0") ?? 0
-            : 0;
+      // New bills never carry a discount; an edited older bill keeps the one it was saved with.
+      const discountMode: "fixed" | "none" = legacyDiscountPaise > 0 ? "fixed" : "none";
+      const discountValuePaiseOrBp = legacyDiscountPaise;
       const oldItemDeductionPaise = rupeesToPaise(oldItemDeductionRupees || "0") ?? 0;
       const paymentSplits = payments
         .filter((p) => Number(p.amountRupees) > 0)
@@ -984,12 +1070,14 @@ export default function NewBillPage() {
           items,
           discountMode,
           discountValue: discountValuePaiseOrBp,
+          stateOfSupply: isGst ? stateOfSupply : undefined,
           oldItemDeductionPaise,
           oldItemDeductionNote: oldItemDeductionNote.trim() || undefined,
           payments: paymentSplits,
           oldGoldExchange: oldGoldExchangeArg,
           billDate: dateInputToTimestamp(billDate),
         });
+        toast.success("Bill updated");
         router.push(`/sales/invoices?updated=${editSaleId}`);
         return;
       }
@@ -1001,6 +1089,7 @@ export default function NewBillPage() {
         items,
         discountMode,
         discountValue: discountValuePaiseOrBp,
+        stateOfSupply: isGst ? stateOfSupply : undefined,
         oldItemDeductionPaise,
         oldItemDeductionNote: oldItemDeductionNote.trim() || undefined,
         payments: paymentSplits,
@@ -1008,6 +1097,7 @@ export default function NewBillPage() {
         billDate: dateInputToTimestamp(billDate),
         idempotencyKey,
       });
+      toast.success(`Bill saved · ${lines.length} item${lines.length === 1 ? "" : "s"} · ${formatPaise(totals.totalPaise)}`);
       if (after === "print") {
         router.push(`/sales/invoices/${result.saleId}/print`);
       } else if (after === "printShare") {
@@ -1202,14 +1292,17 @@ export default function NewBillPage() {
                     <SelectTrigger className="h-9 text-xs font-medium">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Karnataka">Karnataka (29)</SelectItem>
-                      <SelectItem value="Maharashtra">Maharashtra (27)</SelectItem>
-                      <SelectItem value="Telangana">Telangana (36)</SelectItem>
-                      <SelectItem value="Andhra Pradesh">Andhra Pradesh (37)</SelectItem>
-                      <SelectItem value="Goa">Goa (30)</SelectItem>
+                    <SelectContent className="max-h-72">
+                      {[...new Set([...INDIAN_STATES, stateOfSupply])].map((state) => (
+                        <SelectItem key={state} value={state}>{state}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {isGst && (
+                    <p className="text-[10px] text-muted-foreground">
+                      {companyState && stateOfSupply.trim().toLowerCase() !== companyState.trim().toLowerCase() ? "Inter-state: IGST" : "Intra-state: CGST + SGST"}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -1275,13 +1368,20 @@ export default function NewBillPage() {
         {/* Vyapar Items Table matching Page 17 */}
         <Card className="border-border/80 shadow-xs overflow-hidden">
           <CardHeader className="p-4 border-b bg-muted/20 flex flex-row flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-sm font-bold uppercase tracking-wide">
-              Items in this bill ({lines.length})
-            </CardTitle>
+            <div>
+              <CardTitle className="text-sm font-bold uppercase tracking-wide">
+                Items in this bill ({lines.length})
+              </CardTitle>
+              {lines.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {lines.reduce((s, l) => s + (l.pieces ?? 1), 0)} pcs · Gross {mgToGramsDisplay(lines.reduce((s, l) => s + l.grossWeightMg, 0))}g · Stone {mgToGramsDisplay(lines.reduce((s, l) => s + l.stoneWeightMg, 0))}g · Net {mgToGramsDisplay(computedLines.reduce((s, c) => s + (c?.netWeightMg ?? 0), 0))}g
+                </p>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
               {gstCompany
-                ? "Selling deducts the net weight and pieces from GST item stock."
-                : "Selling deducts pieces and weight straight from the assigned physical box."}
+                ? "Selling deducts gross, stone, and net stock independently from GST item balances."
+                : "Selling deducts pieces, gross, and net weight straight from the assigned physical box."}
             </p>
           </CardHeader>
           <CardContent className="p-0">
@@ -1291,68 +1391,124 @@ export default function NewBillPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full min-w-[1080px] text-xs">
                   <thead>
-                    <tr className="border-b bg-muted/30 text-left font-semibold text-muted-foreground">
-                      <th className="py-2.5 px-3 w-8">#</th>
-                      <th className="py-2.5 px-3">ITEM / BOX</th>
-                      <th className="py-2.5 px-3">PURITY</th>
-                      <th className="py-2.5 px-3">GROSS WT</th>
-                      <th className="py-2.5 px-3">NET WT</th>
-                      <th className="py-2.5 px-3">MAKING (₹)</th>
-                      <th className="py-2.5 px-3">QTY</th>
-                      <th className="py-2.5 px-3">RATE / G (₹)</th>
-                      {isGst && <th className="py-2.5 px-3">TAX (GST)</th>}
-                      <th className="py-2.5 px-3 text-right">AMOUNT (₹)</th>
-                      <th className="py-2.5 px-3 text-center w-10">ACTION</th>
+                    <tr className="border-b bg-muted/30 text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <th className="py-2.5 px-2 w-6">#</th>
+                      <th className="py-2.5 px-2">Item Name</th>
+                      <th className="py-2.5 px-2">Box No</th>
+                      <th className="py-2.5 px-2">Purity</th>
+                      <th className="py-2.5 px-2 text-right">Gross Wt</th>
+                      <th className="py-2.5 px-2 text-right">Net Wt</th>
+                      <th className="py-2.5 px-2 text-right">Stone Wt</th>
+                      {showCost && <th className="py-2.5 px-2 text-right" title="Internal cost — never printed on the invoice">Purchase Price</th>}
+                      <th className="py-2.5 px-2">Selling Price</th>
+                      <th className="py-2.5 px-2 text-center">Qty</th>
+                      {isGst && <th className="py-2.5 px-2">GST</th>}
+                      <th className="py-2.5 px-2 text-right">Total</th>
+                      <th className="py-2.5 px-2 text-center w-10"><span className="sr-only">Remove</span></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/50">
                     {lines.map((line, index) => {
                       const computed = computedLines[index];
                       const error = lineErrors[index];
+                      const fixed = line.unitPriceRupees.trim().length > 0;
+                      const billedPaise = fixed ? rupeesToPaise(line.unitPriceRupees) ?? 0 : 0;
+                      const overridden = line.savedUnitPricePaise !== undefined ? billedPaise !== line.savedUnitPricePaise : fixed;
+                      const purityLabel = purities?.find((p) => p._id === line.metalPurityId)?.label;
+                      const pieces = line.pieces ?? 1;
                       return (
-                        <tr key={line.key} className="hover:bg-muted/20">
-                          <td className="py-2.5 px-3 font-mono text-muted-foreground">{index + 1}</td>
-                          <td className="py-2.5 px-3">
+                        <tr key={line.key} className={`align-top hover:bg-muted/20 ${error ? "bg-destructive/5" : ""}`}>
+                          <td className="py-2.5 px-2 font-mono text-muted-foreground">{index + 1}</td>
+                          <td className="py-2.5 px-2 min-w-40">
                             <p className="font-semibold text-foreground">{line.label}</p>
                             <p className="text-[11px] text-muted-foreground">
                               {line.productName}
-                              {line.boxNumber ? ` · Box ${line.boxNumber}` : ""}
+                              {line.sku ? ` · ${line.sku}` : ""}
                             </p>
+                            {error && <p className="mt-1 max-w-56 text-[11px] font-medium text-destructive">{error}</p>}
                           </td>
-                          <td className="py-2.5 px-3">
-                            <Badge variant="outline" className="text-[10px] font-normal">
-                              {purities?.find((p) => p._id === line.metalPurityId)?.label || "Standard"}
-                            </Badge>
+                          <td className="py-2.5 px-2 font-semibold">{line.boxNumber ?? <span className="font-normal text-muted-foreground">{line.boxItemId ? "—" : "Item stock"}</span>}</td>
+                          <td className="py-2.5 px-2">
+                            {purityLabel ? (
+                              <Badge className="border-amber-500/30 bg-amber-500/10 text-[10px] font-semibold text-amber-700 dark:text-amber-300">{purityLabel}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </td>
-                          <td className="py-2.5 px-3 font-mono">
-                            {mgToGramsDisplay(line.grossWeightMg)}g
-                          </td>
-                          <td className="py-2.5 px-3 font-mono font-medium text-emerald-600">
+                          <td className="py-2.5 px-2 text-right font-mono">{mgToGramsDisplay(line.grossWeightMg)}g</td>
+                          <td className="py-2.5 px-2 text-right font-mono font-medium text-emerald-600">
                             {computed ? `${mgToGramsDisplay(computed.netWeightMg)}g` : "—"}
                           </td>
-                          <td className="py-2.5 px-3">
-                            <Input
-                              inputMode="decimal"
-                              placeholder="0"
-                              value={line.makingChargeRupees}
-                              onChange={(e) => updateLine(index, { makingChargeRupees: e.target.value })}
-                              className="h-8 w-20 text-xs text-right"
-                            />
+                          <td className="py-2.5 px-2 text-right font-mono text-muted-foreground">{mgToGramsDisplay(line.stoneWeightMg)}g</td>
+                          {showCost && (
+                            <td className="py-2.5 px-2 text-right font-mono text-muted-foreground">
+                              {line.purchasePricePaise !== undefined ? formatPaise(line.purchasePricePaise) : "—"}
+                            </td>
+                          )}
+                          <td className="py-2.5 px-2">
+                            {fixed || line.savedUnitPricePaise !== undefined ? (
+                              <div className="flex flex-col gap-1">
+                                <Input
+                                  aria-label={`Selling price for ${line.label}`}
+                                  inputMode="decimal"
+                                  placeholder="0.00"
+                                  value={line.unitPriceRupees}
+                                  disabled={!canOverride}
+                                  title={canOverride ? "Change the price for this bill (recorded in the audit log)" : "Only the Owner or an Admin can change a saved price"}
+                                  onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })}
+                                  className="h-8 w-28 text-xs font-mono text-right"
+                                />
+                                <span className="text-[10px] text-muted-foreground">per piece</span>
+                                {overridden && line.savedUnitPricePaise !== undefined && (
+                                  <span className="text-[10px] font-semibold text-amber-600">Changed from {formatPaise(line.savedUnitPricePaise)}</span>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="grid grid-cols-[auto_auto] items-center gap-x-1.5 gap-y-1">
+                                <span className="text-[10px] text-muted-foreground">Rate/g</span>
+                                <Input
+                                  aria-label={`Rate per gram for ${line.label}`}
+                                  inputMode="decimal"
+                                  placeholder="0.00"
+                                  value={line.ratePerGramRupees}
+                                  onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })}
+                                  className="h-7 w-24 text-xs font-mono text-right"
+                                />
+                                <span className="text-[10px] text-muted-foreground">Making ₹</span>
+                                <Input
+                                  aria-label={`Making charge for ${line.label}`}
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  value={line.makingChargeRupees}
+                                  onChange={(e) => updateLine(index, { makingChargeRupees: e.target.value })}
+                                  className="h-7 w-24 text-xs text-right"
+                                />
+                                <span className="text-[10px] text-muted-foreground">Wastage %</span>
+                                <Input
+                                  aria-label={`Wastage for ${line.label}`}
+                                  inputMode="decimal"
+                                  placeholder="0"
+                                  value={line.wastagePercent}
+                                  onChange={(e) => updateLine(index, { wastagePercent: e.target.value })}
+                                  className="h-7 w-24 text-xs text-right"
+                                />
+                              </div>
+                            )}
+                            {canOverride && line.savedUnitPricePaise === undefined && (
+                              <button
+                                type="button"
+                                className="mt-1 text-[10px] text-primary underline-offset-2 hover:underline"
+                                onClick={() => updateLine(index, { unitPriceRupees: fixed ? "" : computed ? (computed.taxableValuePaise / pieces / 100).toFixed(2) : "" })}
+                              >
+                                {fixed ? "Bill by rate/g" : "Set fixed price"}
+                              </button>
+                            )}
                           </td>
-                          <td className="py-2.5 px-3 font-medium">{line.pieces ?? 1} Pc</td>
-                          <td className="py-2.5 px-3">
-                            <Input
-                              inputMode="decimal"
-                              placeholder="0.00"
-                              value={line.ratePerGramRupees}
-                              onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })}
-                              className="h-8 w-24 text-xs font-mono text-right"
-                            />
-                          </td>
+                          <td className="py-2.5 px-2 text-center font-medium">{pieces}</td>
                           {isGst && (
-                            <td className="py-2.5 px-3">
+                            <td className="py-2.5 px-2">
                               <div className="flex items-center gap-1.5">
                                 <Select
                                   value={line.isManualTax ? "manual" : line.taxConfigurationId || "none"}
@@ -1366,7 +1522,7 @@ export default function NewBillPage() {
                                     }
                                   }}
                                 >
-                                  <SelectTrigger className="h-8 w-28 text-[11px]">
+                                  <SelectTrigger className="h-8 w-28 text-[11px]" aria-label={`GST for ${line.label}`}>
                                     <SelectValue placeholder="Tax" />
                                   </SelectTrigger>
                                   <SelectContent>
@@ -1390,16 +1546,20 @@ export default function NewBillPage() {
                                   />
                                 )}
                               </div>
+                              {computed && computed.lineTaxPaise > 0 && (
+                                <p className="mt-1 text-[10px] text-muted-foreground">{formatPaise(computed.lineTaxPaise)}</p>
+                              )}
                             </td>
                           )}
-                          <td className="py-2.5 px-3 text-right font-bold text-foreground tabular-nums">
+                          <td className="py-2.5 px-2 text-right font-bold text-foreground tabular-nums">
                             {computed ? formatPaise(computed.lineTotalPaise) : "₹ 0.00"}
                           </td>
-                          <td className="py-2.5 px-3 text-center">
+                          <td className="py-2.5 px-2 text-center">
                             <Button
                               type="button"
                               variant="ghost"
                               size="icon"
+                              aria-label={`Remove ${line.label}`}
                               className="h-7 w-7 text-destructive hover:bg-destructive/10"
                               onClick={() => removeLine(index)}
                             >
@@ -1670,6 +1830,15 @@ export default function NewBillPage() {
           {/* Right Column: Totals & Finalize Buttons (Page 17) */}
           <Card className="border-border/80 shadow-xs bg-muted/10">
             <CardContent className="p-4 sm:p-5 space-y-3">
+              {lines.length > 0 && (
+                <div className="flex justify-between text-xs text-muted-foreground pb-1 border-b">
+                  <span>Total Items & Weights</span>
+                  <span className="font-mono text-foreground font-medium text-right">
+                    {lines.reduce((s, l) => s + (l.pieces ?? 1), 0)} pcs · Gr {mgToGramsDisplay(lines.reduce((s, l) => s + l.grossWeightMg, 0))}g · St {mgToGramsDisplay(lines.reduce((s, l) => s + l.stoneWeightMg, 0))}g · Net {mgToGramsDisplay(computedLines.reduce((s, c) => s + (c?.netWeightMg ?? 0), 0))}g
+                  </span>
+                </div>
+              )}
+
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Subtotal (taxable value)</span>
                 <span className="font-mono">{formatPaise(totals.subtotalPaise)}</span>
@@ -1677,7 +1846,7 @@ export default function NewBillPage() {
 
               {totals.discountPaise > 0 && (
                 <div className="flex justify-between text-xs text-emerald-600">
-                  <span>Discount</span>
+                  <span>Discount (saved on original bill)</span>
                   <span className="font-mono">-{formatPaise(totals.discountPaise)}</span>
                 </div>
               )}
@@ -1711,6 +1880,13 @@ export default function NewBillPage() {
                   {formatPaise(totals.totalPaise)}
                 </span>
               </div>
+
+              {showCost && totals.marginPaise !== null && (
+                <div className="flex justify-between text-[11px] text-muted-foreground" title="Internal — selling value minus item purchase prices; not printed">
+                  <span>Estimated margin (internal)</span>
+                  <span className={`font-mono ${totals.marginPaise < 0 ? "text-rose-600" : "text-emerald-600"}`}>{formatPaise(totals.marginPaise)}</span>
+                </div>
+              )}
 
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Paid</span>

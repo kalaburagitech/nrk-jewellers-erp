@@ -12,6 +12,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { AppLockGate } from "@/components/app-lock-gate";
 import { PrivacyLockProvider } from "@/components/privacy-lock-context";
+import { Toaster } from "@/components/toaster";
 
 function CenteredState({ children }: { children: ReactNode }) {
   return (
@@ -94,6 +95,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
                 </div>
               ) : children}
             </main>
+            <Toaster />
           </SidebarInset>
         </SidebarProvider>
       </PrivacyLockProvider>

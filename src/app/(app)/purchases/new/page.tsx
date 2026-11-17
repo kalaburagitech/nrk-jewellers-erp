@@ -8,6 +8,8 @@ import { api } from "../../../../../convex/_generated/api";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { toast } from "@/components/toaster";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +32,7 @@ import { Separator } from "@/components/ui/separator";
 import { purchaseFormSchema, type PurchaseFormValues } from "@/lib/schemas/purchase";
 import { basisPointsOf, computePurchaseLine, gramsToMg } from "@/lib/jewelry-calc";
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
-import type { Id } from "../../../../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const PAYMENT_MODES = [
   { value: "cash", label: "Cash" },
@@ -51,6 +53,7 @@ function emptyLine() {
     grossWeightGrams: "",
     stoneWeightGrams: "",
     ratePerGramRupees: "",
+    unitPriceRupees: "",
     makingChargeRupees: "",
     stoneChargeRupees: "",
   };
@@ -89,6 +92,32 @@ export default function NewPurchasePage() {
   const createSupplier = useMutation(api.suppliers.create);
   const createProduct = useMutation(api.products.create);
   const createBox = useMutation(api.boxes.createNext);
+  const taxConfigs = useQuery(api.taxConfigurations.list);
+
+  /**
+   * Everything the item master already knows about a product, so picking it
+   * fills the line: box, purity, standard weights, saved purchase price, and
+   * (if the bill has no GST % yet) the item's GST rate.
+   */
+  function applyProductDefaults(index: number, product: Doc<"products">) {
+    const opts = { shouldDirty: true } as const;
+    form.setValue(`items.${index}.label`, product.name, opts);
+    form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", opts);
+    if (!gstCompany && product.defaultBoxId) form.setValue(`items.${index}.boxId`, product.defaultBoxId, opts);
+    if (product.grossWeightMg !== undefined) form.setValue(`items.${index}.grossWeightGrams`, (product.grossWeightMg / 1000).toFixed(3), opts);
+    if (product.stoneWeightMg !== undefined) form.setValue(`items.${index}.stoneWeightGrams`, (product.stoneWeightMg / 1000).toFixed(3), opts);
+    if (product.purchasePricePaise !== undefined) {
+      form.setValue(`items.${index}.unitPriceRupees`, (product.purchasePricePaise / 100).toFixed(2), opts);
+    } else {
+      form.setValue(`items.${index}.unitPriceRupees`, "", opts);
+      const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
+      if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), opts);
+    }
+    const tax = taxConfigs?.find((t) => t._id === product.taxConfigurationId);
+    if (tax && !form.getValues("gstPercent")) {
+      form.setValue("gstPercent", String((tax.cgstBasisPoints + tax.sgstBasisPoints + tax.igstBasisPoints) / 100), opts);
+    }
+  }
 
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [serverError, setServerError] = useState<string | null>(null);
@@ -134,7 +163,8 @@ export default function NewPurchasePage() {
         metalPurityId: item.metalPurityId ?? "",
         grossWeightGrams: (item.grossWeightMg / 1000).toFixed(3),
         stoneWeightGrams: (item.stoneWeightMg / 1000).toFixed(3),
-        ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
+        ratePerGramRupees: item.ratePerGramPaise ? (item.ratePerGramPaise / 100).toFixed(2) : "",
+        unitPriceRupees: item.unitPricePaise ? (item.unitPricePaise / 100).toFixed(2) : "",
         makingChargeRupees: (item.makingChargePaise / 100).toFixed(2),
         stoneChargeRupees: (item.stoneChargePaise / 100).toFixed(2),
       })),
@@ -157,6 +187,11 @@ export default function NewPurchasePage() {
   const [quickProductId, setQuickProductId] = useState("");
   const [quickBoxId, setQuickBoxId] = useState("");
   const [quickQuantity, setQuickQuantity] = useState("1");
+  function handleQuickProduct(productId: string) {
+    setQuickProductId(productId);
+    const product = products?.find((p) => p._id === productId);
+    if (product?.defaultBoxId && !gstCompany) setQuickBoxId(product.defaultBoxId);
+  }
   function handleQuickAdd() {
     const product = products?.find((p) => p._id === quickProductId);
     const prodName = product ? product.name : quickManualProductName.trim();
@@ -176,8 +211,13 @@ export default function NewPurchasePage() {
         label: `${prodName} ${existingCount + i + 1}`,
         metalPurityId: product?.metalPurityId ?? "",
         ratePerGramRupees: latestRate ? (latestRate / 100).toFixed(2) : "",
+        unitPriceRupees: product?.purchasePricePaise !== undefined ? (product.purchasePricePaise / 100).toFixed(2) : "",
+        grossWeightGrams: product?.grossWeightMg !== undefined ? (product.grossWeightMg / 1000).toFixed(3) : "",
+        stoneWeightGrams: product?.stoneWeightMg !== undefined ? (product.stoneWeightMg / 1000).toFixed(3) : "",
       })),
     );
+    const tax = taxConfigs?.find((t) => t._id === product?.taxConfigurationId);
+    if (tax && !form.getValues("gstPercent")) form.setValue("gstPercent", String((tax.cgstBasisPoints + tax.sgstBasisPoints + tax.igstBasisPoints) / 100));
     setQuickQuantity("1");
     if (quickIsManualProduct) {
       for (let k = existingCount; k < existingCount + quantity; k++) {
@@ -203,6 +243,8 @@ export default function NewPurchasePage() {
         ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
         makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
         stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
+        unitPricePaise: rupeesToPaise(item.unitPriceRupees || "0") ?? 0,
+        pieces: 1,
       }),
     );
     const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
@@ -251,6 +293,7 @@ export default function NewPurchasePage() {
         ratePerGramPaise: number;
         makingChargePaise: number;
         stoneChargePaise: number;
+        unitPricePaise?: number;
       }> = [];
 
       for (let i = 0; i < values.items.length; i++) {
@@ -322,6 +365,7 @@ export default function NewPurchasePage() {
           ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
           makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
           stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
+          unitPricePaise: (rupeesToPaise(item.unitPriceRupees || "0") ?? 0) || undefined,
         });
       }
 
@@ -337,6 +381,7 @@ export default function NewPurchasePage() {
           billDate: dateInputToTimestamp(values.billDate),
           items: resolvedItems,
         });
+        toast.success("Purchase updated — stock adjusted");
         router.push(`/purchases/invoices?updated=${editPurchaseId}`);
       } else {
         const result = await createPurchase({
@@ -348,6 +393,7 @@ export default function NewPurchasePage() {
           idempotencyKey,
           items: resolvedItems,
         });
+        toast.success(`Purchase saved · ${resolvedItems.length} item(s) added to stock`);
         router.push(`/purchases/invoices?created=${result.purchaseId}`);
       }
     } catch (e) {
@@ -522,7 +568,7 @@ export default function NewPurchasePage() {
                         onChange={(e) => setQuickManualProductName(e.target.value)}
                       />
                     ) : (
-                      <Select value={quickProductId} onValueChange={setQuickProductId}>
+                      <Select value={quickProductId} onValueChange={handleQuickProduct}>
                         <SelectTrigger className="w-full">
                           <SelectValue placeholder="Select product" />
                         </SelectTrigger>
@@ -661,11 +707,7 @@ export default function NewPurchasePage() {
                                     onValueChange={(productId) => {
                                       field.onChange(productId);
                                       const product = products?.find((item) => item._id === productId);
-                                      if (!product) return;
-                                      form.setValue(`items.${index}.label`, product.name, { shouldDirty: true });
-                                      form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", { shouldDirty: true });
-                                      const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
-                                      if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), { shouldDirty: true });
+                                      if (product) applyProductDefaults(index, product);
                                     }}
                                   >
                                     <FormControl>
@@ -676,7 +718,7 @@ export default function NewPurchasePage() {
                                     <SelectContent>
                                       {products?.map((p) => (
                                         <SelectItem key={p._id} value={p._id}>
-                                          {p.name}
+                                          {p.name}{p.sku ? ` · ${p.sku}` : ""}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
@@ -743,7 +785,7 @@ export default function NewPurchasePage() {
                                     <SelectContent className="max-h-64">
                                       {boxes?.map((b) => (
                                         <SelectItem key={b._id} value={b._id}>
-                                          Box {b.boxNumber}
+                                          Box {b.boxNumber}{b.label ? ` · ${b.label}` : ""}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
@@ -795,7 +837,20 @@ export default function NewPurchasePage() {
                           </FormItem>
                         )}
                       />
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
+                        <FormField
+                          control={form.control}
+                          name={`items.${index}.unitPriceRupees`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Purchase price (₹)</FormLabel>
+                              <FormControl>
+                                <Input {...field} inputMode="decimal" placeholder="Per piece" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                         <FormField
                           control={form.control}
                           name={`items.${index}.grossWeightGrams`}
@@ -829,7 +884,7 @@ export default function NewPurchasePage() {
                             <FormItem>
                               <FormLabel>Rate / g (₹)</FormLabel>
                               <FormControl>
-                                <Input {...field} inputMode="decimal" placeholder="0.00" />
+                                <Input {...field} inputMode="decimal" placeholder={Number(watchedItems?.[index]?.unitPriceRupees || "0") > 0 ? "Not needed" : "0.00"} disabled={Number(watchedItems?.[index]?.unitPriceRupees || "0") > 0} />
                               </FormControl>
                               <FormMessage />
                             </FormItem>
@@ -863,11 +918,23 @@ export default function NewPurchasePage() {
                         />
                       </div>
                       {line && (
-                        <p className="text-sm text-muted-foreground">
-                          Net weight {(line.netWeightMg / 1000).toFixed(3)}g · Metal value{" "}
-                          {formatPaise(line.metalValuePaise)} · Line total{" "}
-                          <span className="font-medium text-foreground">{formatPaise(line.lineTotalPaise)}</span>
-                        </p>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+                          {(() => {
+                            const purity = purities?.find((p) => p._id === watchedItems?.[index]?.metalPurityId)?.label;
+                            const box = boxes?.find((b) => b._id === watchedItems?.[index]?.boxId);
+                            return (
+                              <>
+                                {purity && <Badge className="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300">{purity}</Badge>}
+                                {box && <Badge variant="outline">Box {box.boxNumber}</Badge>}
+                              </>
+                            );
+                          })()}
+                          <span>
+                            Gross {(line.grossWeightMg / 1000).toFixed(3)}g · Stone {(line.stoneWeightMg / 1000).toFixed(3)}g · Net {(line.netWeightMg / 1000).toFixed(3)}g ·{" "}
+                            {Number(watchedItems?.[index]?.unitPriceRupees || "0") > 0 ? "Purchase price" : "Metal value"} {formatPaise(line.metalValuePaise)} · Line total{" "}
+                            <span className="font-medium text-foreground">{formatPaise(line.lineTotalPaise)}</span>
+                          </span>
+                        </div>
                       )}
                     </CardContent>
                   </Card>

@@ -33,6 +33,20 @@ export const GST_TYPE = v.union(
   v.literal("uin_holder"),
 );
 
+// Jewellery purity (karat) chosen on the item form. Resolved server-side to a
+// gold metalPurities row so rates, reports and invoices keep using metalPurityId.
+export const PURITY_KARAT = v.union(
+  v.literal("24K"),
+  v.literal("22K"),
+  v.literal("20K"),
+  v.literal("18K"),
+  v.literal("14K"),
+  v.literal("12K"),
+  v.literal("10K"),
+  v.literal("9K"),
+  v.literal("other"),
+);
+
 export default defineSchema({
   ...authTables,
 
@@ -216,6 +230,14 @@ export default defineSchema({
   }).index("by_org", ["organizationId"]),
 
   products: defineTable({
+    // Legacy pricing fields from an earlier build; kept so old rows validate. Superseded by
+    // sellingPricePaise / purchasePricePaise and not written any more.
+    openingAsOfMs: v.optional(v.number()),
+    salePricePaise: v.optional(v.number()),
+    salePriceIncludesTax: v.optional(v.boolean()),
+    purchasePriceIncludesTax: v.optional(v.boolean()),
+    saleDiscountMode: v.optional(v.string()),
+    saleDiscountValue: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     name: v.string(),
@@ -230,6 +252,24 @@ export default defineSchema({
     hsnCode: v.optional(v.string()),
     customFields: v.optional(v.record(v.string(), v.string())),
     reorderLevelMg: v.optional(v.number()),
+    // ---- Item master defaults (all optional; older items simply lack them) ----
+    purityKarat: v.optional(PURITY_KARAT),
+    purityOther: v.optional(v.string()), // free text when purityKarat is "other"
+    // Box this item is normally kept in (Daily Sales company). Pieces still live
+    // in boxItems; this is only the default for opening stock / purchases.
+    defaultBoxId: v.optional(v.id("boxes")),
+    // Standard per-piece weights, used to prefill purchase/sale lines.
+    grossWeightMg: v.optional(v.number()),
+    stoneWeightMg: v.optional(v.number()),
+    netWeightMg: v.optional(v.number()),
+    // Per-piece prices. Purchase price is internal cost — never printed on invoices.
+    purchasePricePaise: v.optional(v.number()),
+    sellingPricePaise: v.optional(v.number()),
+    makingChargePaise: v.optional(v.number()),
+    wastageBasisPoints: v.optional(v.number()),
+    // Item-level GST rate (CGST/SGST/IGST split comes from the configuration + place of supply).
+    taxConfigurationId: v.optional(v.id("taxConfigurations")),
+    openingStockPieces: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
   })
@@ -238,12 +278,15 @@ export default defineSchema({
 
   // ---------- GST item stock ----------
   // GST companies don't use boxes: stock is kept per item (product) as a
-  // running weight + piece balance. Every change is also written to
+  // running gross, stone, and net weight + piece balance. Every change is also written to
   // stockMovements (with no boxId) for history. See convex/lib/itemStock.ts.
   productStock: defineTable({
     organizationId: v.id("organizations"),
     productId: v.id("products"),
-    weightMg: v.number(),
+    grossWeightMg: v.optional(v.number()),
+    stoneWeightMg: v.optional(v.number()),
+    netWeightMg: v.optional(v.number()),
+    weightMg: v.number(), // kept in sync with netWeightMg for backwards compatibility
     pieces: v.number(),
     updatedAt: v.number(),
   })
@@ -255,7 +298,10 @@ export default defineSchema({
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     boxNumber: v.number(), // 101-200 seeded, unlimited thereafter
-    label: v.optional(v.string()),
+    label: v.optional(v.string()), // Box Name, e.g. "Ring Box"
+    category: v.optional(v.string()), // Ring, Chain, Necklace, Bangle, Bracelet, Earring, Pendant, General
+    boxType: v.optional(v.string()), // Display tray, Storage box, Locker...
+    description: v.optional(v.string()),
     // Maintained counter of in_stock boxItems, updated by every mutation
     // that adds/removes an item — avoids an N+1 count query per box on the
     // overview grid.
@@ -299,6 +345,8 @@ export default defineSchema({
     // transfers and sales remain attributable after the item changes boxes.
     boxId: v.optional(v.id("boxes")),
     direction: v.union(v.literal("in"), v.literal("out")),
+    grossWeightMg: v.optional(v.number()),
+    stoneWeightMg: v.optional(v.number()),
     netWeightMg: v.number(),
     quantity: v.number(),
     sourceTable: v.string(), // purchases, sales, stock_adjustments, box_transfers, etc.
@@ -351,6 +399,8 @@ export default defineSchema({
 
   // ---------- Purchases ----------
   purchases: defineTable({
+    /** Legacy field from an earlier build; kept so old rows validate. */
+    roundOffPaise: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     branchId: v.id("branches"),
@@ -366,6 +416,8 @@ export default defineSchema({
     taxPaise: v.number(),
     totalPaise: v.number(),
     amountPaidPaise: v.number(),
+    // Supplier state differs from the company state → input tax is IGST, else CGST+SGST.
+    isInterState: v.optional(v.boolean()),
     idempotencyKey: v.string(),
     createdByUserId: v.id("users"),
     createdAt: v.number(),
@@ -379,6 +431,8 @@ export default defineSchema({
     .index("by_org_and_time", ["organizationId", "createdAt"]),
 
   purchaseItems: defineTable({
+    /** Legacy field from an earlier build; kept so old rows validate. */
+    stockWeightMg: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     purchaseId: v.id("purchases"),
@@ -397,6 +451,9 @@ export default defineSchema({
     makingChargePaise: v.number(),
     stoneChargePaise: v.number(),
     lineTotalPaise: v.number(),
+    // Fixed purchase price per piece (item master price). When set, the line is
+    // priced unitPrice × pieces + making + stone charge instead of rate/gram.
+    unitPricePaise: v.optional(v.number()),
     // GST company line: added to item stock (productStock) instead of a box.
     toItemStock: v.optional(v.boolean()),
     pieces: v.optional(v.number()),
@@ -425,6 +482,9 @@ export default defineSchema({
     oldItemDeductionPaise: v.optional(v.number()),
     // What the old item deduction was for (e.g. "old ring"), printed beside the amount.
     oldItemDeductionNote: v.optional(v.string()),
+    // Place of supply chosen on the bill. Differs from the company state → IGST.
+    stateOfSupply: v.optional(v.string()),
+    isInterState: v.optional(v.boolean()),
     taxPaise: v.number(),
     roundOffPaise: v.number(),
     totalPaise: v.number(),
@@ -442,6 +502,8 @@ export default defineSchema({
     .index("by_org_and_time", ["organizationId", "createdAt"]),
 
   saleItems: defineTable({
+    /** Legacy field from an earlier build; kept so old rows validate. */
+    lineDiscountPaise: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     saleId: v.id("sales"),
@@ -458,9 +520,22 @@ export default defineSchema({
     stoneChargePaise: v.number(),
     taxConfigurationId: v.optional(v.id("taxConfigurations")),
     lineTaxPaise: v.number(),
+    // Snapshot of the GST split for this line (absent on lines saved before the split was stored).
+    lineCgstPaise: v.optional(v.number()),
+    lineSgstPaise: v.optional(v.number()),
+    lineIgstPaise: v.optional(v.number()),
+    hsnCode: v.optional(v.string()),
     lineTotalPaise: v.number(),
+    // Fixed selling price per piece. When set, the line is priced
+    // unitPrice × pieces + making + stone charge instead of rate/gram.
+    unitPricePaise: v.optional(v.number()),
+    // Internal cost snapshot for profit reports. Never printed on invoices or sent to non-authorised roles.
+    purchasePricePaise: v.optional(v.number()),
+    priceOverridden: v.optional(v.boolean()),
     // GST company line: typed in manually and deducted from item stock (productStock), not a box piece.
     fromItemStock: v.optional(v.boolean()),
+    /** Legacy (earlier GST item-stock build): weight taken from item stock. Kept so old rows stay valid; not written any more. */
+    stockWeightMg: v.optional(v.number()),
     pieces: v.optional(v.number()),
   }).index("by_sale", ["saleId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 

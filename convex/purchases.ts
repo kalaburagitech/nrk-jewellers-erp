@@ -3,7 +3,7 @@ import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
 import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
-import { computePurchaseLine, basisPointsOf } from "../src/lib/jewelry-calc";
+import { computePurchaseLine, basisPointsOf, isInterStateSupply } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 import { changeItemStock, isGstCompany } from "./lib/itemStock";
 import { assertBookingYearOpen } from "./lib/accountingYears";
@@ -192,6 +192,8 @@ const purchaseLineValidator = v.object({
   ratePerGramPaise: v.number(),
   makingChargePaise: v.number(),
   stoneChargePaise: v.number(),
+  // Fixed purchase price per piece (item master). Replaces rate/gram when set.
+  unitPricePaise: v.optional(v.number()),
 });
 
 type PurchaseTransactionArgs = {
@@ -207,6 +209,7 @@ type PurchaseTransactionArgs = {
     ratePerGramPaise: number;
     makingChargePaise: number;
     stoneChargePaise: number;
+    unitPricePaise?: number;
   }>;
   gstBasisPoints: number;
   amountPaidPaise: number;
@@ -238,7 +241,10 @@ async function applyPurchaseTransaction(
     if (item.stoneWeightMg < 0 || item.stoneWeightMg > item.grossWeightMg) {
       throw new Error("Stone weight must be between 0 and gross weight");
     }
-    if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
+    const unitPricePaise = item.unitPricePaise ?? 0;
+    if (!Number.isSafeInteger(unitPricePaise) || unitPricePaise < 0) throw new Error("Purchase price must be a valid amount of zero or more");
+    if (unitPricePaise === 0 && item.ratePerGramPaise <= 0) throw new Error("Enter the purchase price or the rate per gram for every item");
+    if (item.ratePerGramPaise < 0) throw new Error("Rate per gram cannot be negative");
     if (gstCompany) {
       if (item.boxId) throw new Error("GST company purchases go into item stock, not boxes.");
       if (item.pieces !== undefined && (!Number.isSafeInteger(item.pieces) || item.pieces < 1)) throw new Error("Pieces must be 1 or more");
@@ -256,7 +262,12 @@ async function applyPurchaseTransaction(
     throw new Error("GST % must be between 0 and 100");
   }
 
-  const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
+  const computedLines = args.items.map((item) => ({
+    item,
+    computed: computePurchaseLine({ ...item, pieces: item.boxId ? 1 : (item.pieces ?? 1) }),
+  }));
+  const company = await ctx.db.get(auth.organizationId);
+  const isInterState = args.gstBasisPoints > 0 && isInterStateSupply(company?.state, supplier.state);
   const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
   const taxPaise = basisPointsOf(subtotalPaise, args.gstBasisPoints);
   const totalPaise = subtotalPaise + taxPaise;
@@ -274,6 +285,7 @@ async function applyPurchaseTransaction(
     taxPaise,
     totalPaise,
     amountPaidPaise: args.amountPaidPaise,
+    isInterState: args.gstBasisPoints > 0 ? isInterState : undefined,
     createdAt: billDate,
   });
 
@@ -294,10 +306,21 @@ async function applyPurchaseTransaction(
         makingChargePaise: item.makingChargePaise,
         stoneChargePaise: item.stoneChargePaise,
         lineTotalPaise: computed.lineTotalPaise,
+        unitPricePaise: item.unitPricePaise || undefined,
         toItemStock: true,
         pieces,
       });
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: computed.netWeightMg, piecesDelta: pieces, sourceTable: "purchases", sourceId: purchaseId, at: billDate });
+      await changeItemStock(ctx, {
+        organizationId: auth.organizationId,
+        productId: item.productId,
+        grossWeightDeltaMg: item.grossWeightMg,
+        stoneWeightDeltaMg: item.stoneWeightMg,
+        netWeightDeltaMg: computed.netWeightMg,
+        piecesDelta: pieces,
+        sourceTable: "purchases",
+        sourceId: purchaseId,
+        at: billDate,
+      });
       continue;
     }
     boxItemDeltas.set(item.boxId, (boxItemDeltas.get(item.boxId) ?? 0) + 1);
@@ -328,6 +351,7 @@ async function applyPurchaseTransaction(
       makingChargePaise: item.makingChargePaise,
       stoneChargePaise: item.stoneChargePaise,
       lineTotalPaise: computed.lineTotalPaise,
+      unitPricePaise: item.unitPricePaise || undefined,
     });
 
     await ctx.db.insert("stockMovements", {
@@ -336,6 +360,8 @@ async function applyPurchaseTransaction(
       boxItemId,
       boxId: item.boxId,
       direction: "in",
+      grossWeightMg: item.grossWeightMg,
+      stoneWeightMg: item.stoneWeightMg,
       netWeightMg: computed.netWeightMg,
       quantity: 1,
       sourceTable: "purchases",
@@ -399,7 +425,17 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
   for (const item of purchaseItems) {
     if (item.toItemStock) {
       // Throws if those grams were already sold — sell-side must be reversed first.
-      await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: -item.netWeightMg, piecesDelta: -(item.pieces ?? 1), sourceTable: "purchases", sourceId: purchase._id, at: Date.now() });
+      await changeItemStock(ctx, {
+        organizationId: auth.organizationId,
+        productId: item.productId,
+        grossWeightDeltaMg: -item.grossWeightMg,
+        stoneWeightDeltaMg: -item.stoneWeightMg,
+        netWeightDeltaMg: -item.netWeightMg,
+        piecesDelta: -(item.pieces ?? 1),
+        sourceTable: "purchases",
+        sourceId: purchase._id,
+        at: Date.now(),
+      });
     }
     if (item.boxItemId && item.boxId) {
       await ctx.db.patch(item.boxItemId, { deletedAt: Date.now(), status: "written_off" });
@@ -409,6 +445,8 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
         productId: item.productId,
         boxId: item.boxId,
         direction: "out",
+        grossWeightMg: item.grossWeightMg,
+        stoneWeightMg: item.stoneWeightMg,
         netWeightMg: item.netWeightMg,
         quantity: 1,
         sourceTable: "purchases",
@@ -603,7 +641,20 @@ export const cancel = mutation({
         const box = await ctx.db.get(stock.boxId);
         await ctx.db.patch(stock._id, { status: "in_stock" });
         if (box) await ctx.db.patch(box._id, { itemCount: (box.itemCount ?? 0) + 1 });
-        await ctx.db.insert("stockMovements", { organizationId: auth.organizationId, productId: stock.productId, boxItemId: stock._id, boxId: stock.boxId, direction: "in", netWeightMg: stock.netWeightMg, quantity: 1, sourceTable: "purchases", sourceId: purchase._id, createdAt: Date.now() });
+        await ctx.db.insert("stockMovements", {
+          organizationId: auth.organizationId,
+          productId: stock.productId,
+          boxItemId: stock._id,
+          boxId: stock.boxId,
+          direction: "in",
+          grossWeightMg: stock.grossWeightMg,
+          stoneWeightMg: stock.stoneWeightMg,
+          netWeightMg: stock.netWeightMg,
+          quantity: 1,
+          sourceTable: "purchases",
+          sourceId: purchase._id,
+          createdAt: Date.now(),
+        });
       }
       const supplier = await ctx.db.get(purchase.supplierId);
       if (!supplier) throw new Error("Supplier not found");
@@ -911,6 +962,8 @@ export const createPurchaseReturn = mutation({
         boxItemId: boxItem._id,
         boxId: boxItem.boxId,
         direction: "out",
+        grossWeightMg: purchaseItem.grossWeightMg,
+        stoneWeightMg: purchaseItem.stoneWeightMg,
         netWeightMg: purchaseItem.netWeightMg,
         quantity: 1,
         sourceTable: "purchases",

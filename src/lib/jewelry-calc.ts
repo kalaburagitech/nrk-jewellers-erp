@@ -35,6 +35,9 @@ export type PurchaseLineInput = {
   ratePerGramPaise: number;
   makingChargePaise: number;
   stoneChargePaise: number;
+  /** Fixed purchase price per piece. When > 0 it replaces the rate/gram metal value. */
+  unitPricePaise?: number;
+  pieces?: number;
 };
 
 export type PurchaseLineResult = PurchaseLineInput & {
@@ -45,7 +48,10 @@ export type PurchaseLineResult = PurchaseLineInput & {
 
 export function computePurchaseLine(input: PurchaseLineInput): PurchaseLineResult {
   const net = netWeightMg(input.grossWeightMg, input.stoneWeightMg);
-  const metalValue = metalValuePaise(net, input.ratePerGramPaise);
+  const metalValue =
+    input.unitPricePaise && input.unitPricePaise > 0
+      ? input.unitPricePaise * Math.max(1, input.pieces ?? 1)
+      : metalValuePaise(net, input.ratePerGramPaise);
   return {
     ...input,
     netWeightMg: net,
@@ -74,6 +80,13 @@ export type SaleLineInput = {
   makingChargePaise: number;
   stoneChargePaise: number;
   gstBasisPoints: number; // 0 for a non-GST bill
+  /**
+   * Fixed selling price per piece (item master "Selling Price"). When > 0 the
+   * line is priced unitPrice × pieces instead of net weight × rate/gram, and
+   * wastage (a % of metal value) does not apply. Making/stone charges still add.
+   */
+  unitPricePaise?: number;
+  pieces?: number;
 };
 
 export type SaleLineResult = SaleLineInput & {
@@ -88,8 +101,11 @@ export type SaleLineResult = SaleLineInput & {
 export function computeSaleLine(input: SaleLineInput): SaleLineResult {
   const availableNetMg = input.stockNetWeightMg ?? netWeightMg(input.grossWeightMg, input.stoneWeightMg);
   const net = Math.max(0, availableNetMg - input.otherDeductionMg);
-  const metalValue = metalValuePaise(net, input.ratePerGramPaise);
-  const wastageValue = basisPointsOf(metalValue, input.wastageBasisPoints);
+  const fixedPrice = Boolean(input.unitPricePaise && input.unitPricePaise > 0);
+  const metalValue = fixedPrice
+    ? input.unitPricePaise! * Math.max(1, input.pieces ?? 1)
+    : metalValuePaise(net, input.ratePerGramPaise);
+  const wastageValue = fixedPrice ? 0 : basisPointsOf(metalValue, input.wastageBasisPoints);
   const taxableValue = metalValue + wastageValue + input.makingChargePaise + input.stoneChargePaise;
   const tax = basisPointsOf(taxableValue, input.gstBasisPoints);
   return {
@@ -134,4 +150,44 @@ export function computeOldGoldExchange(input: OldGoldExchangeInput): OldGoldExch
     netWeightMg: net,
     exchangeValuePaise: metalValuePaise(net, input.ratePerGramPaise),
   };
+}
+
+/**
+ * Splits a line's GST into CGST/SGST (intra-state) or IGST (inter-state).
+ * The rate itself always comes from the item's tax configuration — only the
+ * split depends on the place of supply. Rounding residue goes to SGST so
+ * cgst + sgst always equals the tax exactly.
+ */
+export function splitGst(taxPaise: number, isInterState: boolean): { cgstPaise: number; sgstPaise: number; igstPaise: number } {
+  if (isInterState) return { cgstPaise: 0, sgstPaise: 0, igstPaise: taxPaise };
+  const cgstPaise = Math.floor(taxPaise / 2);
+  return { cgstPaise, sgstPaise: taxPaise - cgstPaise, igstPaise: 0 };
+}
+
+/** True when both states are known and differ (case/space-insensitive). Unknown state → intra-state. */
+export function isInterStateSupply(companyState: string | undefined, placeOfSupply: string | undefined): boolean {
+  const a = companyState?.trim().toLowerCase();
+  const b = placeOfSupply?.trim().toLowerCase();
+  return Boolean(a && b && a !== b);
+}
+
+/** Standard BIS hallmark fineness (basis points) for each karat on the item form. */
+export const KARAT_FINENESS_BP: Record<string, number> = {
+  "24K": 9990,
+  "22K": 9160,
+  "20K": 8330,
+  "18K": 7500,
+  "14K": 5850,
+  "12K": 5000,
+  "10K": 4170,
+  "9K": 3750,
+};
+
+export const PURITY_KARAT_OPTIONS = ["24K", "22K", "20K", "18K", "14K", "12K", "10K", "9K", "other"] as const;
+export type PurityKarat = (typeof PURITY_KARAT_OPTIONS)[number];
+
+export function purityKaratLabel(karat: string | undefined, other?: string): string | undefined {
+  if (!karat) return undefined;
+  if (karat === "other") return other?.trim() || "Other";
+  return `${karat.replace("K", "")} Karat (${karat})`;
 }

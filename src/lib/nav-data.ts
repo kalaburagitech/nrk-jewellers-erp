@@ -40,7 +40,7 @@ export const NAV_SECTIONS: NavSection[] = [
   ] },
   { title: "Items", icon: PackageSearch, href: "/inventory/products", items: [
     { title: "Item List", href: "/inventory/products" },
-    { title: "Stock (Daily / GST)", href: "/inventory/stock" },
+    { title: "GST Item Stock", href: "/inventory/stock" },
     { title: "Stock Groups", href: "/inventory/groups" },
     { title: "Stock Categories", href: "/inventory/categories" },
   ] },
@@ -98,6 +98,16 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: "GST",
+    icon: Landmark,
+    href: "/gst",
+    items: [
+      { title: "GST Dashboard & Reports", href: "/gst" },
+      { title: "GST Item Stock", href: "/inventory/stock" },
+      { title: "GST Rates & HSN", href: "/settings/gst" },
+    ],
+  },
+  {
     title: "Reports",
     icon: BarChart3,
     href: "/reports",
@@ -106,7 +116,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Purchase Reports", href: "/reports/purchases" },
       { title: "Stock Reports", href: "/reports/stock" },
       { title: "Box Reports", href: "/reports/boxes" },
-      { title: "GST Reports", href: "/reports/gst" },
+      { title: "GST Reports", href: "/gst" },
       { title: "Customer Reports", href: "/reports/customers" },
       { title: "Profitability Reports", href: "/reports/profitability" },
     ],

@@ -35,22 +35,23 @@ const bill = { discountMode: "none" as const, discountValue: 0, payments: [] };
 describe("GST item stock", () => {
   it("adds stock by hand, sells a manual line from it, and restores it on cancel", async () => {
     const f = await fixture("gst");
-    await f.owner.mutation(api.itemStock.adjust, { productId: f.product, direction: "in", weightMg: 10000, pieces: 2, reason: "Opening" });
+    // Gross, stone and net are separate balances: stock in 10g gross with 0.5g stone (9.5g net).
+    await f.owner.mutation(api.itemStock.adjust, { productId: f.product, direction: "in", grossWeightMg: 10000, stoneWeightMg: 500, pieces: 2, reason: "Opening" });
     const { saleId } = await f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "gst-1",
       items: [{ ...line, productId: f.product, grossWeightMg: 4000, stoneWeightMg: 500, pieces: 1 }],
     });
     let stock = await f.owner.query(api.itemStock.list, {});
-    expect(stock[0]).toMatchObject({ weightMg: 6500, pieces: 1 });
+    expect(stock[0]).toMatchObject({ grossWeightMg: 6000, stoneWeightMg: 0, netWeightMg: 6000, weightMg: 6000, pieces: 1 });
 
     await expect(f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "gst-2",
       items: [{ ...line, productId: f.product, grossWeightMg: 9000, stoneWeightMg: 0, pieces: 1 }],
-    })).rejects.toThrow(/Not enough GST stock/);
+    })).rejects.toThrow(/Not enough Gross Stock/);
 
     await f.owner.mutation(api.sales.cancel, { saleId, reason: "Mistake" });
     stock = await f.owner.query(api.itemStock.list, {});
-    expect(stock[0]).toMatchObject({ weightMg: 10000, pieces: 2 });
+    expect(stock[0]).toMatchObject({ grossWeightMg: 10000, stoneWeightMg: 500, netWeightMg: 9500, pieces: 2 });
   });
 
   it("keeps boxes out of GST bills and manual lines out of Daily Sales bills", async () => {

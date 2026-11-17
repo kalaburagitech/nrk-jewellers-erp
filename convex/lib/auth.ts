@@ -91,3 +91,18 @@ export function requireRole(auth: AuthContext, allowed: Role[]) {
 export function roleAtLeast(role: Role, min: Role) {
   return ROLE_RANK[role] >= ROLE_RANK[min];
 }
+
+/**
+ * Who may see internal purchase cost (item purchase price, sale-line cost
+ * snapshot, profit). Billing counter staff and view-only staff never see it,
+ * so it can't leak onto a customer-facing screen.
+ */
+export const COST_VIEW_ROLES: Role[] = ["owner", "admin", "accountant", "purchase_manager", "inventory_manager"];
+export function canViewCost(role: Role) {
+  return COST_VIEW_ROLES.includes(role);
+}
+
+/** Who may bill an item at a price different from its saved selling price. Every override is audit-logged. */
+export function canOverridePrice(role: Role) {
+  return role === "owner" || role === "admin";
+}

@@ -114,11 +114,11 @@ function SaleDetailDialog({
                 className="flex items-center justify-between border-b pb-2 text-sm"
               >
                 <div>
-                  <p className="font-medium">Jewellery Item · {mgToGramsDisplay(i.netWeightMg)}g</p>
+                  <p className="font-medium">
+                    Jewellery Item · {i.pieces ?? 1} Pc · Net: {mgToGramsDisplay(i.netWeightMg)}g
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    Gross {mgToGramsDisplay(i.grossWeightMg)}g
-                    {i.stoneWeightMg ? ` (${mgToGramsDisplay(i.stoneWeightMg)}g stone)` : ""} @{" "}
-                    {formatPaise(i.ratePerGramPaise)}/g
+                    Gross Wt: {mgToGramsDisplay(i.grossWeightMg)}g · Stone Wt: {mgToGramsDisplay(i.stoneWeightMg)}g · Net Wt: {mgToGramsDisplay(i.netWeightMg)}g · {i.unitPricePaise ? `Price: ${formatPaise(i.unitPricePaise)}/pc` : `Rate: ${formatPaise(i.ratePerGramPaise)}/g`} · Making: {formatPaise(i.makingChargePaise)}
                   </p>
                 </div>
                 <p className="font-medium">{formatPaise(i.lineTotalPaise)}</p>
