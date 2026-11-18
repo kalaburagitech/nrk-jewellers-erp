@@ -35,6 +35,7 @@ import type * as lib_accountingYears from "../lib/accountingYears.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_customFieldValues from "../lib/customFieldValues.js";
 import type * as lib_itemStock from "../lib/itemStock.js";
+import type * as lib_purity from "../lib/purity.js";
 import type * as lib_sequences from "../lib/sequences.js";
 import type * as memberships from "../memberships.js";
 import type * as metalPurities from "../metalPurities.js";
@@ -88,6 +89,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/customFieldValues": typeof lib_customFieldValues;
   "lib/itemStock": typeof lib_itemStock;
+  "lib/purity": typeof lib_purity;
   "lib/sequences": typeof lib_sequences;
   memberships: typeof memberships;
   metalPurities: typeof metalPurities;
