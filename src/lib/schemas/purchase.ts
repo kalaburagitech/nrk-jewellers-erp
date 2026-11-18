@@ -26,10 +26,16 @@ export const purchaseLineFormSchema = z
     metalPurityId: z.string().optional(),
     grossWeightGrams: positiveNumberString("Gross weight is required"),
     stoneWeightGrams: nonNegativeNumberString("Invalid stone weight"),
-    ratePerGramRupees: positiveNumberString("Rate per gram is required"),
+    // Either a rate per gram or a fixed purchase price per piece.
+    ratePerGramRupees: nonNegativeNumberString("Invalid rate per gram"),
+    unitPriceRupees: nonNegativeNumberString("Invalid purchase price"),
     makingChargeRupees: nonNegativeNumberString("Invalid making charge"),
     stoneChargeRupees: nonNegativeNumberString("Invalid stone charge"),
     discountRupees: nonNegativeNumberString("Invalid discount").optional(),
+  })
+  .refine((data) => Number(data.ratePerGramRupees || "0") > 0 || Number(data.unitPriceRupees || "0") > 0, {
+    message: "Enter the rate per gram or the purchase price per piece",
+    path: ["ratePerGramRupees"],
   })
   .refine((data) => Boolean(data.productId || data.manualProductName?.trim()), {
     message: "Select or type a product name",

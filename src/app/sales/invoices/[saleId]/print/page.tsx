@@ -459,6 +459,11 @@ export default function PrintInvoicePage({
                     </td>
                     <td className="border border-[#655c36] px-1 py-2">
                       {item.label}
+                      {(item.boxNumber || item.hsnCode) && (
+                        <span className="block text-[10px] text-[#655c36]">
+                          {[item.boxNumber ? `Box ${item.boxNumber}` : "", item.hsnCode ? `HSN ${item.hsnCode}` : ""].filter(Boolean).join(" · ")}
+                        </span>
+                      )}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2">
                       {item.purityLabel ?? "—"}
@@ -470,7 +475,7 @@ export default function PrintInvoicePage({
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                      {formatPaise(item.ratePerGramPaise)}
+                      {item.unitPricePaise ? `${formatPaise(item.unitPricePaise)}/pc` : formatPaise(item.ratePerGramPaise)}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
                       {formatPaise(item.makingChargePaise)}
@@ -667,7 +672,7 @@ export default function PrintInvoicePage({
                       {mgToGramsDisplay(item.netWeightMg)}
                     </td>
                     <td className="py-1 text-right">
-                      {formatPaise(item.ratePerGramPaise)}
+                      {item.unitPricePaise ? `${formatPaise(item.unitPricePaise)}/pc` : formatPaise(item.ratePerGramPaise)}
                     </td>
                     {template !== "thermal" && (
                       <td className="py-1 text-right">

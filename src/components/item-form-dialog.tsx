@@ -17,6 +17,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CustomFieldInputs } from "@/components/custom-field-inputs";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { paiseToRupeesInput, rupeesToPaise } from "@/lib/money";
+import { PURITY_KARATS, type PurityKarat } from "@/lib/jewelry-calc";
+import { toast } from "@/components/toaster";
+
+const OTHER_PURITY = "OTHER";
+const karatValue = (k: string) => `karat:${k}`;
+/** Purity select value for an existing item: a standard karat, another purity row, "Other" text, or none. */
+function purityValue(product: Doc<"products"> | undefined, purities: Doc<"metalPurities">[] | undefined) {
+  if (product?.metalPurityId) {
+    const purity = purities?.find((p) => p._id === product.metalPurityId);
+    const label = purity?.label.replace(/\s+/g, "").toUpperCase();
+    if (purity?.metal === "gold" && label && (PURITY_KARATS as string[]).includes(label)) return karatValue(label);
+    return product.metalPurityId;
+  }
+  return product?.purityOther ? OTHER_PURITY : NONE;
+}
 
 const UNITS = [
   { value: "gram", label: "Gram (g)" },
@@ -50,7 +65,7 @@ const toMg = (s: string) => (s.trim() === "" ? undefined : Number.isFinite(Numbe
 const toInt = (s: string) => (s.trim() === "" ? undefined : Number.isInteger(Number(s)) && Number(s) >= 0 ? Number(s) : Number.NaN);
 const today = () => new Date().toISOString().slice(0, 10);
 
-function blank(product?: Doc<"products">, defaultUnit: Unit = "piece") {
+function blank(product?: Doc<"products">, defaultUnit: Unit = "piece", purities?: Doc<"metalPurities">[]) {
   return {
     itemType: product?.itemType ?? ("product" as "product" | "service"),
     name: product?.name ?? "",
@@ -59,7 +74,11 @@ function blank(product?: Doc<"products">, defaultUnit: Unit = "piece") {
     sku: product?.sku ?? "",
     stockCategoryId: product?.stockCategoryId ?? NONE,
     stockGroupId: product?.stockGroupId ?? NONE,
-    metalPurityId: product?.metalPurityId ?? NONE,
+    purity: purityValue(product, purities),
+    purityOther: product?.purityOther ?? "",
+    defaultBoxId: product?.defaultBoxId ?? NONE,
+    stoneWeight: grams(product?.stoneWeightMg),
+    wastage: product?.wastageBasisPoints === undefined ? "" : String(product.wastageBasisPoints / 100),
     description: product?.description ?? "",
     grossWeight: grams(product?.grossWeightMg),
     netWeight: grams(product?.netWeightMg),
@@ -102,12 +121,15 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const products = useQuery(api.products.list);
   const access = useQuery(api.organizations.getMyAccess);
   const details = useQuery(api.products.details, product ? { id: product._id } : "skip");
+  const boxes = useQuery(api.boxes.list);
+  const pricing = useQuery(api.products.myPricingAccess);
+  const showCost = pricing?.canViewCost ?? false;
   const isGstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
 
   const isEdit = !!product;
   const defaultUnit = useQuery(api.appPreferences.get)?.items.defaultUnit ?? "piece";
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState(() => blank(product, defaultUnit));
+  const [f, setF] = useState(() => blank(product, defaultUnit, purities));
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -115,9 +137,16 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const [tab, setTab] = useState("pricing");
   const set = <K extends keyof typeof f>(key: K, value: (typeof f)[K]) => setF((prev) => ({ ...prev, [key]: value }));
   const isService = f.itemType === "service";
+  const otherPurities = (purities ?? []).filter((p) => !(p.metal === "gold" && (PURITY_KARATS as string[]).includes(p.label.replace(/\s+/g, "").toUpperCase())));
+  // Net weight follows gross − stone until it's typed in.
+  const autoNet = (() => {
+    const g = Number(f.grossWeight);
+    const st = Number(f.stoneWeight || "0");
+    return f.grossWeight.trim() && Number.isFinite(g) && Number.isFinite(st) && g >= st ? String(Number((g - st).toFixed(3))) : "";
+  })();
 
   function reset() {
-    setF(blank(product, defaultUnit));
+    setF(blank(product, defaultUnit, purities));
     setImagePreview(null);
     setError(null);
     setTab("pricing");
@@ -155,18 +184,26 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
     if (!f.name.trim()) return setError("Item name is required.");
     const discount =
       f.discount.trim() === "" ? undefined : f.discountMode === "amount" ? toPaise(f.discount) : Math.round(Number(f.discount) * 100);
+    const wastage = f.wastage.trim() === "" ? undefined : Number(f.wastage);
+    if (wastage !== undefined && (!Number.isFinite(wastage) || wastage < 0 || wastage > 100)) return setError("Wastage must be between 0 and 100%.");
+    if (f.purity === OTHER_PURITY && !f.purityOther.trim()) return setError("Type the purity, or choose one from the list.");
     const numbers = {
       grossWeightMg: toMg(f.grossWeight),
-      netWeightMg: toMg(f.netWeight),
+      stoneWeightMg: toMg(f.stoneWeight),
+      netWeightMg: toMg(f.netWeight.trim() ? f.netWeight : autoNet),
       makingChargePaise: toPaise(f.making),
       salePricePaise: toPaise(f.salePrice),
       saleDiscountValue: discount,
       wholesalePricePaise: f.showWholesale ? toPaise(f.wholesalePrice) : undefined,
       wholesaleMinQty: f.showWholesale ? toInt(f.wholesaleMinQty) : undefined,
-      purchasePricePaise: toPaise(f.purchasePrice),
+      purchasePricePaise: showCost ? toPaise(f.purchasePrice) : undefined,
       openingAtPricePaise: toPaise(f.atPrice),
       reorderLevelMg: toMg(f.minStock),
+      wastageBasisPoints: wastage === undefined ? undefined : Math.round(wastage * 100),
     };
+    const { grossWeightMg: g, stoneWeightMg: st = 0, netWeightMg: n } = numbers;
+    if (g !== undefined && Number.isFinite(g) && Number.isFinite(st) && st > g) return setError("Stone weight cannot be more than gross weight.");
+    if (g !== undefined && n !== undefined && Number.isFinite(n) && n > g - st) return setError("Net weight cannot be more than gross weight minus stone weight.");
     const opening = { openingWeightMg: toMg(f.openingWeight), openingPieces: toInt(f.openingPieces) };
     if ([...Object.values(numbers), ...Object.values(opening)].some((n) => n !== undefined && !Number.isFinite(n))) {
       return setError("Check the prices, weights and quantities — one of them is not a valid number.");
@@ -178,13 +215,16 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
       unit: f.unit,
       hsnCode: f.hsnCode.trim() || undefined,
       description: f.description.trim() || undefined,
-      metalPurityId: f.metalPurityId === NONE ? undefined : (f.metalPurityId as Id<"metalPurities">),
+      purityKarat: f.purity.startsWith("karat:") ? (f.purity.slice(6) as PurityKarat) : undefined,
+      metalPurityId: f.purity === NONE || f.purity === OTHER_PURITY || f.purity.startsWith("karat:") ? undefined : (f.purity as Id<"metalPurities">),
+      purityOther: f.purity === OTHER_PURITY ? f.purityOther.trim() : undefined,
+      defaultBoxId: isService || f.defaultBoxId === NONE ? undefined : (f.defaultBoxId as Id<"boxes">),
       stockGroupId: f.stockGroupId === NONE ? undefined : (f.stockGroupId as Id<"stockGroups">),
       stockCategoryId: f.stockCategoryId === NONE ? undefined : (f.stockCategoryId as Id<"stockCategories">),
       taxConfigurationId: f.taxConfigurationId === NONE ? undefined : (f.taxConfigurationId as Id<"taxConfigurations">),
       salePriceIncludesTax: f.saleIncTax,
       saleDiscountMode: f.discountMode,
-      purchasePriceIncludesTax: f.purchaseIncTax,
+      purchasePriceIncludesTax: showCost ? f.purchaseIncTax : undefined,
       openingAsOfMs: f.asOf ? new Date(`${f.asOf}T00:00:00`).getTime() : undefined,
       location: f.location,
       imageStorageId: f.imageStorageId,
@@ -195,9 +235,10 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
     setError(null);
     try {
       if (isEdit) await update({ id: product._id, ...payload });
-      else await create({ ...payload, ...(isGstCompany ? opening : {}) });
+      else await create({ ...payload, ...opening });
+      toast.success(isEdit ? `${payload.name} updated` : `${payload.name} added${opening.openingPieces ? ` · ${opening.openingPieces} pcs in stock` : ""}`);
       if (andNew && !isEdit) {
-        setF(blank(undefined, defaultUnit));
+        setF(blank(undefined, defaultUnit, purities));
         setImagePreview(null);
         setTab("pricing");
       } else {
@@ -214,7 +255,7 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const image = imagePreview ?? (f.imageStorageId && f.imageStorageId === product?.imageStorageId ? details?.imageUrl : null);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); else if (!isEdit) setF(blank(undefined, defaultUnit)); }}>
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); else setF(blank(isEdit ? product : undefined, defaultUnit, purities)); }}>
       <DialogTrigger asChild>
         {trigger ?? (isEdit ? (
           <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Edit item"><Pencil className="h-4 w-4" /></Button>
@@ -268,26 +309,50 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
             </Field>
             {!isService && (
               <>
-                <Field label="Purity">
-                  <Select value={f.metalPurityId} onValueChange={(v) => set("metalPurityId", v)}>
-                    <SelectTrigger><SelectValue placeholder="Purity" /></SelectTrigger>
-                    <SelectContent>
+                <Field label="Purity / Karat">
+                  <Select value={f.purity} onValueChange={(v) => set("purity", v)}>
+                    <SelectTrigger aria-label="Purity / Karat"><SelectValue placeholder="Purity" /></SelectTrigger>
+                    <SelectContent className="max-h-72">
                       <SelectItem value={NONE}>None</SelectItem>
-                      {purities?.map((p) => <SelectItem key={p._id} value={p._id}>{p.label} ({p.metal})</SelectItem>)}
+                      {PURITY_KARATS.map((k) => <SelectItem key={k} value={karatValue(k)}>{k.replace("K", "")} Karat ({k})</SelectItem>)}
+                      {otherPurities.map((p) => <SelectItem key={p._id} value={p._id}>{p.label} ({p.metal})</SelectItem>)}
+                      <SelectItem value={OTHER_PURITY}>Other…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {f.purity === OTHER_PURITY && (
+                    <Input className="mt-1" aria-label="Other purity" value={f.purityOther} maxLength={40} onChange={(e) => set("purityOther", e.target.value)} placeholder="e.g. 916 hallmark, 23K" />
+                  )}
+                </Field>
+                <Field label="Box Number">
+                  <Select value={f.defaultBoxId} onValueChange={(v) => set("defaultBoxId", v)}>
+                    <SelectTrigger aria-label="Box Number"><SelectValue placeholder="Box" /></SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      <SelectItem value={NONE}>No box</SelectItem>
+                      {boxes?.filter((b) => b.isActive || b._id === f.defaultBoxId).map((b) => (
+                        <SelectItem key={b._id} value={b._id}>Box {b.boxNumber}{b.label ? ` · ${b.label}` : ""}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </Field>
                 <Field label="Gross wt (g)">
                   <Input inputMode="decimal" value={f.grossWeight} onChange={(e) => set("grossWeight", e.target.value)} placeholder="0.000" />
                 </Field>
+                <Field label="Stone wt (g)">
+                  <Input inputMode="decimal" value={f.stoneWeight} onChange={(e) => set("stoneWeight", e.target.value)} placeholder="0.000" />
+                </Field>
                 <Field label="Net wt (g)">
-                  <Input inputMode="decimal" value={f.netWeight} onChange={(e) => set("netWeight", e.target.value)} placeholder="0.000" />
+                  <Input inputMode="decimal" value={f.netWeight} onChange={(e) => set("netWeight", e.target.value)} placeholder={autoNet || "0.000"} title="Leave blank to use gross − stone" />
                 </Field>
               </>
             )}
             <Field label="Making (₹)">
               <Input inputMode="decimal" value={f.making} onChange={(e) => set("making", e.target.value)} placeholder="0.00" />
             </Field>
+            {!isService && (
+              <Field label="Wastage (%)">
+                <Input inputMode="decimal" value={f.wastage} onChange={(e) => set("wastage", e.target.value)} placeholder="0" />
+              </Field>
+            )}
             <Field label="Stock Group">
               <Select value={f.stockGroupId} onValueChange={(v) => set("stockGroupId", v)}>
                 <SelectTrigger><SelectValue placeholder="Stock Group" /></SelectTrigger>
@@ -330,7 +395,8 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
 
           <TabsContent value="pricing" className="space-y-3 pt-2">
             <section className="rounded-xl border bg-muted/20 p-4">
-              <p className="mb-3 font-semibold">Sale Price</p>
+              <p className="mb-1 font-semibold">Sale Price</p>
+              <p className="mb-3 text-xs text-muted-foreground">Price per piece filled on new bills. Leave blank to bill by today&apos;s rate per gram. Only the Owner or an Admin can change it on a bill.</p>
               <div className="flex flex-wrap gap-3">
                 <PriceWithTax label="Sale Price" value={f.salePrice} onValue={(v) => set("salePrice", v)} incTax={f.saleIncTax} onIncTax={(v) => set("saleIncTax", v)} />
                 <div className="flex">
@@ -355,10 +421,13 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
               )}
             </section>
             <div className="grid gap-3 sm:grid-cols-2">
-              <section className="rounded-xl border bg-muted/20 p-4">
-                <p className="mb-3 font-semibold">Purchase Price</p>
-                <PriceWithTax label="Purchase Price" value={f.purchasePrice} onValue={(v) => set("purchasePrice", v)} incTax={f.purchaseIncTax} onIncTax={(v) => set("purchaseIncTax", v)} />
-              </section>
+              {showCost && (
+                <section className="rounded-xl border bg-muted/20 p-4">
+                  <p className="mb-1 font-semibold">Purchase Price</p>
+                  <p className="mb-3 text-xs text-muted-foreground">Internal — fills purchase bills; never printed on invoices or shown at the billing counter.</p>
+                  <PriceWithTax label="Purchase Price" value={f.purchasePrice} onValue={(v) => set("purchasePrice", v)} incTax={f.purchaseIncTax} onIncTax={(v) => set("purchaseIncTax", v)} />
+                </section>
+              )}
               <section className="rounded-xl border bg-muted/20 p-4">
                 <p className="mb-3 font-semibold">Taxes</p>
                 <Field label="Tax Rate">
@@ -378,10 +447,12 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
           {!isService && (
             <TabsContent value="stock" className="pt-2">
               <div className="grid gap-3 sm:grid-cols-3">
-                {!isEdit && isGstCompany && (
+                {!isEdit && (
                   <>
                     <Field label="Opening Quantity (pcs)"><Input inputMode="numeric" value={f.openingPieces} onChange={(e) => set("openingPieces", e.target.value)} /></Field>
-                    <Field label="Opening Weight (g)"><Input inputMode="decimal" value={f.openingWeight} onChange={(e) => set("openingWeight", e.target.value)} /></Field>
+                    {(isGstCompany || f.defaultBoxId !== NONE) && (
+                      <Field label={f.defaultBoxId !== NONE ? "Opening Weight (g, if no gross wt)" : "Opening Weight (g)"}><Input inputMode="decimal" value={f.openingWeight} onChange={(e) => set("openingWeight", e.target.value)} /></Field>
+                    )}
                   </>
                 )}
                 <Field label="At Price (₹)"><Input inputMode="decimal" value={f.atPrice} onChange={(e) => set("atPrice", e.target.value)} /></Field>
@@ -390,11 +461,13 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
                 <Field label="Location"><Input value={f.location} onChange={(e) => set("location", e.target.value)} placeholder="e.g. Counter 2, Locker A" /></Field>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                {isGstCompany
-                  ? isEdit
-                    ? "To change stock after creating the item, use Adjust Stock on the item screen."
-                    : "Opening quantity and weight are added to this item's GST stock when you save."
-                  : "Daily Sales stock is kept in boxes — add pieces through Purchase or Box Overview. You'll get a low-stock alert when stock falls below the minimum."}
+                {isEdit
+                  ? "Editing an item never adds stock or creates boxes. To change stock, use Adjust Item, a purchase, or Box Overview."
+                  : f.defaultBoxId !== NONE
+                    ? "Each opening piece is put into the chosen box at the item's gross/stone weight when you save."
+                    : isGstCompany
+                      ? "No box chosen: opening quantity and weight go into loose GST item stock. Choose a Box Number to put them in a box."
+                      : "Choose a Box Number above to add opening pieces — Daily Sales stock is kept in boxes."}
               </p>
             </TabsContent>
           )}
@@ -495,6 +568,9 @@ export function AdjustStockDialog({ product }: { product: Doc<"products"> }) {
           </div>
         ) : (
           <div className="space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Pieces in boxes are adjusted from their box (<Link className="underline" href="/inventory/adjustments">Stock Adjustments</Link>). This changes loose GST stock that isn&apos;t in a box.
+            </p>
             <div className="flex gap-2">
               <Button type="button" className="flex-1" variant={direction === "in" ? "default" : "outline"} onClick={() => setDirection("in")}>+ Add Stock</Button>
               <Button type="button" className="flex-1" variant={direction === "out" ? "destructive" : "outline"} onClick={() => setDirection("out")}>− Reduce Stock</Button>

@@ -103,6 +103,17 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: "GST",
+    icon: Receipt,
+    href: "/gst",
+    items: [
+      { title: "GST Dashboard & Reports", href: "/gst" },
+      { title: "GSTR 1 / 3B", href: "/reports/gstr-1" },
+      { title: "GST Item Stock", href: "/inventory/stock" },
+      { title: "GST Rates", href: "/settings/gst" },
+    ],
+  },
+  {
     title: "Reports",
     icon: BarChart3,
     href: "/reports",

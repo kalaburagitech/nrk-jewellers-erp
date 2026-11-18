@@ -102,6 +102,13 @@ type BillLine = {
   stoneChargeRupees: string;
   /** Line discount, as a % ("5%") or rupees ("200"). Taken off before GST. */
   discount?: string;
+  /** Selling price per piece (₹). Blank → priced by net weight × rate per gram. */
+  unitPriceRupees?: string;
+  /** The item's saved selling price per piece, in paise (for the override check). */
+  savedPricePaise?: number;
+  /** Purchase price per piece, in paise — only present for roles allowed to see cost. */
+  costPaise?: number;
+  sku?: string;
   taxConfigurationId: string;
   manualGstPercent?: string;
   isManualTax?: boolean;
@@ -330,6 +337,8 @@ function BoxItemPicker({
     [boxes, boxNumberInput],
   );
   const items = useQuery(api.boxes.getItems, matchedBox ? { boxId: matchedBox._id } : "skip");
+  const [itemSearch, setItemSearch] = useState("");
+  const itemMatches = useQuery(api.boxes.searchItems, itemSearch.trim().length >= 2 ? { term: itemSearch.trim() } : "skip");
 
   const productName = useMemo(() => {
     const map = new Map<string, string>();
@@ -361,6 +370,39 @@ function BoxItemPicker({
         <CardTitle className="text-base">Add items to this bill</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        <div className="relative max-w-md">
+          <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            aria-label="Search item in all boxes"
+            placeholder="Search item name, code or barcode in all boxes"
+            value={itemSearch}
+            onChange={(e) => setItemSearch(e.target.value)}
+          />
+        </div>
+        {itemSearch.trim().length >= 2 && itemMatches && (
+          itemMatches.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No piece in any box matches &quot;{itemSearch.trim()}&quot;.</p>
+          ) : (
+            <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
+              {itemMatches.map((m) => {
+                const added = alreadyAddedIds.has(m.boxItemId);
+                return (
+                  <div key={m.boxItemId} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium">{m.label} <span className="text-muted-foreground">· {m.productName}</span></p>
+                      <p className="text-xs text-muted-foreground">Box {m.boxNumber ?? "—"}{m.boxLabel ? ` (${m.boxLabel})` : ""} · {mgToGramsDisplay(m.netWeightMg)}g net</p>
+                    </div>
+                    <Button type="button" size="sm" variant={added ? "secondary" : "outline"} disabled={added || !m.boxItem} onClick={() => m.boxItem && onAdd(m.boxItem)}>
+                      {added ? "Added" : "Add"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+        <p className="text-xs font-medium text-muted-foreground">or pick from a box</p>
         <div ref={boxListRef} className="relative max-w-xs">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -539,6 +581,9 @@ export default function NewBillPage() {
   const taxConfigs = useQuery(api.taxConfigurations.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
   const lastPrices = useQuery(api.sales.lastPricesByProduct);
+  const pricingAccess = useQuery(api.products.myPricingAccess);
+  const showCost = pricingAccess?.canViewCost ?? false;
+  const canOverride = pricingAccess?.canOverridePrice ?? false;
   const createSale = useMutation(api.sales.create);
   const setCustomerDueDate = useMutation(api.customers.setDueDate);
   const updateSale = useMutation(api.sales.update);
@@ -624,6 +669,9 @@ export default function NewBillPage() {
         makingChargeRupees: item.makingChargePaise ? (item.makingChargePaise / 100).toFixed(2) : "",
         stoneChargeRupees: item.stoneChargePaise ? (item.stoneChargePaise / 100).toFixed(2) : "",
         discount: item.lineDiscountPaise ? (item.lineDiscountPaise / 100).toFixed(2) : "",
+        unitPriceRupees: item.unitPricePaise ? (item.unitPricePaise / 100).toFixed(2) : "",
+        boxNumber: item.boxNumber,
+        sku: item.sku,
         taxConfigurationId: item.taxConfigurationId ?? "",
       })),
     );
@@ -711,11 +759,19 @@ export default function NewBillPage() {
     // Making charge saved on the item (Add Item form) wins; otherwise the last price billed for it.
     const itemMakingPaise = productId ? productById.get(productId as Id<"products">)?.makingChargePaise : undefined;
     const makingPaise = itemMakingPaise ?? last?.makingChargePaise;
+    const product = productId ? productById.get(productId as Id<"products">) : undefined;
+    const wastageBp = product?.wastageBasisPoints ?? last?.wastageBasisPoints;
+    const savedPricePaise = product?.salePricePaise && product.salePricePaise > 0 ? product.salePricePaise : undefined;
     return {
       metalPurityId: purityId,
       ratePerGramRupees: ratePaise ? (ratePaise / 100).toFixed(2) : "",
       makingChargeRupees: makingPaise ? (makingPaise / 100).toFixed(2) : "",
-      wastagePercent: last?.wastageBasisPoints ? String(last.wastageBasisPoints / 100) : "",
+      wastagePercent: wastageBp ? String(wastageBp / 100) : "",
+      // Saved selling price per piece fills the line; the bill is then priced per piece.
+      unitPriceRupees: savedPricePaise ? (savedPricePaise / 100).toFixed(2) : "",
+      savedPricePaise,
+      costPaise: product?.purchasePricePaise,
+      sku: product?.sku,
     };
   }
 
@@ -740,6 +796,10 @@ export default function NewBillPage() {
         wastagePercent: pricing.wastagePercent,
         makingChargeRupees: pricing.makingChargeRupees,
         stoneChargeRupees: "",
+        unitPriceRupees: pricing.unitPriceRupees,
+        savedPricePaise: pricing.savedPricePaise,
+        costPaise: pricing.costPaise,
+        sku: pricing.sku,
         taxConfigurationId: product?.taxConfigurationId ?? taxConfigs?.[0]?._id ?? "",
       },
     ]);
@@ -765,6 +825,10 @@ export default function NewBillPage() {
         wastagePercent: pricing.wastagePercent,
         makingChargeRupees: pricing.makingChargeRupees,
         stoneChargeRupees: "",
+        unitPriceRupees: pricing.unitPriceRupees,
+        savedPricePaise: pricing.savedPricePaise,
+        costPaise: pricing.costPaise,
+        sku: pricing.sku,
         taxConfigurationId: product?.taxConfigurationId ?? taxConfigs?.[0]?._id ?? "",
       },
     ]);
@@ -801,6 +865,8 @@ export default function NewBillPage() {
           wastageBasisPoints: percentToBasisPoints(line.wastagePercent || "0") ?? 0,
           makingChargePaise: rupeesToPaise(line.makingChargeRupees || "0") ?? 0,
           stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
+          unitPricePaise: rupeesToPaise(line.unitPriceRupees || "0") ?? 0,
+          pieces: line.pieces ?? 1,
           gstBasisPoints,
         };
         const discount = lineDiscountPaise(line.discount, computeSaleLine(input).taxableValuePaise);
@@ -818,16 +884,26 @@ export default function NewBillPage() {
           ["Wastage %", numberFieldError(line.wastagePercent, { max: 100 })],
           ["Making charge", numberFieldError(line.makingChargeRupees)],
           ["Stone charge", numberFieldError(line.stoneChargeRupees)],
+          ["Selling price", numberFieldError(line.unitPriceRupees ?? "")],
         ];
         const failed = checks.find(([, error]) => error);
         if (failed) return `${failed[0]}: ${failed[1]}`;
+        // Same rule as the server: only Owner/Admin may bill at anything but the saved price.
+        const unitPaise = rupeesToPaise(line.unitPriceRupees || "0") ?? 0;
+        const overridden = line.savedPricePaise ? unitPaise !== line.savedPricePaise : unitPaise > 0;
+        if (overridden && pricingAccess && !canOverride) {
+          return line.savedPricePaise
+            ? `${line.label}: only the Owner or an Admin can change the saved selling price (${formatPaise(line.savedPricePaise)}).`
+            : `${line.label}: only the Owner or an Admin can set a fixed selling price for an item with no saved price.`;
+        }
+        if (unitPaise === 0 && !((rupeesToPaise(line.ratePerGramRupees || "0") ?? 0) > 0)) return `${line.label}: enter the selling price or the rate per gram.`;
         const computed = computedLines[index];
         if (computed?.netWeightMg === 0 && computed.lineTotalPaise === 0) {
           return "This item has zero net weight and zero value. Check its box stock weight and deductions before billing.";
         }
         return null;
       }),
-    [lines, computedLines],
+    [lines, computedLines, pricingAccess, canOverride],
   );
 
   const discountError = useMemo(() => {
@@ -1013,6 +1089,7 @@ export default function NewBillPage() {
             stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
             taxConfigurationId: taxConfigId,
             lineDiscountPaise: computedLines[index]?.lineDiscountPaise || undefined,
+            unitPricePaise: rupeesToPaise(line.unitPriceRupees || "0") || undefined,
           };
         }),
       );
@@ -1369,7 +1446,10 @@ export default function NewBillPage() {
                       <th className="py-2.5 px-3">ITEM / BOX</th>
                       <th className="py-2.5 px-3">PURITY</th>
                       <th className="py-2.5 px-3">GROSS WT <span className="font-normal">(stock)</span></th>
+                      <th className="py-2.5 px-3">STONE WT</th>
                       <th className="py-2.5 px-3">NET WT <span className="font-normal">(bill)</span></th>
+                      {showCost && <th className="py-2.5 px-3">PURCHASE PRICE</th>}
+                      <th className="py-2.5 px-3">SELLING PRICE / PC (₹)</th>
                       <th className="py-2.5 px-3">MAKING (₹)</th>
                       <th className="py-2.5 px-3">QTY</th>
                       <th className="py-2.5 px-3">RATE / G (₹)</th>
@@ -1390,19 +1470,48 @@ export default function NewBillPage() {
                             <p className="font-semibold text-foreground">{line.label}</p>
                             <p className="text-[11px] text-muted-foreground">
                               {line.productName}
-                              {line.boxNumber ? ` · Box ${line.boxNumber}` : ""}
+                              {line.sku ? ` · ${line.sku}` : ""}
                             </p>
+                            {line.boxNumber ? <Badge variant="secondary" className="mt-0.5 text-[10px]">Box {line.boxNumber}</Badge> : null}
                           </td>
                           <td className="py-2.5 px-3">
                             <Badge variant="outline" className="text-[10px] font-normal">
-                              {purities?.find((p) => p._id === line.metalPurityId)?.label || "Standard"}
+                              {purities?.find((p) => p._id === line.metalPurityId)?.label || productById.get((line.productId ?? "") as Id<"products">)?.purityOther || "Standard"}
                             </Badge>
                           </td>
                           <td className="py-2.5 px-3 font-mono">
                             {mgToGramsDisplay(line.grossWeightMg)}g
                           </td>
+                          <td className="py-2.5 px-3 font-mono text-muted-foreground">
+                            {mgToGramsDisplay(line.stoneWeightMg)}g
+                          </td>
                           <td className="py-2.5 px-3 font-mono font-medium text-emerald-600">
                             {computed ? `${mgToGramsDisplay(computed.netWeightMg)}g` : "—"}
+                          </td>
+                          {showCost && (
+                            <td className="py-2.5 px-3 font-mono text-muted-foreground">
+                              {line.costPaise !== undefined ? formatPaise(line.costPaise * (line.pieces ?? 1)) : "—"}
+                              {line.costPaise !== undefined && computed && (
+                                <p className={`text-[10px] ${computed.taxableValuePaise - line.costPaise * (line.pieces ?? 1) < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                                  Margin {formatPaise(computed.taxableValuePaise - line.costPaise * (line.pieces ?? 1))}
+                                </p>
+                              )}
+                            </td>
+                          )}
+                          <td className="py-2.5 px-3">
+                            <Input
+                              aria-label="Selling price per piece"
+                              inputMode="decimal"
+                              placeholder="by rate/g"
+                              value={line.unitPriceRupees ?? ""}
+                              disabled={!canOverride && line.savedPricePaise !== undefined}
+                              title={!canOverride && line.savedPricePaise !== undefined ? "Saved selling price — only the Owner or an Admin can change it" : "Leave blank to price by weight × rate per gram"}
+                              onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })}
+                              className="h-8 w-24 text-xs font-mono text-right"
+                            />
+                            {line.savedPricePaise !== undefined && (rupeesToPaise(line.unitPriceRupees || "0") ?? 0) !== line.savedPricePaise && (
+                              <p className="text-[10px] text-amber-600">Saved {formatPaise(line.savedPricePaise)} · override</p>
+                            )}
                           </td>
                           <td className="py-2.5 px-3">
                             <Input

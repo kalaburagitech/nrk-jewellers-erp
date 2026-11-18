@@ -2,7 +2,7 @@ import { readPreferences } from "./appPreferences";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
+import { canOverridePrice, canViewCost, requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf } from "../src/lib/jewelry-calc";
 import { gstRateBp, isInterState } from "../src/lib/gst-rate";
@@ -61,13 +61,21 @@ export const getItems = query({
     const auth = await requireAuthContext(ctx);
     const sale = await ctx.db.get(args.saleId);
     if (!sale || sale.organizationId !== auth.organizationId) throw new Error("Not found");
-    return await ctx.db
+    const items = await ctx.db
       .query("saleItems")
       .withIndex("by_sale", (q) => q.eq("saleId", args.saleId))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect();
+    // The cost snapshot is internal — only roles that may see purchase prices get it.
+    return canViewCost(auth.role) ? items : items.map(withoutCost);
   },
 });
+
+function withoutCost<T extends { purchasePricePaise?: number }>(item: T): Omit<T, "purchasePricePaise"> {
+  const { purchasePricePaise: _cost, ...rest } = item;
+  void _cost;
+  return rest;
+}
 
 export const getOldGoldExchange = query({
   args: { saleId: v.id("sales") },
@@ -159,12 +167,17 @@ export const getInvoiceData = query({
           item.boxItemId ? ctx.db.get(item.boxItemId) : null,
           item.metalPurityId ? ctx.db.get(item.metalPurityId) : null,
         ]);
+        const box = boxItem ? await ctx.db.get(boxItem.boxId) : null;
+        // Customer-facing: the cost snapshot never leaves the server here.
         return {
-          ...item,
+          ...withoutCost(item),
           productName: product?.name ?? "Item",
+          sku: product?.sku,
           label: boxItem?.label ?? product?.name ?? "Item",
+          boxNumber: box?.boxNumber,
           stockNetWeightMg: boxItem?.netWeightMg,
-          purityLabel: purity?.label,
+          purityLabel: purity?.label ?? product?.purityOther,
+          hsnCode: product?.hsnCode,
         };
       }),
     );
@@ -273,6 +286,8 @@ const saleLineValidator = v.object({
   stoneChargePaise: v.number(),
   taxConfigurationId: v.optional(v.id("taxConfigurations")),
   lineDiscountPaise: v.optional(v.number()),
+  // Fixed selling price per piece. Omitted/0 → priced by net weight × rate per gram.
+  unitPricePaise: v.optional(v.number()),
 });
 
 const paymentSplitValidator = v.object({
@@ -305,6 +320,7 @@ type SaleTransactionArgs = {
     stoneChargePaise: number;
     taxConfigurationId?: Id<"taxConfigurations">;
     lineDiscountPaise?: number;
+    unitPricePaise?: number;
   }>;
   discountMode: "percent" | "fixed" | "none";
   discountValue: number;
@@ -353,11 +369,16 @@ async function applySaleTransaction(
     grossWeightMg: number;
     stoneWeightMg: number;
     pieces: number;
+    product: Doc<"products"> | null;
+    priceOverridden: boolean;
     computed: ReturnType<typeof computeSaleLine>;
   }> = [];
+  const overrides: Array<{ productId: Id<"products">; label: string; savedPricePaise: number | null; billedPricePaise: number | null }> = [];
 
   for (const item of args.items) {
-    if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
+    const unitPricePaise = item.unitPricePaise ?? 0;
+    if (!Number.isSafeInteger(unitPricePaise) || unitPricePaise < 0) throw new Error("Selling price must be a valid amount of zero or more");
+    if (unitPricePaise === 0 && item.ratePerGramPaise <= 0) throw new Error("Enter the selling price or the rate per gram for every item");
     let boxItem: Doc<"boxItems"> | null = null;
     let productId: Id<"products">;
     let grossWeightMg: number;
@@ -401,7 +422,25 @@ async function applySaleTransaction(
       gstBasisPoints = taxConfigs.get(item.taxConfigurationId)!;
     }
 
+    // Billing at anything other than the item's saved selling price (including
+    // by rate per gram when it has one) is a price override: Owner/Admin only, audit-logged.
+    const product = await ctx.db.get(productId);
+    const savedPricePaise = product?.salePricePaise;
+    const priceOverridden = savedPricePaise !== undefined && savedPricePaise > 0 ? unitPricePaise !== savedPricePaise : unitPricePaise > 0;
+    if (priceOverridden) {
+      if (!canOverridePrice(auth.role)) {
+        throw new Error(
+          savedPricePaise
+            ? `Only the Owner or an Admin can change the saved selling price of "${label}".`
+            : `Only the Owner or an Admin can set a fixed price for "${label}" — it has no saved selling price.`,
+        );
+      }
+      overrides.push({ productId, label, savedPricePaise: savedPricePaise ?? null, billedPricePaise: unitPricePaise || null });
+    }
+
     const computed = computeSaleLine({
+      unitPricePaise,
+      pieces,
       grossWeightMg,
       stoneWeightMg,
       stockNetWeightMg: boxItem ? boxItem.netWeightMg : availableNetMg,
@@ -413,7 +452,7 @@ async function applySaleTransaction(
       gstBasisPoints,
       lineDiscountPaise: checkedDiscount(item.lineDiscountPaise),
     });
-    computedLines.push({ item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, computed });
+    computedLines.push({ item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, product, priceOverridden, computed });
   }
 
   let oldGoldComputed: ReturnType<typeof computeOldGoldExchange> | null = null;
@@ -478,14 +517,15 @@ async function applySaleTransaction(
   });
 
   const boxDeltas = new Map<Id<"boxes">, number>();
-  for (const { item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, computed } of computedLines) {
+  for (const { item, boxItem, productId, grossWeightMg, stoneWeightMg, pieces, product, priceOverridden, computed } of computedLines) {
     await ctx.db.insert("saleItems", {
       organizationId: auth.organizationId,
       saleId,
       productId,
       boxItemId: boxItem ? boxItem._id : undefined,
       ...(boxItem ? {} : { fromItemStock: true, pieces, stockWeightMg: grossWeightMg }),
-      metalPurityId: item.metalPurityId,
+      // Fall back to the item's saved purity so the invoice always shows it.
+      metalPurityId: item.metalPurityId ?? product?.metalPurityId,
       grossWeightMg,
       stoneWeightMg,
       otherDeductionMg: item.otherDeductionMg,
@@ -498,6 +538,10 @@ async function applySaleTransaction(
       lineTaxPaise: computed.lineTaxPaise,
       lineDiscountPaise: computed.lineDiscountPaise || undefined,
       lineTotalPaise: computed.lineTotalPaise,
+      unitPricePaise: item.unitPricePaise || undefined,
+      // Cost at the time of sale (per-piece purchase price × pieces), for profit reports.
+      purchasePricePaise: product?.purchasePricePaise !== undefined ? product.purchasePricePaise * pieces : undefined,
+      priceOverridden: priceOverridden || undefined,
     });
 
     if (!boxItem) {
@@ -527,6 +571,18 @@ async function applySaleTransaction(
   for (const [boxId, delta] of boxDeltas) {
     const box = await ctx.db.get(boxId);
     if (box) await ctx.db.patch(boxId, { itemCount: Math.max(0, (box.itemCount ?? 0) - delta) });
+  }
+
+  for (const o of overrides) {
+    await ctx.db.insert("auditLogs", {
+      organizationId: auth.organizationId,
+      userId: auth.userId,
+      action: "sale.price_override",
+      entityTable: "sales",
+      entityId: saleId,
+      metadata: o,
+      createdAt: Date.now(),
+    });
   }
 
   const priorBalance = customer.currentBalancePaise ?? customer.openingBalancePaise;

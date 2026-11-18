@@ -56,6 +56,7 @@ function emptyLine() {
     grossWeightGrams: "",
     stoneWeightGrams: "",
     ratePerGramRupees: "",
+    unitPriceRupees: "",
     makingChargeRupees: "",
     stoneChargeRupees: "",
     discountRupees: "",
@@ -90,6 +91,7 @@ export default function NewPurchasePage() {
   const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
   const purities = useQuery(api.metalPurities.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
+  const taxConfigs = useQuery(api.taxConfigurations.list);
   const prefs = useQuery(api.appPreferences.get);
   const blockNewParties = prefs?.blockNewPartiesFromTxn ?? false;
   const blockNewItems = prefs?.blockNewItemsFromTxn ?? false;
@@ -180,7 +182,8 @@ export default function NewPurchasePage() {
         metalPurityId: item.metalPurityId ?? "",
         grossWeightGrams: (item.grossWeightMg / 1000).toFixed(3),
         stoneWeightGrams: (item.stoneWeightMg / 1000).toFixed(3),
-        ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
+        ratePerGramRupees: item.ratePerGramPaise ? (item.ratePerGramPaise / 100).toFixed(2) : "",
+        unitPriceRupees: item.unitPricePaise ? (item.unitPricePaise / 100).toFixed(2) : "",
         makingChargeRupees: (item.makingChargePaise / 100).toFixed(2),
         stoneChargeRupees: (item.stoneChargePaise / 100).toFixed(2),
         discountRupees: item.lineDiscountPaise ? (item.lineDiscountPaise / 100).toFixed(2) : "",
@@ -218,10 +221,14 @@ export default function NewPurchasePage() {
         ...emptyLine(),
         productId: quickProductId || "",
         manualProductName: quickIsManualProduct ? prodName : "",
-        boxId: quickBoxId || "",
+        boxId: quickBoxId || product?.defaultBoxId || "",
         manualBoxNumber: quickIsManualBox ? quickManualBoxNumber.trim() : "",
         label: `${prodName} ${existingCount + i + 1}`,
         metalPurityId: product?.metalPurityId ?? "",
+        grossWeightGrams: product?.grossWeightMg ? (product.grossWeightMg / 1000).toFixed(3) : "",
+        stoneWeightGrams: product?.stoneWeightMg ? (product.stoneWeightMg / 1000).toFixed(3) : "",
+        unitPriceRupees: product?.purchasePricePaise ? (product.purchasePricePaise / 100).toFixed(2) : "",
+        makingChargeRupees: product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
         ratePerGramRupees: latestRate ? (latestRate / 100).toFixed(2) : "",
       })),
     );
@@ -254,6 +261,8 @@ export default function NewPurchasePage() {
         grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
         stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
         ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
+        unitPricePaise: rupeesToPaise(item.unitPriceRupees || "0") ?? 0,
+        pieces: 1,
         makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
         stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
         lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") ?? 0,
@@ -306,6 +315,7 @@ export default function NewPurchasePage() {
         grossWeightMg: number;
         stoneWeightMg: number;
         ratePerGramPaise: number;
+        unitPricePaise?: number;
         makingChargePaise: number;
         stoneChargePaise: number;
         lineDiscountPaise?: number;
@@ -375,6 +385,7 @@ export default function NewPurchasePage() {
           grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
           stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
           ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
+          unitPricePaise: rupeesToPaise(item.unitPriceRupees || "0") || undefined,
           makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
           stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
           lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") || undefined,
@@ -758,6 +769,18 @@ export default function NewPurchasePage() {
                                       if (!product) return;
                                       form.setValue(`items.${index}.label`, product.name, { shouldDirty: true });
                                       form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", { shouldDirty: true });
+                                      // Fill the rest from the item master: box, weights, purchase price, making.
+                                      const opts = { shouldDirty: true };
+                                      if (product.defaultBoxId && !form.getValues(`items.${index}.boxId`)) form.setValue(`items.${index}.boxId`, product.defaultBoxId, opts);
+                                      if (product.grossWeightMg) form.setValue(`items.${index}.grossWeightGrams`, (product.grossWeightMg / 1000).toFixed(3), opts);
+                                      if (product.stoneWeightMg !== undefined) form.setValue(`items.${index}.stoneWeightGrams`, (product.stoneWeightMg / 1000).toFixed(3), opts);
+                                      if (product.purchasePricePaise) form.setValue(`items.${index}.unitPriceRupees`, (product.purchasePricePaise / 100).toFixed(2), opts);
+                                      if (product.makingChargePaise) form.setValue(`items.${index}.makingChargeRupees`, (product.makingChargePaise / 100).toFixed(2), opts);
+                                      // GST % from the item's tax rate, when the bill has none yet.
+                                      const tax = product.taxConfigurationId ? taxConfigs?.find((t) => t._id === product.taxConfigurationId) : undefined;
+                                      if (gstCompany && tax && !form.getValues("gstPercent")) {
+                                        form.setValue("gstPercent", String((tax.cgstBasisPoints + tax.sgstBasisPoints || tax.igstBasisPoints) / 100), opts);
+                                      }
                                       const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
                                       if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), { shouldDirty: true });
                                     }}
@@ -917,6 +940,19 @@ export default function NewPurchasePage() {
                               <FormLabel>Rate / g (₹)</FormLabel>
                               <FormControl>
                                 <Input {...field} inputMode="decimal" placeholder="0.00" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`items.${index}.unitPriceRupees`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Purchase price (₹/pc)</FormLabel>
+                              <FormControl>
+                                <Input {...field} value={field.value ?? ""} inputMode="decimal" placeholder="or by rate/g" title="Fixed price per piece — when set, it is used instead of weight × rate" />
                               </FormControl>
                               <FormMessage />
                             </FormItem>

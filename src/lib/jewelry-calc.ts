@@ -37,6 +37,9 @@ export type PurchaseLineInput = {
   stoneChargePaise: number;
   /** Per-line discount (Vyapar line "Discount"), taken off the line value. */
   lineDiscountPaise?: number;
+  /** Fixed purchase price per piece (item master). When > 0 it replaces net weight × rate. */
+  unitPricePaise?: number;
+  pieces?: number;
 };
 
 export type PurchaseLineResult = PurchaseLineInput & {
@@ -47,7 +50,9 @@ export type PurchaseLineResult = PurchaseLineInput & {
 
 export function computePurchaseLine(input: PurchaseLineInput): PurchaseLineResult {
   const net = netWeightMg(input.grossWeightMg, input.stoneWeightMg);
-  const metalValue = metalValuePaise(net, input.ratePerGramPaise);
+  const metalValue = (input.unitPricePaise ?? 0) > 0
+    ? input.unitPricePaise! * (input.pieces ?? 1)
+    : metalValuePaise(net, input.ratePerGramPaise);
   return {
     ...input,
     netWeightMg: net,
@@ -78,6 +83,13 @@ export type SaleLineInput = {
   gstBasisPoints: number; // 0 for a non-GST bill
   /** Per-line discount, taken off before GST (Vyapar: line discount first, then tax). */
   lineDiscountPaise?: number;
+  /**
+   * Fixed selling price per piece (item master). When > 0 the line is priced
+   * unitPrice × pieces instead of net weight × rate, and no wastage applies;
+   * making/stone charges and the line discount still do.
+   */
+  unitPricePaise?: number;
+  pieces?: number;
 };
 
 export type SaleLineResult = SaleLineInput & {
@@ -92,8 +104,9 @@ export type SaleLineResult = SaleLineInput & {
 export function computeSaleLine(input: SaleLineInput): SaleLineResult {
   const availableNetMg = input.stockNetWeightMg ?? netWeightMg(input.grossWeightMg, input.stoneWeightMg);
   const net = Math.max(0, availableNetMg - input.otherDeductionMg);
-  const metalValue = metalValuePaise(net, input.ratePerGramPaise);
-  const wastageValue = basisPointsOf(metalValue, input.wastageBasisPoints);
+  const fixedPrice = (input.unitPricePaise ?? 0) > 0;
+  const metalValue = fixedPrice ? input.unitPricePaise! * (input.pieces ?? 1) : metalValuePaise(net, input.ratePerGramPaise);
+  const wastageValue = fixedPrice ? 0 : basisPointsOf(metalValue, input.wastageBasisPoints);
   const taxableValue = Math.max(0, metalValue + wastageValue + input.makingChargePaise + input.stoneChargePaise - (input.lineDiscountPaise ?? 0));
   const tax = basisPointsOf(taxableValue, input.gstBasisPoints);
   return {
@@ -139,3 +152,10 @@ export function computeOldGoldExchange(input: OldGoldExchangeInput): OldGoldExch
     exchangeValuePaise: metalValuePaise(net, input.ratePerGramPaise),
   };
 }
+
+/** Standard gold karats offered in the item form, with fineness in basis points. */
+export const KARAT_FINENESS_BP = {
+  "24K": 9990, "22K": 9160, "20K": 8330, "18K": 7500, "14K": 5850, "12K": 5000, "10K": 4170, "9K": 3750,
+} as const;
+export type PurityKarat = keyof typeof KARAT_FINENESS_BP;
+export const PURITY_KARATS = Object.keys(KARAT_FINENESS_BP) as PurityKarat[];

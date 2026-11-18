@@ -51,8 +51,13 @@ export const searchItems = query({
 
     return boxItems
       .filter((item) => {
-        const productName = productById.get(String(item.productId))?.name ?? "";
-        return item.label.toLowerCase().includes(term) || productName.toLowerCase().includes(term);
+        const product = productById.get(String(item.productId));
+        return (
+          item.label.toLowerCase().includes(term) ||
+          (product?.name ?? "").toLowerCase().includes(term) ||
+          (product?.sku ?? "").toLowerCase().includes(term) ||
+          (item.barcode ?? "").toLowerCase() === term
+        );
       })
       .slice(0, 30)
       .map((item) => {
@@ -61,9 +66,12 @@ export const searchItems = query({
           boxItemId: item._id,
           boxId: item.boxId,
           boxNumber: box?.boxNumber,
+          boxLabel: box?.label,
           label: item.label,
           productName: productById.get(String(item.productId))?.name ?? "Item",
           netWeightMg: item.netWeightMg,
+          // The full piece, so the bill screen can add it directly.
+          boxItem: item,
         };
       });
   },
@@ -127,8 +135,23 @@ export const getInventoryOverview = query({
 });
 
 /** Manually chosen number, with an automatic fallback for existing callers. */
+const boxDetailFields = {
+  category: v.optional(v.string()),
+  boxType: v.optional(v.string()),
+  description: v.optional(v.string()),
+};
+
+function cleanBoxDetails(args: { category?: string; boxType?: string; description?: string }) {
+  const category = args.category?.trim() || undefined;
+  const boxType = args.boxType?.trim() || undefined;
+  const description = args.description?.trim() || undefined;
+  if ((category?.length ?? 0) > 40 || (boxType?.length ?? 0) > 40) throw new Error("Box category and type must be 40 characters or fewer");
+  if ((description?.length ?? 0) > 300) throw new Error("Box description must be 300 characters or fewer");
+  return { category, boxType, description };
+}
+
 export const createNext = mutation({
-  args: { label: v.optional(v.string()), boxNumber: v.optional(v.number()) },
+  args: { label: v.optional(v.string()), boxNumber: v.optional(v.number()), ...boxDetailFields },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -145,10 +168,13 @@ export const createNext = mutation({
     const duplicate = await ctx.db.query("boxes").withIndex("by_org_and_number", q => q.eq("organizationId", auth.organizationId).eq("boxNumber", boxNumber))
       .first();
     if (duplicate) throw new Error("That box number is already in use. Please choose a different number.");
+    const label = args.label?.trim() || undefined;
+    if (label && label.length > 60) throw new Error("Box name must be 60 characters or fewer");
     return await ctx.db.insert("boxes", {
       organizationId: auth.organizationId,
       boxNumber,
-      label: args.label?.trim() || undefined,
+      label,
+      ...cleanBoxDetails(args),
       itemCount: 0,
       isActive: true,
       createdAt: Date.now(),
@@ -156,9 +182,12 @@ export const createNext = mutation({
   },
 });
 
-/** Change an existing box's number and/or label. Items reference the box by id, so renumbering is safe. */
+/**
+ * Change an existing box's number, name, details and status. Items reference
+ * the box by id, so renumbering is safe. Details are only replaced when sent.
+ */
 export const update = mutation({
-  args: { boxId: v.id("boxes"), boxNumber: v.number(), label: v.optional(v.string()) },
+  args: { boxId: v.id("boxes"), boxNumber: v.number(), label: v.optional(v.string()), ...boxDetailFields, isActive: v.optional(v.boolean()) },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -173,7 +202,16 @@ export const update = mutation({
     }
     const label = args.label?.trim() || undefined;
     if (label && label.length > 60) throw new Error("Box label must be 60 characters or fewer");
-    await ctx.db.patch(box._id, { boxNumber: args.boxNumber, label });
+    const sendsDetails = args.category !== undefined || args.boxType !== undefined || args.description !== undefined;
+    if (args.isActive === false && box.isActive && (box.itemCount ?? 0) > 0) {
+      throw new Error(`Box ${box.boxNumber} still has ${box.itemCount} item(s). Move or sell them before marking it inactive.`);
+    }
+    await ctx.db.patch(box._id, {
+      boxNumber: args.boxNumber,
+      label,
+      ...(sendsDetails ? cleanBoxDetails(args) : {}),
+      ...(args.isActive === undefined ? {} : { isActive: args.isActive }),
+    });
   },
 });
 

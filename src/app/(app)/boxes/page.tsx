@@ -24,6 +24,109 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { BoxScreensGate } from "@/components/privacy-lock-gate";
+import { toast } from "@/components/toaster";
+
+const BOX_CATEGORIES = ["Ring Box", "Chain Box", "Necklace Box", "Bangle Box", "Bracelet Box", "Earring Box", "Pendant Box", "General Jewellery Box"];
+const BOX_TYPES = ["Display Tray", "Counter Box", "Locker", "Storage Box", "Showcase"];
+const NONE = "__none__";
+
+type BoxRecord = { _id: Id<"boxes">; boxNumber: number; label?: string; category?: string; boxType?: string; description?: string; isActive: boolean; itemCount?: number };
+type BoxDetails = { boxNumber: string; label: string; category: string; boxType: string; description: string; isActive: boolean };
+
+/** Box number, name, category, type, description (and status when editing). */
+function BoxFields({ value, onChange, showStatus }: { value: BoxDetails; onChange: (next: BoxDetails) => void; showStatus?: boolean }) {
+  const set = <K extends keyof BoxDetails>(key: K, v: BoxDetails[K]) => onChange({ ...value, [key]: v });
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-1">
+        <label htmlFor="box-number" className="text-xs text-muted-foreground">Box number *</label>
+        <Input id="box-number" type="number" min="1" step="1" value={value.boxNumber} onChange={(e) => set("boxNumber", e.target.value)} placeholder="e.g. 101" />
+      </div>
+      <div className="grid gap-1">
+        <label htmlFor="box-name" className="text-xs text-muted-foreground">Box name</label>
+        <Input id="box-name" value={value.label} maxLength={60} onChange={(e) => set("label", e.target.value)} placeholder="e.g. 22K rings" />
+      </div>
+      <div className="grid gap-1">
+        <label className="text-xs text-muted-foreground">Box category</label>
+        <Select value={value.category || NONE} onValueChange={(v) => set("category", v === NONE ? "" : v)}>
+          <SelectTrigger aria-label="Box category"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NONE}>Not set</SelectItem>
+            {[...new Set([...BOX_CATEGORIES, ...(value.category ? [value.category] : [])])].map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid gap-1">
+        <label htmlFor="box-type" className="text-xs text-muted-foreground">Box type</label>
+        <Input id="box-type" list="box-types" value={value.boxType} maxLength={40} onChange={(e) => set("boxType", e.target.value)} placeholder="e.g. Display Tray" />
+        <datalist id="box-types">{BOX_TYPES.map((t) => <option key={t} value={t} />)}</datalist>
+      </div>
+      <div className="grid gap-1 sm:col-span-2">
+        <label htmlFor="box-description" className="text-xs text-muted-foreground">Description</label>
+        <Input id="box-description" value={value.description} maxLength={300} onChange={(e) => set("description", e.target.value)} placeholder="Where it is kept, what goes in it…" />
+      </div>
+      {showStatus && (
+        <div className="grid gap-1">
+          <label className="text-xs text-muted-foreground">Status</label>
+          <Select value={value.isActive ? "active" : "inactive"} onValueChange={(v) => set("isActive", v === "active")}>
+            <SelectTrigger aria-label="Box status"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function boxPayload(d: BoxDetails) {
+  return { label: d.label.trim() || undefined, category: d.category.trim(), boxType: d.boxType.trim(), description: d.description.trim() };
+}
+
+/** "Add Box": number (next free one suggested), name, category, type and description. */
+function CreateBoxDialog({ nextNumber }: { nextNumber: number }) {
+  const createNext = useMutation(api.boxes.createNext);
+  const [open, setOpen] = useState(false);
+  const blank = (): BoxDetails => ({ boxNumber: String(nextNumber), label: "", category: "", boxType: "", description: "", isActive: true });
+  const [details, setDetails] = useState<BoxDetails>(blank);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function save() {
+    setError("");
+    const n = Number(details.boxNumber);
+    if (!Number.isInteger(n) || n < 1) return setError("Enter a positive whole box number.");
+    setBusy(true);
+    try {
+      await createNext({ boxNumber: n, ...boxPayload(details) });
+      toast.success(`Box ${n} added`);
+      setOpen(false);
+    } catch (e) {
+      setError(getUserErrorMessage(e, "Could not add the box."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => { setOpen(next); if (next) { setDetails(blank()); setError(""); } }}>
+      <Button onClick={() => setOpen(true)}><Plus className="h-4 w-4" />Add Box</Button>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader><DialogTitle>Add Box</DialogTitle></DialogHeader>
+        <form className="flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+          <BoxFields value={details} onChange={setDetails} />
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save Box"}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
   const renameItem = useMutation(api.boxes.renameItem);
@@ -125,28 +228,23 @@ function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netW
   );
 }
 
-/** Edit a box's number and label — works for empty boxes too. */
-function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; label?: string } }) {
+/** Edit a box's number, name, details and status — works for empty boxes too. */
+function BoxEditForm({ box }: { box: BoxRecord }) {
   const updateBox = useMutation(api.boxes.update);
-  const [number, setNumber] = useState(String(box.boxNumber));
-  const [label, setLabel] = useState(box.label ?? "");
+  const initial: BoxDetails = { boxNumber: String(box.boxNumber), label: box.label ?? "", category: box.category ?? "", boxType: box.boxType ?? "", description: box.description ?? "", isActive: box.isActive };
+  const [details, setDetails] = useState<BoxDetails>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
-  const dirty = number.trim() !== String(box.boxNumber) || label.trim() !== (box.label ?? "");
+  const dirty = JSON.stringify(details) !== JSON.stringify(initial);
 
   async function save() {
     setError("");
-    setSaved(false);
-    const parsed = Number(number);
-    if (!Number.isInteger(parsed) || parsed < 1) {
-      setError("Enter a positive whole box number.");
-      return;
-    }
+    const parsed = Number(details.boxNumber);
+    if (!Number.isInteger(parsed) || parsed < 1) return setError("Enter a positive whole box number.");
     setBusy(true);
     try {
-      await updateBox({ boxId: box._id, boxNumber: parsed, label: label.trim() || undefined });
-      setSaved(true);
+      await updateBox({ boxId: box._id, boxNumber: parsed, ...boxPayload(details), isActive: details.isActive });
+      toast.success(`Box ${parsed} updated`);
     } catch (e) {
       setError(getUserErrorMessage(e, "Could not update the box."));
     } finally {
@@ -162,20 +260,10 @@ function BoxEditForm({ box }: { box: { _id: Id<"boxes">; boxNumber: number; labe
         void save();
       }}
     >
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Edit box</p>
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="grid gap-1">
-          <label htmlFor="edit-box-number" className="text-xs text-muted-foreground">Box no.</label>
-          <Input id="edit-box-number" type="number" min="1" step="1" value={number} onChange={(e) => { setNumber(e.target.value); setSaved(false); }} className="w-24" />
-        </div>
-        <div className="grid min-w-40 flex-1 gap-1">
-          <label htmlFor="edit-box-label" className="text-xs text-muted-foreground">Label</label>
-          <Input id="edit-box-label" value={label} maxLength={60} placeholder="e.g. Chains" onChange={(e) => { setLabel(e.target.value); setSaved(false); }} />
-        </div>
-        <Button type="submit" disabled={busy || !dirty}>{busy ? "Saving…" : "Save"}</Button>
-      </div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Box details</p>
+      <BoxFields value={details} onChange={setDetails} showStatus />
+      <div className="flex justify-end"><Button type="submit" disabled={busy || !dirty}>{busy ? "Saving…" : "Save changes"}</Button></div>
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
-      {saved && !dirty && <p role="status" className="text-xs text-success">Box updated.</p>}
     </form>
   );
 }
@@ -258,7 +346,19 @@ function AddBoxItemForm({ boxId }: { boxId: Id<"boxes"> }) {
       <div className="grid gap-2 sm:grid-cols-2">
         <div className="grid gap-1">
           <label className="text-xs text-muted-foreground">Product</label>
-          <Select value={productId} onValueChange={setProductId}>
+          <Select
+            value={productId}
+            onValueChange={(id) => {
+              setProductId(id);
+              // Start from the item master's name and per-piece weights.
+              const product = products?.find((p) => p._id === id);
+              if (product) {
+                if (!label.trim()) setLabel(product.name);
+                if (product.grossWeightMg !== undefined) setGross((product.grossWeightMg / 1000).toFixed(3));
+                if (product.stoneWeightMg !== undefined) setStone((product.stoneWeightMg / 1000).toFixed(3));
+              }
+            }}
+          >
             <SelectTrigger aria-label="Product"><SelectValue placeholder={products === undefined ? "Loading…" : "Choose product"} /></SelectTrigger>
             <SelectContent>
               <SelectItem value={NEW_PRODUCT}>+ New product…</SelectItem>
@@ -299,18 +399,37 @@ function BoxDetailDialog({
   box,
   onClose,
 }: {
-  box: { _id: Id<"boxes">; boxNumber: number; label?: string };
+  box: BoxRecord;
   onClose: () => void;
 }) {
   const items = useQuery(api.boxes.getItems, { boxId: box._id });
+  const products = useQuery(api.products.list);
+  const totals = (items ?? []).reduce((t, i) => ({ gross: t.gross + i.grossWeightMg, stone: t.stone + i.stoneWeightMg, net: t.net + i.netWeightMg }), { gross: 0, stone: 0, net: 0 });
+  // Items assigned to this box in the item master (their default box).
+  const assigned = (products ?? []).filter((p) => p.defaultBoxId === box._id);
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-h-[90svh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}
+            {box.category && <Badge variant="outline">{box.category}</Badge>}
+            {!box.isActive && <Badge variant="secondary">Inactive</Badge>}
+          </DialogTitle>
         </DialogHeader>
-        <BoxEditForm key={`${box.boxNumber}-${box.label ?? ""}`} box={box} />
+        <div className="grid grid-cols-4 gap-2 rounded-lg border p-3 text-center text-xs">
+          <div><p className="text-muted-foreground">Available pcs</p><p className="text-base font-semibold">{items?.length ?? "…"}</p></div>
+          <div><p className="text-muted-foreground">Gross</p><p className="text-base font-semibold tabular-nums">{mgToGramsDisplay(totals.gross)}g</p></div>
+          <div><p className="text-muted-foreground">Stone</p><p className="text-base font-semibold tabular-nums">{mgToGramsDisplay(totals.stone)}g</p></div>
+          <div><p className="text-muted-foreground">Net</p><p className="text-base font-semibold tabular-nums text-emerald-600">{mgToGramsDisplay(totals.net)}g</p></div>
+        </div>
+        {assigned.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Assigned items:</span> {assigned.map((p) => p.name).join(", ")}
+          </p>
+        )}
+        <BoxEditForm key={`${box.boxNumber}-${box.label ?? ""}-${box.category ?? ""}-${box.boxType ?? ""}-${box.description ?? ""}-${box.isActive}`} box={box} />
         <AddBoxItemForm boxId={box._id} />
         {items === undefined ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
@@ -337,25 +456,21 @@ export default function BoxOverviewPage() {
   const boxes = useQuery(api.boxes.list);
   const boxReport = useQuery(api.reports.getBoxReport);
   const reportByBoxId = useMemo(() => new Map((boxReport ?? []).map((row) => [row.boxId, row])), [boxReport]);
-  const createNext = useMutation(api.boxes.createNext);
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const itemMatches = useQuery(api.boxes.searchItems, search.trim().length >= 2 ? { term: search } : "skip");
   const [selectedBox, setSelectedBox] = useState<Id<"boxes"> | null>(null);
-  const [boxNumber, setBoxNumber] = useState("");
-  const [label, setLabel] = useState("");
-  const [error, setError] = useState("");
-  const [creating, setCreating] = useState(false);
 
   const filtered = useMemo(() => {
     if (!boxes) return undefined;
-    const q = search.trim();
-    if (!q) return boxes;
+    const q = search.trim().toLowerCase();
     return boxes.filter(
       (b) =>
-        String(b.boxNumber).includes(q) ||
-        b.label?.toLowerCase().includes(q.toLowerCase()),
+        (categoryFilter === "all" || (b.category ?? "") === categoryFilter) &&
+        (!q || String(b.boxNumber).includes(q) || b.label?.toLowerCase().includes(q) || b.category?.toLowerCase().includes(q)),
     );
-  }, [boxes, search]);
+  }, [boxes, search, categoryFilter]);
+  const nextNumber = (boxes ?? []).reduce((max, b) => Math.max(max, b.boxNumber), 100) + 1;
 
   // Live record, so the dialog title and edit form follow saved changes.
   const selectedBoxRecord = selectedBox ? boxes?.find((b) => b._id === selectedBox) : undefined;
@@ -364,21 +479,6 @@ export default function BoxOverviewPage() {
     filtered?.map((box) => box._id) ?? [],
     `boxes:${search}`,
   );
-
-  async function handleCreate() {
-    setCreating(true);
-    try {
-      setError("");
-      if (!boxNumber.trim()) throw new Error("Enter a box number");
-      await createNext({ boxNumber: Number(boxNumber), label });
-      setBoxNumber("");
-      setLabel("");
-    } catch (e) {
-      setError(getUserErrorMessage(e, "Unable to create box"));
-    } finally {
-      setCreating(false);
-    }
-  }
 
   return (
     <BoxScreensGate>
@@ -392,44 +492,26 @@ export default function BoxOverviewPage() {
             {boxes?.length ?? 0} boxes
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Input
-            aria-label="Box number"
-            type="number"
-            min="1"
-            step="1"
-            value={boxNumber}
-            onChange={(e) => setBoxNumber(e.target.value)}
-            placeholder="Box no."
-            className="w-28"
-          />
-          <Input
-            aria-label="Box label"
-            value={label}
-            onChange={(e) => setLabel(e.target.value)}
-            placeholder="Label (optional)"
-            className="w-44"
-          />
-          <Button onClick={handleCreate} disabled={creating}>
-            <Plus className="h-4 w-4" />
-            {creating ? "Creating…" : "Create Box"}
-          </Button>
-        </div>
+        <CreateBoxDialog nextNumber={nextNumber} />
       </div>
 
-      {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
-      <div className="relative max-w-sm">
+      <div className="flex flex-wrap items-center gap-2">
+      <div className="relative w-full max-w-sm">
         <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="pl-9"
-          placeholder="Search box number, or an item like 'ring'"
+          placeholder="Search box number, or an item name/code"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+      </div>
+      <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+        <SelectTrigger className="w-52" aria-label="Filter by box category"><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All categories</SelectItem>
+          {BOX_CATEGORIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+        </SelectContent>
+      </Select>
       </div>
 
       {itemMatches && itemMatches.length > 0 && (
@@ -491,6 +573,8 @@ export default function BoxOverviewPage() {
                       {box.label}
                     </p>
                   )}
+                  {box.category && <span className="text-[10px] font-medium text-primary">{box.category}</span>}
+                  {!box.isActive && <Badge variant="outline" className="text-[10px]">Inactive</Badge>}
                   <Badge variant="secondary" className="text-xs font-normal">
                     {(reportByBoxId.get(box._id)?.itemCount ?? box.itemCount)
                       ? `${reportByBoxId.get(box._id)?.itemCount ?? box.itemCount} item${(reportByBoxId.get(box._id)?.itemCount ?? box.itemCount) === 1 ? "" : "s"}`

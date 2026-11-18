@@ -204,6 +204,8 @@ const purchaseLineValidator = v.object({
   makingChargePaise: v.number(),
   stoneChargePaise: v.number(),
   lineDiscountPaise: v.optional(v.number()),
+  // Fixed purchase price per piece (item master). Omitted/0 → net weight × rate per gram.
+  unitPricePaise: v.optional(v.number()),
 });
 
 type PurchaseTransactionArgs = {
@@ -220,6 +222,7 @@ type PurchaseTransactionArgs = {
     makingChargePaise: number;
     stoneChargePaise: number;
     lineDiscountPaise?: number;
+    unitPricePaise?: number;
   }>;
   gstBasisPoints: number;
   amountPaidPaise: number;
@@ -260,7 +263,9 @@ async function applyPurchaseTransaction(
     if (item.stoneWeightMg < 0 || item.stoneWeightMg > item.grossWeightMg) {
       throw new Error("Stone weight must be between 0 and gross weight");
     }
-    if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
+    const unitPricePaise = item.unitPricePaise ?? 0;
+    if (!Number.isSafeInteger(unitPricePaise) || unitPricePaise < 0) throw new Error("Purchase price must be a valid amount of zero or more");
+    if (unitPricePaise === 0 && item.ratePerGramPaise <= 0) throw new Error("Enter the purchase price or the rate per gram for every item");
     if (item.boxId) {
       const box = await ctx.db.get(item.boxId);
       if (!box || box.deletedAt || box.organizationId !== auth.organizationId) throw new Error("Box not found");
@@ -281,7 +286,8 @@ async function applyPurchaseTransaction(
   for (const item of args.items) {
     if (item.lineDiscountPaise !== undefined && (!Number.isSafeInteger(item.lineDiscountPaise) || item.lineDiscountPaise < 0)) throw new Error("Line discount must be a valid amount of zero or more");
   }
-  const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine(item) }));
+  // A box line is always one piece; a loose GST line can be several.
+  const computedLines = args.items.map((item) => ({ item, computed: computePurchaseLine({ ...item, pieces: item.boxId ? 1 : item.pieces ?? 1 }) }));
   const subtotalPaise = computedLines.reduce((sum, l) => sum + l.computed.lineTotalPaise, 0);
   const taxPaise = basisPointsOf(subtotalPaise, args.gstBasisPoints);
   const unrounded = subtotalPaise + taxPaise;
@@ -336,7 +342,9 @@ async function applyPurchaseTransaction(
         ratePerGramPaise: item.ratePerGramPaise,
         makingChargePaise: item.makingChargePaise,
         stoneChargePaise: item.stoneChargePaise,
+        lineDiscountPaise: item.lineDiscountPaise || undefined,
         lineTotalPaise: computed.lineTotalPaise,
+        unitPricePaise: item.unitPricePaise || undefined,
         toItemStock: true,
         pieces,
         stockWeightMg: item.grossWeightMg,
@@ -374,6 +382,7 @@ async function applyPurchaseTransaction(
       stoneChargePaise: item.stoneChargePaise,
       lineDiscountPaise: item.lineDiscountPaise || undefined,
       lineTotalPaise: computed.lineTotalPaise,
+      unitPricePaise: item.unitPricePaise || undefined,
     });
 
     await ctx.db.insert("stockMovements", {

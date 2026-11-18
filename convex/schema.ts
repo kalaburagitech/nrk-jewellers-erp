@@ -259,6 +259,12 @@ export default defineSchema({
     grossWeightMg: v.optional(v.number()),
     netWeightMg: v.optional(v.number()),
     makingChargePaise: v.optional(v.number()),
+    stoneWeightMg: v.optional(v.number()),
+    wastageBasisPoints: v.optional(v.number()),
+    // Purity typed in by hand ("Other") when it isn't one of the standard karats.
+    purityOther: v.optional(v.string()),
+    // Box this item is normally kept in (purchases/opening stock default to it).
+    defaultBoxId: v.optional(v.id("boxes")),
     // Item form "Stock" tab.
     openingAtPricePaise: v.optional(v.number()),
     openingAsOfMs: v.optional(v.number()),
@@ -289,7 +295,10 @@ export default defineSchema({
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
     boxNumber: v.number(), // 101-200 seeded, unlimited thereafter
-    label: v.optional(v.string()),
+    label: v.optional(v.string()), // box name
+    category: v.optional(v.string()), // Ring Box, Chain Box, Necklace Box…
+    boxType: v.optional(v.string()), // Display tray, Locker, Counter…
+    description: v.optional(v.string()),
     // Maintained counter of in_stock boxItems, updated by every mutation
     // that adds/removes an item — avoids an N+1 count query per box on the
     // overview grid.
@@ -438,6 +447,8 @@ export default defineSchema({
     stoneChargePaise: v.number(),
     lineDiscountPaise: v.optional(v.number()),
     lineTotalPaise: v.number(),
+    // Fixed purchase price per piece, when the line wasn't priced by rate per gram.
+    unitPricePaise: v.optional(v.number()),
     // GST company line: added to item stock (productStock) instead of a box.
     toItemStock: v.optional(v.boolean()),
     pieces: v.optional(v.number()),
@@ -510,6 +521,12 @@ export default defineSchema({
     lineTaxPaise: v.number(),
     lineDiscountPaise: v.optional(v.number()),
     lineTotalPaise: v.number(),
+    // Fixed selling price per piece (item master), when not priced by rate per gram.
+    unitPricePaise: v.optional(v.number()),
+    // Internal cost snapshot (item purchase price × pieces) for profit reports — never printed or sent to the billing counter.
+    purchasePricePaise: v.optional(v.number()),
+    // Billed price differs from the item's saved selling price (Owner/Admin only, audit-logged).
+    priceOverridden: v.optional(v.boolean()),
     // GST company line: typed in manually and deducted from item stock (productStock), not a box piece.
     fromItemStock: v.optional(v.boolean()),
     pieces: v.optional(v.number()),

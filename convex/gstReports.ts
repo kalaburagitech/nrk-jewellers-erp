@@ -261,3 +261,98 @@ export const gstr9 = query({
     };
   },
 });
+
+/**
+ * GST module dashboard: the sales (output) and purchase (input) GST registers,
+ * totals, net payable, rate-wise and HSN-wise summaries for a period — built
+ * from the same calculations as GSTR-1/2/3B so every screen agrees. Only GST
+ * bills are included; Daily Sales (non-GST) bills never appear here.
+ */
+export const moduleSummary = query({
+  args: range,
+  handler: async (ctx, args) => {
+    const auth = await requireAuthContext(ctx);
+    const org = await ctx.db.get(auth.organizationId);
+    const docs = (await loadOutward(ctx, auth.organizationId, args.startDate, args.endDate)).filter((d) => d.sale.status === "finalized");
+    const signed = docs.filter((d) => isInvoice(d.sale) || isCreditNote(d.sale));
+    const sales = signed
+      .map(({ sale, customer, lines }) => {
+        const sign = isCreditNote(sale) ? -1 : 1;
+        const t = sumSplit(lines);
+        return {
+          id: String(sale._id),
+          date: sale.createdAt,
+          invoiceNumber: sale.invoiceNumber,
+          type: sign < 0 ? "Credit Note" : "Invoice",
+          customerName: customer?.name ?? "—",
+          gstin: customer?.gstin ?? "",
+          placeOfSupply: sale.stateOfSupply || customer?.state || "",
+          interState: isInterState(sale.stateOfSupply || customer?.state, org?.state),
+          taxablePaise: sign * t.taxablePaise,
+          cgstPaise: sign * t.cgstPaise,
+          sgstPaise: sign * t.sgstPaise,
+          igstPaise: sign * t.igstPaise,
+          invoiceValuePaise: sign * sale.totalPaise,
+        };
+      })
+      .sort((a, b) => a.date - b.date);
+    const { itc, unknownState, rows: purchases } = await inward(ctx, auth.organizationId, org?.state, args.startDate, args.endDate);
+    const output = sales.reduce(
+      (a, r) => ({ taxablePaise: a.taxablePaise + r.taxablePaise, cgstPaise: a.cgstPaise + r.cgstPaise, sgstPaise: a.sgstPaise + r.sgstPaise, igstPaise: a.igstPaise + r.igstPaise }),
+      { taxablePaise: 0, cgstPaise: 0, sgstPaise: 0, igstPaise: 0 },
+    );
+    const byRate = new Map<number, { rateBp: number; taxablePaise: number; cgstPaise: number; sgstPaise: number; igstPaise: number }>();
+    for (const { sale, lines } of signed) {
+      const sign = isCreditNote(sale) ? -1 : 1;
+      for (const l of lines) {
+        const r = byRate.get(l.rateBp) ?? { rateBp: l.rateBp, taxablePaise: 0, cgstPaise: 0, sgstPaise: 0, igstPaise: 0 };
+        r.taxablePaise += sign * l.taxablePaise;
+        r.cgstPaise += sign * l.cgstPaise;
+        r.sgstPaise += sign * l.sgstPaise;
+        r.igstPaise += sign * l.igstPaise;
+        byRate.set(l.rateBp, r);
+      }
+    }
+    return {
+      company: { name: org?.name ?? "", gstin: org?.gstin ?? "", state: org?.state ?? "" },
+      sales,
+      purchases,
+      output,
+      input: itc,
+      payable: { cgstPaise: output.cgstPaise - itc.cgstPaise, sgstPaise: output.sgstPaise - itc.sgstPaise, igstPaise: output.igstPaise - itc.igstPaise },
+      rates: [...byRate.values()].sort((a, b) => a.rateBp - b.rateBp),
+      hsn: hsnRows(docs.filter((d) => isInvoice(d.sale))),
+      invoiceCount: sales.filter((r) => r.type === "Invoice").length,
+      purchaseCount: purchases.length,
+      unknownState,
+    };
+  },
+});
+
+/** HSN codes in use on items, with their GST rate — the GST module's HSN master view. */
+export const hsnCodes = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const [products, taxes] = await Promise.all([
+      ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId)).collect(),
+      ctx.db.query("taxConfigurations").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId)).collect(),
+    ]);
+    const taxById = new Map(taxes.filter((t) => !t.deletedAt).map((t) => [String(t._id), t]));
+    const live = products.filter((p) => !p.deletedAt && p.isActive);
+    const codes = new Map<string, { hsnCode: string; items: string[]; rates: Set<string> }>();
+    for (const p of live) {
+      const tax = p.taxConfigurationId ? taxById.get(String(p.taxConfigurationId)) : undefined;
+      const code = p.hsnCode || tax?.hsnCode;
+      if (!code) continue;
+      const row = codes.get(code) ?? { hsnCode: code, items: [], rates: new Set<string>() };
+      row.items.push(p.name);
+      if (tax) row.rates.add(tax.name);
+      codes.set(code, row);
+    }
+    return {
+      codes: [...codes.values()].map((c) => ({ hsnCode: c.hsnCode, items: c.items.sort(), rateNames: [...c.rates].sort() })).sort((a, b) => a.hsnCode.localeCompare(b.hsnCode)),
+      itemsWithoutHsn: live.filter((p) => !p.hsnCode && !(p.taxConfigurationId && taxById.get(String(p.taxConfigurationId))?.hsnCode) && p.itemType !== "service").map((p) => p.name).sort(),
+    };
+  },
+});

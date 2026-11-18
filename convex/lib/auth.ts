@@ -91,3 +91,14 @@ export function requireRole(auth: AuthContext, allowed: Role[]) {
 export function roleAtLeast(role: Role, min: Role) {
   return ROLE_RANK[role] >= ROLE_RANK[min];
 }
+
+/** Roles that may see an item's purchase price (cost). Billing counter and staff never do. */
+const COST_VIEW_ROLES: Role[] = ["owner", "admin", "accountant", "purchase_manager", "inventory_manager"];
+export function canViewCost(role: Role) {
+  return COST_VIEW_ROLES.includes(role);
+}
+
+/** Only the Owner or an Admin may bill an item at a price other than its saved selling price. */
+export function canOverridePrice(role: Role) {
+  return role === "owner" || role === "admin";
+}

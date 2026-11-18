@@ -119,7 +119,7 @@ function SaleDetailDialog({
                   <p className="text-xs text-muted-foreground">
                     Gross {mgToGramsDisplay(i.grossWeightMg)}g
                     {i.stoneWeightMg ? ` (${mgToGramsDisplay(i.stoneWeightMg)}g stone)` : ""} @{" "}
-                    {formatPaise(i.ratePerGramPaise)}/g
+                    {i.unitPricePaise ? `${formatPaise(i.unitPricePaise)}/pc` : `${formatPaise(i.ratePerGramPaise)}/g`}
                   </p>
                 </div>
                 <p className="font-medium">{formatPaise(i.lineTotalPaise)}</p>

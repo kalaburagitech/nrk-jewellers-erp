@@ -112,6 +112,10 @@ function ProductDetailView({
   purityLabel?: string;
 }) {
   const details = useQuery(api.products.details, { id: product._id });
+  const boxes = useQuery(api.boxes.list);
+  const pricing = useQuery(api.products.myPricingAccess);
+  const box = product.defaultBoxId ? boxes?.find((b) => b._id === product.defaultBoxId) : undefined;
+  const g = (mg?: number) => (mg === undefined ? "—" : `${(mg / 1000).toFixed(3)} g`);
   return (
     <div className="space-y-5">
       {/* Item Header & Controls (Page 10) */}
@@ -127,7 +131,10 @@ function ProductDetailView({
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
             {product.sku && <span className="font-mono">Code: {product.sku}</span>}
-            {purityLabel && <span>Purity: {purityLabel}</span>}
+            {(purityLabel || product.purityOther) && (
+              <Badge className="border-amber-500/30 bg-amber-500/10 text-[11px] font-semibold text-amber-700 dark:text-amber-300">{purityLabel ?? product.purityOther}</Badge>
+            )}
+            {box && <span className="font-medium">Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</span>}
             {product.hsnCode && <span>HSN: {product.hsnCode}</span>}
             {product.description && <span>{product.description}</span>}
           </div>
@@ -161,7 +168,13 @@ function ProductDetailView({
       {/* Summary cards: real prices and live stock */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Sale Price" value={product.salePricePaise !== undefined ? `${formatPaise(product.salePricePaise)} ${product.salePriceIncludesTax ? "(incl. tax)" : "(excl. tax)"}` : "Billed at today's rate"} />
-        <StatCard label="Purchase Price" value={product.purchasePricePaise !== undefined ? `${formatPaise(product.purchasePricePaise)} ${product.purchasePriceIncludesTax ? "(incl. tax)" : "(excl. tax)"}` : "—"} />
+        {pricing?.canViewCost && (
+          <StatCard
+            label="Purchase Price"
+            value={product.purchasePricePaise !== undefined ? `${formatPaise(product.purchasePricePaise)} ${product.purchasePriceIncludesTax ? "(incl. tax)" : "(excl. tax)"}` : "—"}
+            note={product.purchasePricePaise !== undefined && product.salePricePaise !== undefined ? `Margin ${formatPaise(product.salePricePaise - product.purchasePricePaise)} / pc` : undefined}
+          />
+        )}
         <StatCard
           label="Stock Quantity"
           value={details ? `${details.pieces} pcs · ${(details.weightMg / 1000).toFixed(3)} g` : "…"}
@@ -173,6 +186,14 @@ function ProductDetailView({
           value={details && product.purchasePricePaise !== undefined ? formatPaise(stockValuePaise(product, details)) : "Set a purchase price"}
           note={details?.taxName ? `Tax: ${details.taxName}` : undefined}
         />
+      </div>
+      {/* Per-piece jewellery details from the item master */}
+      <div className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-4 text-sm sm:grid-cols-5">
+        <div><p className="text-[11px] uppercase text-muted-foreground">Gross wt</p><p className="font-semibold tabular-nums">{g(product.grossWeightMg)}</p></div>
+        <div><p className="text-[11px] uppercase text-muted-foreground">Stone wt</p><p className="font-semibold tabular-nums">{g(product.stoneWeightMg)}</p></div>
+        <div><p className="text-[11px] uppercase text-muted-foreground">Net wt</p><p className="font-semibold tabular-nums text-emerald-600">{g(product.netWeightMg)}</p></div>
+        <div><p className="text-[11px] uppercase text-muted-foreground">Making</p><p className="font-semibold tabular-nums">{product.makingChargePaise !== undefined ? formatPaise(product.makingChargePaise) : "—"}</p></div>
+        <div><p className="text-[11px] uppercase text-muted-foreground">Wastage</p><p className="font-semibold tabular-nums">{product.wastageBasisPoints !== undefined ? `${product.wastageBasisPoints / 100}%` : "—"}</p></div>
       </div>
       {/* Box Links & Barcode Labeling Quick Actions */}
       <div className="flex flex-wrap items-center gap-3">
@@ -394,7 +415,7 @@ export default function ProductsPage() {
             ) : (
               filtered.map((p) => {
                 const isSelected = activeProduct?._id === p._id;
-                const purity = p.metalPurityId ? purityMap.get(p.metalPurityId) : null;
+                const purity = (p.metalPurityId ? purityMap.get(p.metalPurityId) : null) ?? p.purityOther;
                 return (
                   <button
                     key={p._id}

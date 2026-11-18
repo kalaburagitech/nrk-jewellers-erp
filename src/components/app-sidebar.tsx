@@ -47,7 +47,7 @@ const GROUPS = [
     paths: ["/customers", "/inventory/products", "/sales", "/purchases", "/girvi"],
   },
   { label: "Stock & money", paths: ["/inventory", "/boxes", "/cash-bank", "/metal-rates"] },
-  { label: "Reports", paths: ["/reports"] },
+  { label: "GST & Reports", paths: ["/gst", "/reports"] },
   { label: "Settings & data", paths: ["/settings", "/backup", "/manage-data"] },
 ];
 export function AppSidebar({ role }: { role: string }) {
