@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import { normalizeCustomFieldValues } from "./lib/customFieldValues";
-import { changeItemStock, isGstCompanyType } from "./lib/itemStock";
+import { changeItemStock, gstStockByProduct, isGstCompanyType } from "./lib/itemStock";
 import type { QueryCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 
@@ -56,7 +56,7 @@ export const details = query({
     let weightMg = 0;
     let pieces = 0;
     if (isGstCompanyType(company?.companyType)) {
-      const row = await ctx.db.query("productStock").withIndex("by_org_and_product", (q) => q.eq("organizationId", auth.organizationId).eq("productId", args.id)).first();
+      const row = (await gstStockByProduct(ctx, auth.organizationId)).get(args.id);
       weightMg = row?.weightMg ?? 0;
       pieces = row?.pieces ?? 0;
     } else {

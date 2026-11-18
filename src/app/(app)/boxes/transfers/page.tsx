@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
+import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 export default function BoxTransfersPage() {
   const boxes = useQuery(api.boxes.list);
@@ -52,7 +52,7 @@ export default function BoxTransfersPage() {
   }
 
   return (
-    <PrivacyLockGate>
+    <BoxScreensGate>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Box Transfers</h1>
@@ -128,6 +128,6 @@ export default function BoxTransfersPage() {
         </CardContent>
       </Card>
       </div>
-    </PrivacyLockGate>
+    </BoxScreensGate>
   );
 }

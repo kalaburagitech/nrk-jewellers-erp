@@ -3,8 +3,8 @@ import { requireAuthContext } from "./lib/auth";
 import { isGstCompanyType } from "./lib/itemStock";
 
 /**
- * Item-wise stock for the active company: GST companies read item stock
- * (productStock); Daily Sales reads in-stock box pieces. Value = purchase
+ * Item-wise stock for the active company: in-stock box pieces, plus (GST
+ * companies) loose item stock (productStock). Value = purchase
  * price × stock (per gram for gram/kg items, per piece otherwise).
  */
 export const itemStock = query({
@@ -18,14 +18,16 @@ export const itemStock = query({
       ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       gst ? ctx.db.query("productStock").withIndex("by_org", (q) => q.eq("organizationId", org)).collect() : Promise.resolve([]),
-      gst ? Promise.resolve([]) : ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+      // Both company types keep pieces in boxes; GST companies also have loose item stock.
+      ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
     ]);
     const stock = new Map<string, { weightMg: number; pieces: number }>();
     for (const r of stockRows) stock.set(String(r.productId), { weightMg: r.weightMg, pieces: r.pieces });
     for (const b of boxItems) {
       if (b.deletedAt || b.status !== "in_stock") continue;
       const s = stock.get(String(b.productId)) ?? { weightMg: 0, pieces: 0 };
-      s.weightMg += b.netWeightMg;
+      // GST item stock is kept in gross weight, so box pieces count the same way there.
+      s.weightMg += gst ? b.grossWeightMg : b.netWeightMg;
       s.pieces += 1;
       stock.set(String(b.productId), s);
     }

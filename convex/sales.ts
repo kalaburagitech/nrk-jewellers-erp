@@ -251,8 +251,8 @@ export const listByCustomer = query({
   },
 });
 
-// A line is either a box piece (Daily Sales company: boxItemId) or a manually
-// typed item (GST company: productId + weights + pieces, taken from item stock).
+// A line is either a box piece (boxItemId — both company types) or, in a GST
+// company only, a typed item taken from loose item stock (productId + weights + pieces).
 function checkedDiscount(paise: number | undefined) {
   if (paise === undefined) return undefined;
   if (!Number.isSafeInteger(paise) || paise < 0) throw new Error("Line discount must be a valid amount of zero or more");
@@ -365,7 +365,6 @@ async function applySaleTransaction(
     let pieces = 1;
     let label: string;
     if (item.boxItemId) {
-      if (gstCompany) throw new Error("GST bills use items from GST stock, not boxes. Add the item manually.");
       boxItem = await ctx.db.get(item.boxItemId);
       if (!boxItem || boxItem.deletedAt || boxItem.organizationId !== auth.organizationId) throw new Error("Item not found");
       if (boxItem.status !== "in_stock") throw new Error(`"${boxItem.label}" is not available for sale`);

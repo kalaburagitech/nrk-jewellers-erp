@@ -1,7 +1,12 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 
-/** GST companies keep item-wise stock; Daily Sales companies keep stock in boxes. */
+/**
+ * Company types. Both Daily Sales and GST companies keep physical pieces in
+ * boxes (each company has its own, separate boxes). GST companies also keep
+ * item-wise stock (productStock) for stock that isn't in a box yet; their GST
+ * stock = item stock + the pieces in their boxes (see gstStockByProduct).
+ */
 export function isGstCompanyType(companyType: Doc<"organizations">["companyType"]) {
   return companyType === "gst_gold" || companyType === "gst_silver";
 }
@@ -11,11 +16,39 @@ export async function isGstCompany(ctx: QueryCtx | MutationCtx, organizationId: 
   return isGstCompanyType(company?.companyType);
 }
 
-/** Throws if this company is a GST company — boxes are only for Daily Sales. */
-export async function assertBoxCompany(ctx: QueryCtx | MutationCtx, organizationId: Id<"organizations">) {
-  if (await isGstCompany(ctx, organizationId)) {
-    throw new Error("Boxes are only used in the Daily Sales company. In a GST company, manage stock under Stock → GST.");
+/**
+ * GST stock per item: loose item stock (productStock) plus every in-stock
+ * piece in the company's boxes. Weight is gross weight, like item stock.
+ */
+export async function gstStockByProduct(ctx: QueryCtx | MutationCtx, organizationId: Id<"organizations">) {
+  const [rows, pieces] = await Promise.all([
+    ctx.db.query("productStock").withIndex("by_org", (q) => q.eq("organizationId", organizationId)).collect(),
+    ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", organizationId)).collect(),
+  ]);
+  const stock = new Map<Id<"products">, { weightMg: number; pieces: number; looseWeightMg: number; loosePieces: number; boxPieces: number }>();
+  const get = (id: Id<"products">) => {
+    let s = stock.get(id);
+    if (!s) {
+      s = { weightMg: 0, pieces: 0, looseWeightMg: 0, loosePieces: 0, boxPieces: 0 };
+      stock.set(id, s);
+    }
+    return s;
+  };
+  for (const r of rows) {
+    const s = get(r.productId);
+    s.weightMg += r.weightMg;
+    s.pieces += r.pieces;
+    s.looseWeightMg += r.weightMg;
+    s.loosePieces += r.pieces;
   }
+  for (const b of pieces) {
+    if (b.deletedAt || b.status !== "in_stock") continue;
+    const s = get(b.productId);
+    s.weightMg += b.grossWeightMg;
+    s.pieces += 1;
+    s.boxPieces += 1;
+  }
+  return stock;
 }
 
 export async function getItemStock(ctx: QueryCtx | MutationCtx, organizationId: Id<"organizations">, productId: Id<"products">) {

@@ -167,22 +167,22 @@ function RecentAdjustments() {
   );
 }
 
-/** GST companies keep item-wise stock (no boxes), so adjustments change item stock directly. */
+/**
+ * GST company: loose item stock (not in a box yet). Box stock is adjusted
+ * exactly like Daily Sales, in the box section above this one.
+ */
 function GstStockAdjustments() {
   const items = useQuery(api.itemStock.list);
   const { isViewOnly } = useAccessInfo();
   const [adjusting, setAdjusting] = useState<{ productId: string; direction: "in" | "out" } | null>(null);
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>
-        <p className="text-sm text-muted-foreground">
-          Add or remove GST item stock after a physical count, damage or loss — every change is logged with a reason.
-        </p>
-      </div>
+    <>
       <Card>
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base">GST item stock</CardTitle>
+          <div>
+            <CardTitle className="text-base">Loose GST item stock (not in a box)</CardTitle>
+            <p className="text-xs text-muted-foreground">Older GST stock kept item-wise. Put it into boxes under Items → GST Item Stock.</p>
+          </div>
           {!isViewOnly && (
             <div className="flex gap-2">
               <Button size="sm" onClick={() => setAdjusting({ productId: "", direction: "in" })}>Add stock</Button>
@@ -196,11 +196,11 @@ function GstStockAdjustments() {
           ) : items.length === 0 ? (
             <p className="text-sm text-muted-foreground">No items yet. Add items under Items → Item List.</p>
           ) : (
-            items.map((item) => (
+            items.filter((item) => item.looseWeightMg !== 0 || item.loosePieces !== 0).map((item) => (
               <div key={item.productId} className="flex items-center justify-between rounded-md border border-border p-3">
                 <div>
                   <p className="text-sm font-medium">{item.name}</p>
-                  <p className="text-xs text-muted-foreground">{mgToGramsDisplay(item.weightMg)} g · {item.pieces} pcs</p>
+                  <p className="text-xs text-muted-foreground">{mgToGramsDisplay(item.looseWeightMg)} g · {item.loosePieces} pcs loose</p>
                 </div>
                 {!isViewOnly && (
                   <Button size="sm" variant="outline" onClick={() => setAdjusting({ productId: item.productId, direction: "out" })}>
@@ -212,9 +212,8 @@ function GstStockAdjustments() {
           )}
         </CardContent>
       </Card>
-      <RecentAdjustments />
       {adjusting && items && <GstStockAdjustDialog items={items} initial={adjusting} onClose={() => setAdjusting(null)} />}
-    </div>
+    </>
   );
 }
 
@@ -222,11 +221,16 @@ export default function StockAdjustmentsPage() {
   const access = useQuery(api.organizations.getMyAccess);
   const companyType = access?.organization?.companyType;
   if (access === undefined) return <p className="text-sm text-muted-foreground">Loading…</p>;
-  if (companyType === "gst_gold" || companyType === "gst_silver") return <GstStockAdjustments />;
-  return <BoxStockAdjustments />;
+  // Both companies adjust box stock the same way; the GST company's boxes aren't private.
+  if (companyType === "gst_gold" || companyType === "gst_silver") return <BoxStockAdjustments gst />;
+  return (
+    <PrivacyLockGate>
+      <BoxStockAdjustments />
+    </PrivacyLockGate>
+  );
 }
 
-function BoxStockAdjustments() {
+function BoxStockAdjustments({ gst = false }: { gst?: boolean }) {
   const boxes = useQuery(api.boxes.list);
   const overview = useQuery(api.boxes.getInventoryOverview);
   const adjustBox = useMutation(api.stockAdjustments.adjustBox);
@@ -265,7 +269,6 @@ function BoxStockAdjustments() {
   }
 
   return (
-    <PrivacyLockGate>
       <div className="mx-auto flex max-w-5xl flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Adjustments</h1>
@@ -351,10 +354,11 @@ function BoxStockAdjustments() {
         </CardContent>
       </Card>
 
+      {gst && <GstStockAdjustments />}
+
       <RecentAdjustments />
 
       {selectedItem && <AdjustDialog item={selectedItem} onClose={() => setSelectedItem(null)} />}
       </div>
-    </PrivacyLockGate>
   );
 }

@@ -2,6 +2,8 @@
 
 import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { EyeOff } from "lucide-react";
+import { useQuery } from "convex/react";
+import { api } from "../../convex/_generated/api";
 
 /**
  * Hides a private section while the privacy lock is on. Deliberately shows a
@@ -22,4 +24,17 @@ export function PrivacyHiddenNotice() {
       <p className="text-sm text-muted-foreground">Go back to Home to continue.</p>
     </div>
   );
+}
+
+/**
+ * Box screens: each company has its own boxes. The GST company's boxes are not
+ * private, so they stay visible while the lock is on; Daily Sales boxes hide.
+ */
+export function BoxScreensGate({ children }: { children: React.ReactNode }) {
+  const { isLocked } = usePrivacyLock();
+  const access = useQuery(api.organizations.getMyAccess);
+  const companyType = access?.organization?.companyType;
+  const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
+  if (isLocked && !gstCompany) return <PrivacyHiddenNotice />;
+  return <>{children}</>;
 }

@@ -203,7 +203,11 @@ export default function ProductsPage() {
   const recentSales = useQuery(api.sales.list);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("products");
-  const tabToUse = isLocked && activeTab === "boxes" ? "products" : activeTab;
+  const access = useQuery(api.organizations.getMyAccess);
+  const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
+  // GST company boxes are always visible; Daily Sales boxes only when unlocked.
+  const hideBoxes = isLocked && !gstCompany;
+  const tabToUse = hideBoxes && activeTab === "boxes" ? "products" : activeTab;
   const [selectedBoxId, setSelectedBoxId] = useState<Id<"boxes"> | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<Id<"products"> | null>(null);
 
@@ -284,7 +288,7 @@ export default function ProductsPage() {
           >
             Products ({products?.length ?? 0})
           </button>
-          {!isLocked && (
+          {!hideBoxes && (
             <button
               type="button"
               onClick={() => setActiveTab("boxes")}

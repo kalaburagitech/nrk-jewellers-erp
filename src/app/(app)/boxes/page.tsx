@@ -23,7 +23,7 @@ import {
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
+import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 function BoxItemRow({ item }: { item: { _id: Id<"boxItems">; label: string; netWeightMg: number } }) {
   const renameItem = useMutation(api.boxes.renameItem);
@@ -381,7 +381,7 @@ export default function BoxOverviewPage() {
   }
 
   return (
-    <PrivacyLockGate>
+    <BoxScreensGate>
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -531,6 +531,6 @@ export default function BoxOverviewPage() {
         />
       )}
       </div>
-    </PrivacyLockGate>
+    </BoxScreensGate>
   );
 }

@@ -264,7 +264,7 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
     if (stoneWeightMg > grossWeightMg) return setError("Stone weight cannot be more than gross weight.");
     if (!Number.isInteger(pcs) || pcs < 1) return setError("Pieces must be 1 or more.");
     // The whole piece (gross weight) leaves stock; the bill is priced on net weight.
-    if (grossWeightMg > selected.weightMg) return setError(`Only ${mgToGramsDisplay(selected.weightMg)} g of ${selected.name} is in GST stock.`);
+    if (grossWeightMg > selected.looseWeightMg) return setError(`Only ${mgToGramsDisplay(selected.looseWeightMg)} g of ${selected.name} is loose GST stock (the rest is in boxes — pick it from its box).`);
     setError(null);
     const product = products?.find((p) => p._id === productId);
     onAdd({ productId, name: selected.name, metalPurityId: product?.metalPurityId, grossWeightMg, stoneWeightMg, pieces: pcs });
@@ -276,8 +276,8 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
   return (
     <Card className="border-border/80 shadow-xs">
       <CardHeader className="p-4 pb-2">
-        <CardTitle className="text-sm font-bold uppercase tracking-wide">Add item (GST stock)</CardTitle>
-        <p className="text-xs text-muted-foreground">Pick the item and type its weight. The bill shows net weight; the gross weight is deducted from GST item stock.</p>
+        <CardTitle className="text-sm font-bold uppercase tracking-wide">Loose GST stock (not in a box yet)</CardTitle>
+        <p className="text-xs text-muted-foreground">For GST stock that has not been put into a box. Pick the item and type its weight; the gross weight is deducted from loose item stock. Put it into a box under Items → GST Item Stock.</p>
       </CardHeader>
       <CardContent className="grid grid-cols-2 gap-2 p-4 pt-0 sm:grid-cols-[2fr_1fr_1fr_0.7fr_auto] sm:items-end">
         <div className="col-span-2 sm:col-span-1">
@@ -285,8 +285,8 @@ function ManualItemForm({ onAdd }: { onAdd: (item: { productId: string; name: st
           <Select value={productId || undefined} onValueChange={setProductId}>
             <SelectTrigger className="h-9 w-full text-xs"><SelectValue placeholder={stock === undefined ? "Loading…" : "Choose item"} /></SelectTrigger>
             <SelectContent>
-              {stock?.map((s) => (
-                <SelectItem key={s.productId} value={s.productId}>{s.name} · {mgToGramsDisplay(s.weightMg)} g · {s.pieces} pcs</SelectItem>
+              {stock?.filter((s) => s.looseWeightMg > 0 || s.loosePieces > 0).map((s) => (
+                <SelectItem key={s.productId} value={s.productId}>{s.name} · {mgToGramsDisplay(s.looseWeightMg)} g · {s.loosePieces} pcs loose</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -1332,20 +1332,16 @@ export default function NewBillPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Daily Sales: pick pieces from boxes. GST company: type items in manually from GST item stock. */}
-        {gstCompany ? (
-          <ManualItemForm onAdd={addManualLine} />
-        ) : (
-          <>
-            {prefs?.items.barcodeScan !== false && <BarcodeScanInput onItem={(item) => addLine(item)} alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [String(l.boxItemId)] : [])))} />}
-            <BoxItemPicker
-              boxes={boxes}
-              products={products}
-              onAdd={addLine}
-              alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [l.boxItemId] : [])))}
-            />
-          </>
-        )}
+        {/* Both companies pick pieces from their own boxes. A GST company can also
+            bill loose GST item stock that hasn't been put into a box yet. */}
+        {prefs?.items.barcodeScan !== false && <BarcodeScanInput onItem={(item) => addLine(item)} alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [String(l.boxItemId)] : [])))} />}
+        <BoxItemPicker
+          boxes={boxes}
+          products={products}
+          onAdd={addLine}
+          alreadyAddedIds={new Set(lines.flatMap((l) => (l.boxItemId ? [l.boxItemId] : [])))}
+        />
+        {gstCompany && <ManualItemForm onAdd={addManualLine} />}
 
         {/* Vyapar Items Table matching Page 17 */}
         <Card className="border-border/80 shadow-xs overflow-hidden">
@@ -1355,14 +1351,14 @@ export default function NewBillPage() {
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               {gstCompany
-                ? "Bill is priced on net weight; the gross weight and pieces are deducted from GST item stock."
+                ? "Box pieces leave their box when the bill is saved; loose items are deducted from GST item stock."
                 : "Selling deducts pieces and weight straight from the assigned physical box."}
             </p>
           </CardHeader>
           <CardContent className="p-0">
             {lines.length === 0 ? (
               <div className="p-8 text-center text-xs text-muted-foreground">
-                <p>{gstCompany ? "No items added yet. Choose an item above and enter its weight." : "No items added yet. Pick an item from a box above or add a new piece to a box."}</p>
+                <p>No items added yet. Pick an item from a box above{gstCompany ? ", or add loose GST stock" : " or add a new piece to a box"}.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">

@@ -190,8 +190,8 @@ export const listBySupplier = query({
   },
 });
 
-// Daily Sales company: each line becomes a piece in boxId. GST company: no box —
-// the line's net weight and pieces are added to item stock (productStock).
+// Each line with a boxId becomes a piece in that box (both company types). A GST
+// company line without a box adds its weight and pieces to loose item stock (productStock).
 const purchaseLineValidator = v.object({
   productId: v.id("products"),
   boxId: v.optional(v.id("boxes")),
@@ -261,14 +261,14 @@ async function applyPurchaseTransaction(
       throw new Error("Stone weight must be between 0 and gross weight");
     }
     if (item.ratePerGramPaise <= 0) throw new Error("Rate per gram must be greater than zero");
-    if (gstCompany) {
-      if (item.boxId) throw new Error("GST company purchases go into item stock, not boxes.");
-      if (item.pieces !== undefined && (!Number.isSafeInteger(item.pieces) || item.pieces < 1)) throw new Error("Pieces must be 1 or more");
-    } else {
-      if (!item.boxId) throw new Error("Choose a box for every purchased item.");
+    if (item.boxId) {
       const box = await ctx.db.get(item.boxId);
       if (!box || box.deletedAt || box.organizationId !== auth.organizationId) throw new Error("Box not found");
       boxes.set(item.boxId, box);
+    } else if (gstCompany) {
+      if (item.pieces !== undefined && (!Number.isSafeInteger(item.pieces) || item.pieces < 1)) throw new Error("Pieces must be 1 or more");
+    } else {
+      throw new Error("Choose a box for every purchased item.");
     }
     const product = await ctx.db.get(item.productId);
     if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Product not found");

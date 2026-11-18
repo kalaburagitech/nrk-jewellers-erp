@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
+import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 function Label({
   item,
@@ -73,7 +73,7 @@ export default function BarcodeLabelsPage() {
   );
 
   return (
-    <PrivacyLockGate>
+    <BoxScreensGate>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between print:hidden gap-3">
         <div>
@@ -153,6 +153,6 @@ export default function BarcodeLabelsPage() {
         </div>
       )}
       </div>
-    </PrivacyLockGate>
+    </BoxScreensGate>
   );
 }

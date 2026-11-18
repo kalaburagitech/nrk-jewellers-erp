@@ -40,7 +40,7 @@ export const NAV_SECTIONS: NavSection[] = [
   ] },
   { title: "Items", icon: PackageSearch, href: "/inventory/products", items: [
     { title: "Item List", href: "/inventory/products" },
-    { title: "Stock (Daily / GST)", href: "/inventory/stock" },
+    { title: "GST Item Stock", href: "/inventory/stock" },
     { title: "Stock Groups", href: "/inventory/groups" },
     { title: "Stock Categories", href: "/inventory/categories" },
   ] },

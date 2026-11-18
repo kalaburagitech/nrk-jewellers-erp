@@ -56,11 +56,12 @@ describe("GST item stock", () => {
     expect(stock[0]).toMatchObject({ weightMg: 10000, pieces: 2 });
   });
 
-  it("keeps boxes out of GST bills and manual lines out of Daily Sales bills", async () => {
+  it("keeps each company's boxes separate and manual lines out of Daily Sales bills", async () => {
+    // The fixture's box piece belongs to the Daily Sales company: a GST bill can't sell it.
     const gst = await fixture("gst");
     await expect(gst.owner.mutation(api.sales.create, {
       ...bill, customerId: gst.customer, isGst: true, idempotencyKey: "box-in-gst", items: [{ ...line, boxItemId: gst.boxItem }],
-    })).rejects.toThrow(/not boxes/);
+    })).rejects.toThrow(/Item not found/);
 
     const daily = await fixture("daily");
     await expect(daily.owner.mutation(api.sales.create, {

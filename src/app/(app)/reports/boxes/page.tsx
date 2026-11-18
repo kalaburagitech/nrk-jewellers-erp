@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ExportCsvButton } from "@/components/export-csv-button";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
+import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 function BoxReportsContent() {
   const report = useQuery(api.reports.getBoxReport);
@@ -90,8 +90,8 @@ function BoxReportsContent() {
 /** Box (non-GST physical stock) report — hidden under the privacy lock like Box Management. */
 export default function BoxReportsPage() {
   return (
-    <PrivacyLockGate>
+    <BoxScreensGate>
       <BoxReportsContent />
-    </PrivacyLockGate>
+    </BoxScreensGate>
   );
 }
