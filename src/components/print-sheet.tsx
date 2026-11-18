@@ -3,16 +3,16 @@
 import { useLayoutEffect, useState, type CSSProperties, type DependencyList, type RefObject } from "react";
 
 /**
- * Paper presets for printed bills. Width is the printable width (paper minus
- * both margins); the height budget is the printable height less a few mm of
+ * Paper presets for printed bills. Width/height are the printable area (paper
+ * minus both margins); the height budget is the printable height less a few mm of
  * safety for printer/browser differences, so the signature line never spills
  * onto a second sheet.
  */
 export const PAPER = {
-  // A5 landscape = 210 × 148 mm → 200 × 138 mm printable at 5 mm margins.
-  a5: { pageSize: "A5 landscape", marginMm: 5, widthMm: 200, heightBudgetMm: 132 },
+  // A5 landscape = 210 × 148 mm → 202 × 140 mm printable at 4 mm margins.
+  a5: { pageSize: "A5 landscape", marginMm: 4, widthMm: 202, heightMm: 140, heightBudgetMm: 134 },
   // A4 landscape = 297 × 210 mm → 289 × 202 mm printable at 4 mm margins.
-  a4: { pageSize: "A4 landscape", marginMm: 4, widthMm: 289, heightBudgetMm: 194 },
+  a4: { pageSize: "A4 landscape", marginMm: 4, widthMm: 289, heightMm: 202, heightBudgetMm: 194 },
 } as const;
 export type Paper = (typeof PAPER)[keyof typeof PAPER];
 
@@ -25,6 +25,8 @@ export function PrintPageStyle({ paper }: { paper: Paper }) {
       @page { size: ${paper.pageSize}; margin: ${paper.marginMm}mm; }
       @media print {
         html, body { height: auto !important; min-height: 0 !important; overflow: visible !important; background: #fff !important; }
+        /* A bill is one sheet: anything past the page is cut, never printed on a second sheet. */
+        body { max-height: ${paper.heightMm - 1}mm !important; overflow: hidden !important; }
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         [data-print-sheet] { box-sizing: border-box; margin: 0 auto !important; box-shadow: none !important; min-height: 0 !important; break-inside: avoid; page-break-inside: avoid; }
       }
@@ -54,9 +56,15 @@ export function useFitToPaper(ref: RefObject<HTMLElement | null>, paper: Paper |
         zoom: "1", width: `${paper.widthMm}mm`, maxWidth: "none",
         minHeight: "0", height: "auto", maxHeight: "none", justifyContent: "flex-start",
       });
+      // Settings → "screen zoom" changes the root font size on screen only; measure at the
+      // printed size (16px), or a zoomed-out screen measures short and the bill spills to page 2.
+      const root = document.documentElement;
+      const screenFontSize = root.style.fontSize;
+      root.style.fontSize = "16px";
       document.body.appendChild(copy);
       const naturalPx = Math.max(copy.scrollHeight, copy.getBoundingClientRect().height);
       copy.remove();
+      root.style.fontSize = screenFontSize;
       if (naturalPx > 0) setZoom(Math.min(1, (paper.heightBudgetMm * PX_PER_MM) / naturalPx));
     };
     measure();

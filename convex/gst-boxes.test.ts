@@ -64,6 +64,8 @@ describe("GST company box management (same as Daily Sales)", () => {
     const invoice = await f.owner.query(api.sales.getInvoiceData, { saleId });
     // 9 g net × ₹7,000 = ₹63,000 + 3% GST (CGST + SGST, same state).
     expect(invoice.sale).toMatchObject({ subtotalPaise: 6_300_000, taxPaise: 189_000, isGst: true });
+    // The printed bill splits it into CGST 1.5% + SGST 1.5%, no IGST.
+    expect(invoice.gst).toEqual({ cgstPaise: 94_500, sgstPaise: 94_500, igstPaise: 0, rates: { cgstBasisPoints: 150, sgstBasisPoints: 150, igstBasisPoints: 300 } });
 
     await f.owner.mutation(api.sales.cancel, { saleId, reason: "Returned" });
     expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 10000, pieces: 1 });

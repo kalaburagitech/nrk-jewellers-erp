@@ -44,12 +44,22 @@ const TEMPLATES = [
   { value: "thermal", label: "Thermal Receipt" },
 ] as const;
 
-/** The A5 item table always reserves this many row slots so the totals/footer below it land in the same place regardless of item count — unfilled slots are blank, not bordered. Kept low enough to leave real margin below the 138mm page budget for what a physical printer adds (most browsers print a URL/date header and page-number footer by default unless that's turned off in the print dialog). */
-const MIN_INVOICE_ITEM_ROWS = 6;
+/** The item table always reserves this many row slots so the totals/footer below it land in the same place regardless of item count — unfilled slots are blank, not bordered. Kept low so a GST bill (with its CGST/SGST/IGST lines) still fits one A5 sheet without shrinking much. */
+const MIN_INVOICE_ITEM_ROWS = 5;
 
 /** Printed invoice amounts use whole rupees; weight values keep their precision. */
 function formatPaise(paise: number) {
   return `₹${Math.round(paise / 100).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+/** GST lines print to the paisa so CGST + SGST add up exactly. */
+function formatPaiseExact(paise: number) {
+  return `₹${(paise / 100).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** 150 → " @ 1.5%", 300 → " @ 3.0%"; nothing when lines were taxed at different rates. */
+function rateLabel(basisPoints: number | undefined) {
+  return basisPoints === undefined ? "" : ` @ ${(basisPoints / 100).toFixed(basisPoints % 10 ? 2 : 1)}%`;
 }
 
 type Template = (typeof TEMPLATES)[number]["value"];
@@ -80,7 +90,7 @@ async function renderInvoicePdf(
     import("@/lib/invoice-pdf"),
   ]);
   const widthMm =
-    template === "full-a4" ? 289 : template === "half-a4" ? 200 : 76;
+    template === "full-a4" ? PAPER.a4.widthMm : template === "half-a4" ? PAPER.a5.widthMm : 76;
   // Capture at the same widened layout the printer gets, so PDF and paper match.
   const widthPx = ((template === "thermal" ? widthMm : widthMm / fitZoom) * 96) / 25.4;
   const protectedRanges: Array<{ start: number; end: number }> = [];
@@ -175,6 +185,7 @@ export default function PrintInvoicePage({
     logoUrl,
     oldGoldExchange,
     payments,
+    gst,
   } = data;
   const cashPayments = payments.filter((p) => p.mode !== "old_gold_exchange");
   const cashReceivedPaise = cashPayments.reduce(
@@ -263,7 +274,7 @@ export default function PrintInvoicePage({
     template === "thermal"
       ? "w-[76mm] text-xs"
       : template === "half-a4"
-        ? "w-[200mm] text-sm"
+        ? "w-[202mm] text-sm"
         : "w-[289mm] min-h-[202mm] text-base";
 
   return (
@@ -339,7 +350,7 @@ export default function PrintInvoicePage({
             data-print-sheet
             data-invoice-compact={template === "half-a4" ? "true" : undefined}
             style={fit.style}
-            className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[138mm] gap-1 p-2" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
+            className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[140mm] gap-1 p-1.5" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
             <h1 className={`-mb-1 text-center font-bold tracking-[0.3em] text-[#13253f] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
@@ -546,70 +557,42 @@ export default function PrintInvoicePage({
                     )}
                   </td>
                 </tr>
-                <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={adjustmentLeadSpan} />
-                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
-                    Discount
+                <tr data-pdf-keep-together>
+                  <td className={`border border-[#655c36] align-top ${template === "half-a4" ? "px-1.5 py-1 text-[9px]" : "p-3"}`} colSpan={adjustmentLeadSpan}>
+                    <p className="font-bold">Amount in words</p>
+                    <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
+                    <p className="mt-1 font-bold">Payment type</p>
+                    <p>{paymentTypeLabel}</p>
                   </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
-                    -{formatPaise(sale.discountPaise)}
+                  <td className={`border border-[#655c36] bg-[#f4f0df] align-top ${template === "half-a4" ? "px-1.5 py-1 text-[9px]" : "p-3"}`} colSpan={3}>
+                    {/* GST company bills only: taxable value, CGST / SGST / IGST and the GST-inclusive total. Daily Sales bills have no GST lines. */}
+                    {gst && (
+                      <>
+                        <TotalsLine label="Taxable Value" value={formatPaiseExact(sale.subtotalPaise)} />
+                        <TotalsLine label={`Add: CGST${rateLabel(gst.rates?.cgstBasisPoints)}`} value={formatPaiseExact(gst.cgstPaise)} />
+                        <TotalsLine label={`Add: SGST${rateLabel(gst.rates?.sgstBasisPoints)}`} value={formatPaiseExact(gst.sgstPaise)} />
+                        <TotalsLine label={`Add: IGST${rateLabel(gst.rates?.igstBasisPoints)} (Inter-State)`} value={formatPaiseExact(gst.igstPaise)} />
+                        <TotalsLine label="Total Invoice Value (Incl. GST)" value={formatPaiseExact(sale.subtotalPaise + sale.taxPaise)} bold />
+                      </>
+                    )}
+                    <TotalsLine label="Less: Discount" value={`-${formatPaise(sale.discountPaise)}`} less />
+                    <TotalsLine label={`Less: Old Item Deduction${sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}`} value={`-${formatPaise(sale.oldItemDeductionPaise ?? 0)}`} less />
+                    {oldGoldExchange && (
+                      <TotalsLine label="Less: Old Gold / Silver Exchange" value={`-${formatPaise(oldGoldExchange.exchangeValuePaise)}`} less />
+                    )}
+                    <div className={`mt-0.5 flex justify-between border-y border-[#655c36]/40 py-0.5 font-extrabold ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
+                      <span>Grand Total</span>
+                      <span className="tabular-nums text-[#191919]">{formatPaise(grandTotalNetPaise)}</span>
+                    </div>
+                    <TotalsLine label="Amount received" value={formatPaise(cashReceivedPaise)} />
+                    <TotalsLine label="Balance due" value={formatPaise(balanceDuePaise)} />
                   </td>
                 </tr>
-                <tr>
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={adjustmentLeadSpan} />
-                  <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
-                    Old Item Deduction{sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
-                    -{formatPaise(sale.oldItemDeductionPaise ?? 0)}
-                  </td>
-                </tr>
-                {oldGoldExchange && (
-                  <tr>
-                    <td className="border border-[#655c36] px-1 py-2" colSpan={adjustmentLeadSpan} />
-                    <td className="whitespace-nowrap border border-[#655c36] bg-[#f4f0df] px-1 py-2 text-right text-[0.85em] font-semibold tracking-tight" colSpan={2}>
-                      Old Gold / Silver Exchange
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums font-semibold text-red-600">
-                      -{formatPaise(oldGoldExchange.exchangeValuePaise)}
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
 
-            <div
-              data-pdf-keep-together
-                className={`grid grid-cols-[1.9fr_1fr_1fr] ${template === "half-a4" ? "gap-1 text-[9px]" : "gap-3"}`}
-            >
-              <div className={`border border-[#655c36] ${template === "half-a4" ? "p-1.5" : "p-3"}`}>
-                <p className="font-bold">Amount in words</p>
-                <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
-              </div>
-              <div className={`border border-[#655c36] ${template === "half-a4" ? "p-1.5" : "p-3"}`}>
-                <p className="font-bold">Payment type</p>
-                <p>{paymentTypeLabel}</p>
-              </div>
-              <div className={`flex flex-col border border-[#655c36] bg-[#f4f0df] ${template === "half-a4" ? "gap-0.5 p-1.5" : "gap-1 p-3"}`}>
-                <div className={`flex justify-between border-b border-[#655c36]/20 pb-1 font-extrabold ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
-                  <span>Grand Total</span>
-                  <span className="text-[#191919]">
-                    {formatPaise(grandTotalNetPaise)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Amount received</span>
-                  <span>{formatPaise(cashReceivedPaise)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Balance due</span>
-                  <span>{formatPaise(balanceDuePaise)}</span>
-                </div>
-              </div>
-            </div>
-
             <div className={`flex items-end justify-between ${template === "half-a4" ? "gap-2 pt-1" : "gap-4 pt-6"}`}>
-              <p className={`italic text-gray-600 ${template === "half-a4" ? "text-[7px]" : "text-xs"}`}>
+              <p className={`italic text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-xs"}`}>
                 Note: If item was damaged no exchange and replacement
                 allowed. Ensure your item before leaving shop.
               </p>
@@ -716,11 +699,21 @@ export default function PrintInvoicePage({
                 <span className="text-gray-500">Old item deduction{sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}</span>
                 <span>-{formatPaise(sale.oldItemDeductionPaise ?? 0)}</span>
               </div>
-              {sale.isGst && (
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Tax</span>
-                  <span>{formatPaise(sale.taxPaise)}</span>
-                </div>
+              {gst && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">CGST{rateLabel(gst.rates?.cgstBasisPoints)}</span>
+                    <span>{formatPaiseExact(gst.cgstPaise)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">SGST{rateLabel(gst.rates?.sgstBasisPoints)}</span>
+                    <span>{formatPaiseExact(gst.sgstPaise)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">IGST{rateLabel(gst.rates?.igstBasisPoints)}</span>
+                    <span>{formatPaiseExact(gst.igstPaise)}</span>
+                  </div>
+                </>
               )}
               <div className="flex justify-between">
                 <span className="text-gray-500">Round off</span>
@@ -762,6 +755,15 @@ export default function PrintInvoicePage({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function TotalsLine({ label, value, bold, less }: { label: string; value: string; bold?: boolean; less?: boolean }) {
+  return (
+    <div className={`flex justify-between gap-2 ${bold ? "font-bold" : "font-semibold"}`}>
+      <span className="min-w-0 tracking-tight">{label}</span>
+      <span className={`shrink-0 tabular-nums ${less ? "text-red-600" : ""}`}>{value}</span>
     </div>
   );
 }

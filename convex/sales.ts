@@ -5,7 +5,7 @@ import type { MutationCtx } from "./_generated/server";
 import { canOverridePrice, canViewCost, requireAuthContext, requireRole, type AuthContext } from "./lib/auth";
 import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computeOldGoldExchange, computeSaleLine, basisPointsOf, makingChargeFor, metalValuePaise, type MakingChargeMode } from "../src/lib/jewelry-calc";
-import { gstRateBp, isInterState } from "../src/lib/gst-rate";
+import { gstRateBp, isInterState, splitTax, type TaxRates } from "../src/lib/gst-rate";
 import type { Doc, Id } from "./_generated/dataModel";
 import { assertBookingYearOpen } from "./lib/accountingYears";
 import { changeItemStock, isGstCompanyType } from "./lib/itemStock";
@@ -188,7 +188,27 @@ export const getInvoiceData = query({
 
     const logoUrl = organization?.invoiceLogoStorageId ? await ctx.storage.getUrl(organization.invoiceLogoStorageId) : null;
 
-    return { sale, items, customer, organization, logoUrl, oldGoldExchange, payments };
+    // GST bills print CGST / SGST / IGST separately, split by the same rule the bill was charged with.
+    let gst: { cgstPaise: number; sgstPaise: number; igstPaise: number; rates: TaxRates | null } | null = null;
+    if (sale.isGst) {
+      const interState = isInterState(sale.stateOfSupply || customer?.state, organization?.state);
+      gst = { cgstPaise: 0, sgstPaise: 0, igstPaise: 0, rates: null };
+      const rateKeys = new Set<string>();
+      for (const item of saleItems) {
+        const config = item.taxConfigurationId ? await ctx.db.get(item.taxConfigurationId) : null;
+        if (!config || item.lineTaxPaise === 0) continue;
+        const split = splitTax(item.lineTaxPaise, config, interState);
+        gst.cgstPaise += split.cgstPaise;
+        gst.sgstPaise += split.sgstPaise;
+        gst.igstPaise += split.igstPaise;
+        rateKeys.add(`${config.cgstBasisPoints}/${config.sgstBasisPoints}/${config.igstBasisPoints}`);
+        gst.rates = { cgstBasisPoints: config.cgstBasisPoints, sgstBasisPoints: config.sgstBasisPoints, igstBasisPoints: config.igstBasisPoints };
+      }
+      // Lines at different rates: print the amounts without a single "@ x%".
+      if (rateKeys.size > 1) gst.rates = null;
+    }
+
+    return { sale, items, customer, organization, logoUrl, oldGoldExchange, payments, gst };
   },
 });
 
