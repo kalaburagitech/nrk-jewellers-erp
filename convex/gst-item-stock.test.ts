@@ -67,7 +67,7 @@ describe("GST item stock", () => {
     await expect(daily.owner.mutation(api.sales.create, {
       ...bill, customerId: daily.customer, isGst: false, idempotencyKey: "manual-in-daily",
       items: [{ ...line, productId: daily.product, grossWeightMg: 1000, stoneWeightMg: 0 }],
-    })).rejects.toThrow(/pick each piece from a box/);
+    })).rejects.toThrow(/Choose the box for every item/);
     await expect(daily.owner.mutation(api.itemStock.adjust, { productId: daily.product, direction: "in", weightMg: 1000, pieces: 1, reason: "" })).rejects.toThrow(/GST companies/);
   });
 

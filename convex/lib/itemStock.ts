@@ -1,11 +1,12 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
+import { boxStockByProduct } from "./boxStock";
 
 /**
- * Company types. Both Daily Sales and GST companies keep physical pieces in
- * boxes (each company has its own, separate boxes). GST companies also keep
- * item-wise stock (productStock) for stock that isn't in a box yet; their GST
- * stock = item stock + the pieces in their boxes (see gstStockByProduct).
+ * Company types. Both Daily Sales and GST companies keep stock in boxes (each
+ * company has its own, separate boxes). GST companies also keep item-wise
+ * stock (productStock) for stock that isn't in a box yet; their GST stock =
+ * item stock + what is in their boxes (see gstStockByProduct).
  */
 export function isGstCompanyType(companyType: Doc<"organizations">["companyType"]) {
   return companyType === "gst_gold" || companyType === "gst_silver";
@@ -17,19 +18,19 @@ export async function isGstCompany(ctx: QueryCtx | MutationCtx, organizationId: 
 }
 
 /**
- * GST stock per item: loose item stock (productStock) plus every in-stock
- * piece in the company's boxes. Weight is gross weight, like item stock.
+ * GST stock per item: loose item stock (productStock) plus what the item has
+ * in the company's boxes (from the stock journal). Weight is gross weight.
  */
 export async function gstStockByProduct(ctx: QueryCtx | MutationCtx, organizationId: Id<"organizations">) {
-  const [rows, pieces] = await Promise.all([
+  const [rows, inBoxes] = await Promise.all([
     ctx.db.query("productStock").withIndex("by_org", (q) => q.eq("organizationId", organizationId)).collect(),
-    ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", organizationId)).collect(),
+    boxStockByProduct(ctx, organizationId),
   ]);
-  const stock = new Map<Id<"products">, { weightMg: number; pieces: number; looseWeightMg: number; loosePieces: number; boxPieces: number }>();
+  const stock = new Map<Id<"products">, { weightMg: number; pieces: number; looseWeightMg: number; loosePieces: number; boxWeightMg: number; boxPieces: number }>();
   const get = (id: Id<"products">) => {
     let s = stock.get(id);
     if (!s) {
-      s = { weightMg: 0, pieces: 0, looseWeightMg: 0, loosePieces: 0, boxPieces: 0 };
+      s = { weightMg: 0, pieces: 0, looseWeightMg: 0, loosePieces: 0, boxWeightMg: 0, boxPieces: 0 };
       stock.set(id, s);
     }
     return s;
@@ -41,12 +42,12 @@ export async function gstStockByProduct(ctx: QueryCtx | MutationCtx, organizatio
     s.looseWeightMg += r.weightMg;
     s.loosePieces += r.pieces;
   }
-  for (const b of pieces) {
-    if (b.deletedAt || b.status !== "in_stock") continue;
-    const s = get(b.productId);
-    s.weightMg += b.grossWeightMg;
-    s.pieces += 1;
-    s.boxPieces += 1;
+  for (const [productId, b] of inBoxes) {
+    const s = get(productId as Id<"products">);
+    s.weightMg += b.weightMg;
+    s.pieces += b.pieces;
+    s.boxWeightMg += b.weightMg;
+    s.boxPieces += b.pieces;
   }
   return stock;
 }
@@ -83,7 +84,8 @@ export async function changeItemStock(
   const row = await getItemStock(ctx, args.organizationId, args.productId);
   const weightMg = (row?.weightMg ?? 0) + args.weightDeltaMg;
   const pieces = (row?.pieces ?? 0) + args.piecesDelta;
-  if ((weightMg < 0 || pieces < 0) && !args.allowNegative) {
+  // Only a removal can be refused: adding stock never makes a short item worse.
+  if (((weightMg < 0 && args.weightDeltaMg < 0) || (pieces < 0 && args.piecesDelta < 0)) && !args.allowNegative) {
     const haveG = ((row?.weightMg ?? 0) / 1000).toFixed(3);
     throw new Error(`Not enough GST stock for "${product.name}": available ${haveG}g, ${row?.pieces ?? 0} pcs. Add stock under Stock → GST first.`);
   }

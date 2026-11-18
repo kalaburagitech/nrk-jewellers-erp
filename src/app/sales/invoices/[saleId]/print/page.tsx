@@ -189,8 +189,8 @@ export default function PrintInvoicePage({
   // Tax column, so every span below is derived from this one list instead of
   // hard-coded GST numbers.
   const itemColumnWidths = sale.isGst
-    ? ["5%", "23%", "10%", "6%", "10%", "11%", "11%", "11%", "13%"]
-    : ["5%", "27%", "12%", "7%", "11%", "12%", "12%", "14%"];
+    ? ["4%", "20%", "8%", "5%", "9%", "9%", "11%", "10%", "10%", "14%"]
+    : ["5%", "23%", "9%", "6%", "10%", "10%", "12%", "11%", "14%"];
   const itemColumnCount = itemColumnWidths.length;
   const adjustmentLeadSpan = itemColumnCount - 3;
   const paymentTypeLabel =
@@ -433,6 +433,9 @@ export default function PrintInvoicePage({
                     Qty
                   </th>
                   <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    Gross Wt
+                  </th>
+                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     Net Wt
                   </th>
                   <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
@@ -459,9 +462,9 @@ export default function PrintInvoicePage({
                     </td>
                     <td className="border border-[#655c36] px-1 py-2">
                       {item.label}
-                      {(item.boxNumber || item.hsnCode) && (
+                      {(item.boxNumber || item.metal || item.hsnCode) && (
                         <span className="block text-[10px] text-[#655c36]">
-                          {[item.boxNumber ? `Box ${item.boxNumber}` : "", item.hsnCode ? `HSN ${item.hsnCode}` : ""].filter(Boolean).join(" · ")}
+                          {[item.metal === "gold" ? "Gold" : item.metal === "silver" ? "Silver" : null, item.boxNumber ? `Box ${item.boxNumber}` : null, item.hsnCode ? `HSN ${item.hsnCode}` : null].filter(Boolean).join(" · ")}
                         </span>
                       )}
                     </td>
@@ -470,6 +473,9 @@ export default function PrintInvoicePage({
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {item.pieces ?? 1}
+                    </td>
+                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                      {mgToGramsDisplay(item.grossWeightMg)}
                     </td>
                     <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                       {mgToGramsDisplay(item.netWeightMg)}
@@ -509,7 +515,12 @@ export default function PrintInvoicePage({
                     Sub Total
                   </td>
                   <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    {items.length}
+                    {items.reduce((sum, i) => sum + (i.pieces ?? 1), 0)}
+                  </td>
+                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
+                    {mgToGramsDisplay(
+                      items.reduce((sum, i) => sum + i.grossWeightMg, 0),
+                    )}
                   </td>
                   <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
                     {mgToGramsDisplay(

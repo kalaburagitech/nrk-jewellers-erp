@@ -10,6 +10,7 @@ import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 const SOURCE_LABEL: Record<string, string> = {
+  box_opening: "Opening stock",
   purchases: "Purchase",
   sales: "Sale",
   stock_adjustments: "Adjustment",
@@ -25,7 +26,7 @@ export default function StockJournalPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Journal</h1>
           <p className="text-sm text-muted-foreground">
-            Every stock movement, newest first — the append-only trail behind every weight in stock.
+            Every stock movement, newest first — company, box, item, weight, pieces and transaction type. Box weights are gross weight.
           </p>
         </div>
 
@@ -43,9 +44,10 @@ export default function StockJournalPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Product</TableHead>
                   <TableHead>Box</TableHead>
-                  <TableHead>Source</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Remark</TableHead>
                   <TableHead className="text-right">Pcs</TableHead>
                   <TableHead>Direction</TableHead>
                   <TableHead className="text-right">Weight</TableHead>
@@ -55,9 +57,10 @@ export default function StockJournalPage() {
                 {journal.map((m) => (
                   <TableRow key={m._id}>
                     <TableCell>{new Date(m.createdAt).toLocaleDateString("en-IN")}</TableCell>
-                    <TableCell className="font-medium">{m.productName}</TableCell>
-                    <TableCell>{m.boxName}</TableCell>
+                    <TableCell className="font-medium">{m.boxName}</TableCell>
+                    <TableCell>{m.productName}</TableCell>
                     <TableCell className="text-muted-foreground">{SOURCE_LABEL[m.sourceTable] ?? m.sourceTable}</TableCell>
+                    <TableCell className="max-w-48 truncate text-muted-foreground">{m.note ?? ""}</TableCell>
                     <TableCell className="text-right">{m.quantity}</TableCell>
                     <TableCell>
                       <Badge variant={m.direction === "in" ? "secondary" : "outline"} className="capitalize">

@@ -4,6 +4,7 @@ import { canOverridePrice, canViewCost, requireAuthContext, requireRole } from "
 import { resolveKaratPurity } from "./lib/purity";
 import type { MutationCtx } from "./_generated/server";
 import type { PurityKarat } from "../src/lib/jewelry-calc";
+import { boxStockByProduct, changeBoxStock, getCompanyBox } from "./lib/boxStock";
 import { normalizeCustomFieldValues } from "./lib/customFieldValues";
 import { changeItemStock, gstStockByProduct, isGstCompanyType } from "./lib/itemStock";
 import type { QueryCtx } from "./_generated/server";
@@ -73,8 +74,8 @@ async function resolvePurity(
 }
 
 /**
- * Opening stock for a new item. With a box: one piece per quantity is put in
- * that box at the item's weights (both company types). Without a box: GST
+ * Opening stock for a new item. With a box: the opening weight and pieces
+ * are added to that box (both company types). Without a box: GST
  * companies add loose item stock; Daily Sales needs a box.
  */
 async function postOpeningStock(
@@ -87,32 +88,12 @@ async function postOpeningStock(
   if (!opening.pieces && !opening.weightMg) return;
   const company = await ctx.db.get(organizationId);
   const gst = isGstCompanyType(company?.companyType);
-  if (product.defaultBoxId && opening.pieces > 0) {
-    if (opening.pieces > 500) throw new Error("Opening quantity can be at most 500 pieces at a time");
-    const box = await ctx.db.get(product.defaultBoxId);
-    if (!box || box.deletedAt || box.organizationId !== organizationId) throw new Error("Box not found in this company");
-    // Per-piece weight: the item's gross weight, else the opening weight shared across the pieces.
-    const grossWeightMg = product.grossWeightMg ?? Math.floor(opening.weightMg / opening.pieces);
-    const stoneWeightMg = Math.min(product.stoneWeightMg ?? 0, grossWeightMg);
-    if (grossWeightMg <= 0) throw new Error("Enter the item's gross weight (or the opening weight) to put opening pieces into the box");
-    for (let i = 0; i < opening.pieces; i++) {
-      const boxItemId = await ctx.db.insert("boxItems", {
-        organizationId,
-        boxId: box._id,
-        productId: product._id,
-        label: opening.pieces === 1 ? product.name : `${product.name} ${i + 1}`,
-        grossWeightMg,
-        stoneWeightMg,
-        netWeightMg: grossWeightMg - stoneWeightMg,
-        status: "in_stock",
-        createdAt: opening.at,
-      });
-      await ctx.db.insert("stockMovements", {
-        organizationId, productId: product._id, boxItemId, boxId: box._id, direction: "in",
-        netWeightMg: grossWeightMg - stoneWeightMg, quantity: 1, sourceTable: "opening_stock", sourceId: product._id, createdAt: opening.at,
-      });
-    }
-    await ctx.db.patch(box._id, { itemCount: (box.itemCount ?? 0) + opening.pieces });
+  if (product.defaultBoxId) {
+    const box = await getCompanyBox(ctx, organizationId, product.defaultBoxId);
+    // Opening weight as entered, else the item's gross weight per piece.
+    const weightMg = opening.weightMg || (product.grossWeightMg ?? 0) * opening.pieces;
+    if (weightMg <= 0) throw new Error("Enter the item's gross weight (or the opening weight) to put opening stock into the box");
+    await changeBoxStock(ctx, { organizationId, boxId: box._id, weightDeltaMg: weightMg, piecesDelta: opening.pieces, productId: product._id, sourceTable: "opening_stock", sourceId: product._id, at: opening.at, note: "Opening stock" });
     return;
   }
   if (!gst) throw new Error("Choose the box for the opening stock. Daily Sales stock is kept in boxes.");
@@ -161,8 +142,9 @@ export const details = query({
       weightMg = row?.weightMg ?? 0;
       pieces = row?.pieces ?? 0;
     } else {
-      const items = await ctx.db.query("boxItems").withIndex("by_product", (q) => q.eq("productId", args.id)).collect();
-      for (const i of items) if (!i.deletedAt && i.status === "in_stock") { weightMg += i.netWeightMg; pieces += 1; }
+      const row = (await boxStockByProduct(ctx, auth.organizationId)).get(String(args.id));
+      weightMg = row?.weightMg ?? 0;
+      pieces = row?.pieces ?? 0;
     }
     const tax = product.taxConfigurationId ? await ctx.db.get(product.taxConfigurationId) : null;
     return {

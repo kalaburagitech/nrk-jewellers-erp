@@ -299,9 +299,17 @@ export default defineSchema({
     category: v.optional(v.string()), // Ring Box, Chain Box, Necklace Box…
     boxType: v.optional(v.string()), // Display tray, Locker, Counter…
     description: v.optional(v.string()),
-    // Maintained counter of in_stock boxItems, updated by every mutation
-    // that adds/removes an item — avoids an N+1 count query per box on the
-    // overview grid.
+    // Which metal the box holds. Gold lines can only go into / come out of a
+    // gold box (and silver likewise). Unset on boxes made before this existed.
+    metal: v.optional(v.union(v.literal("gold"), v.literal("silver"))),
+    // Running stock balance of the box: gross weight and piece count. Sales
+    // deduct, purchases add, adjustments/transfers move it — always through
+    // lib/boxStock.ts, which also writes a stockMovements row. Unset on boxes
+    // that still hold only old per-piece stock (boxItems); see readBoxBalance.
+    weightMg: v.optional(v.number()),
+    pieces: v.optional(v.number()),
+    location: v.optional(v.string()), // godown / shelf, e.g. "Main Shop"
+    // Mirrors `pieces` once the box has a running balance (older screens read it).
     itemCount: v.optional(v.number()),
     isActive: v.boolean(),
     createdAt: v.number(),
@@ -336,20 +344,25 @@ export default defineSchema({
   stockMovements: defineTable({
     deletedAt: v.optional(v.number()),
     organizationId: v.id("organizations"),
-    productId: v.id("products"),
+    // Unset for box-level movements that aren't about one item (opening
+    // stock, adjustments, transfers).
+    productId: v.optional(v.id("products")),
     boxItemId: v.optional(v.id("boxItems")),
     // Physical location at the time of this movement. Kept on the ledger so
     // transfers and sales remain attributable after the item changes boxes.
     boxId: v.optional(v.id("boxes")),
     direction: v.union(v.literal("in"), v.literal("out")),
+    // Weight moved. Box stock moves by gross weight; older piece rows used net.
     netWeightMg: v.number(),
     quantity: v.number(),
-    sourceTable: v.string(), // purchases, sales, stock_adjustments, box_transfers, etc.
+    sourceTable: v.string(), // purchases, sales, stock_adjustments, box_transfers, box_opening, etc.
     sourceId: v.string(),
+    note: v.optional(v.string()), // adjustment reason / transfer remark
     createdAt: v.number(),
   })
     .index("by_org", ["organizationId"])
     .index("by_product", ["productId"])
+    .index("by_box", ["boxId"])
     .index("by_source", ["sourceTable", "sourceId"]),
 
   // ---------- Metal rates ----------
@@ -456,7 +469,9 @@ export default defineSchema({
     // Absent on lines saved before stock moved to gross weight — those
     // added their net weight, so reversals fall back to netWeightMg.
     stockWeightMg: v.optional(v.number()),
-    // GST (item-stock) line sent back to the supplier by a purchase return.
+    // Gold / silver, for the gold & silver subtotals and box routing.
+    metal: v.optional(v.union(v.literal("gold"), v.literal("silver"))),
+    // Line sent back to the supplier by a purchase return (item-stock and box-stock lines).
     returnedAt: v.optional(v.number()),
     // On a purchase return's GST line: the original invoice line it sends back.
     returnOfPurchaseItemId: v.optional(v.id("purchaseItems")),
@@ -533,6 +548,18 @@ export default defineSchema({
     // Weight taken out of item stock (the gross weight). Absent on older
     // lines, which deducted their net weight — reversals fall back to that.
     stockWeightMg: v.optional(v.number()),
+    // Daily Sales line: the box its gross weight and pieces were taken from.
+    boxId: v.optional(v.id("boxes")),
+    metal: v.optional(v.union(v.literal("gold"), v.literal("silver"))),
+    // Description printed on the bill (defaults to the item name).
+    label: v.optional(v.string()),
+    // How the making charge was entered; makingChargePaise is the result.
+    makingChargeMode: v.optional(v.union(v.literal("fixed"), v.literal("per_gram"), v.literal("percent"))),
+    makingChargeValue: v.optional(v.number()), // paise, paise per gram, or basis points
+    // Box line brought back by a sales return / credit note.
+    returnedAt: v.optional(v.number()),
+    // On a return's line: the invoice line it brings back.
+    returnOfSaleItemId: v.optional(v.id("saleItems")),
   }).index("by_sale", ["saleId"]).index("by_product", ["productId"]).index("by_org", ["organizationId"]),
 
   // ---------- Payments & ledgers ----------

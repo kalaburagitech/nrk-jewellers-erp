@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireAuthContext } from "./lib/auth";
+import { listBoxBalances } from "./lib/boxStock";
 import { isInterState, splitTax } from "../src/lib/gst-rate";
 
 /**
@@ -178,54 +179,6 @@ export const getSalesReport = query({
   },
 });
 
-/** Current stock, grouped by metal purity — net weight and piece count. */
-export const getStockByPurity = query({
-  args: {},
-  handler: async (ctx) => {
-    const auth = await requireAuthContext(ctx);
-    const [boxItems, products, purities] = await Promise.all([
-      ctx.db
-        .query("boxItems")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("status"), "in_stock"))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect(),
-      ctx.db
-        .query("products")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect(),
-      ctx.db
-        .query("metalPurities")
-        .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect(),
-    ]);
-
-    const productById = new Map(products.map((p) => [p._id, p]));
-    const byPurity = new Map<string, { netWeightMg: number; pieceCount: number }>();
-    let unassigned = { netWeightMg: 0, pieceCount: 0 };
-
-    for (const item of boxItems) {
-      const purityId = productById.get(item.productId)?.metalPurityId;
-      if (!purityId) {
-        unassigned = { netWeightMg: unassigned.netWeightMg + item.netWeightMg, pieceCount: unassigned.pieceCount + 1 };
-        continue;
-      }
-      const existing = byPurity.get(purityId) ?? { netWeightMg: 0, pieceCount: 0 };
-      existing.netWeightMg += item.netWeightMg;
-      existing.pieceCount += 1;
-      byPurity.set(purityId, existing);
-    }
-
-    const rows = purities
-      .map((p) => ({ purity: p, ...(byPurity.get(p._id) ?? { netWeightMg: 0, pieceCount: 0 }) }))
-      .filter((r) => r.pieceCount > 0);
-
-    return { rows, unassigned };
-  },
-});
-
 /** Purchase report: supplier-wise totals and purity-wise weight breakdown for a date range. */
 export const getPurchaseReport = query({
   args: { startDate: v.number(), endDate: v.number() },
@@ -289,67 +242,45 @@ export const getPurchaseReport = query({
   },
 });
 
-/** Physical box ledger. Legacy movements without boxId are included in the opening baseline. */
+/** Physical box ledger: opening + added − sold ± transfers = current box weight. */
 export const getBoxReport = query({
   args: {},
   handler: async (ctx) => {
     const auth = await requireAuthContext(ctx);
-    const boxes = await ctx.db
-      .query("boxes")
-      .withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-      .order("asc")
-      .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect();
-
-    const [products, categories, allItems, allMovements] = await Promise.all([
-      ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
-      ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
-      ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+    const [boxes, allMovements] = await Promise.all([
+      listBoxBalances(ctx, auth.organizationId),
       ctx.db.query("stockMovements").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined)).collect(),
+        .filter((q) => q.and(q.eq(q.field("deletedAt"), undefined), q.neq(q.field("boxId"), undefined))).collect(),
     ]);
-    const categoryName = new Map(categories.map((category) => [category._id, category.name]));
-    const categoryByProduct = new Map(products.map((product) => [product._id, product.stockCategoryId ? categoryName.get(product.stockCategoryId) : undefined]));
-    const itemsByBox = new Map<string, typeof allItems>();
-    for (const item of allItems) {
-      if (item.status !== "in_stock") continue;
-      const rows = itemsByBox.get(item.boxId) ?? [];
-      rows.push(item);
-      itemsByBox.set(item.boxId, rows);
-    }
     const movementsByBox = new Map<string, typeof allMovements>();
     for (const movement of allMovements) {
-      if (!movement.boxId) continue;
-      const rows = movementsByBox.get(movement.boxId) ?? [];
+      const rows = movementsByBox.get(movement.boxId!) ?? [];
       rows.push(movement);
-      movementsByBox.set(movement.boxId, rows);
+      movementsByBox.set(movement.boxId!, rows);
     }
 
-    return boxes.filter((box) => box.isActive).map((box) => {
-      const items = itemsByBox.get(box._id) ?? [];
+    return boxes.filter(({ box }) => box.isActive).map(({ box, weightMg, pieces }) => {
       const boxMovements = movementsByBox.get(box._id) ?? [];
-      const amountFor = (predicate: (movement: typeof boxMovements[number]) => boolean) => boxMovements
+      const signed = (predicate: (movement: typeof boxMovements[number]) => boolean) => boxMovements
         .filter(predicate).reduce((sum, movement) => sum + movement.netWeightMg * (movement.direction === "in" ? 1 : -1), 0);
-      const currentPhysicalWeightMg = items.reduce((sum, item) => sum + item.netWeightMg, 0);
-      const signedMovementMg = amountFor(() => true);
-      const categoriesInBox = [...new Set(items.map((item) => categoryByProduct.get(item.productId)).filter((name): name is string => Boolean(name)))];
+      const moved = (direction: "in" | "out") => boxMovements
+        .filter((movement) => movement.sourceTable === "box_transfers" && movement.direction === direction).reduce((sum, movement) => sum + movement.netWeightMg, 0);
+      const openingRecorded = signed((movement) => movement.sourceTable === "box_opening");
       return {
         boxId: box._id,
         boxNumber: box.boxNumber,
         label: box.label,
-        categories: categoriesInBox,
-        itemCount: items.length,
-        openingWeightMg: Math.max(0, currentPhysicalWeightMg - signedMovementMg),
-        // Net incoming purchases and manual stock corrections. This keeps the
-        // box roll-forward balanced when an adjustment reduces physical weight.
-        stockAddedWeightMg: amountFor((movement) => movement.sourceTable === "purchases" || movement.sourceTable === "stock_adjustments"),
-        weightSoldMg: amountFor((movement) => movement.sourceTable === "sales"),
-        transferredInWeightMg: boxMovements.filter((movement) => movement.sourceTable === "box_transfers" && movement.direction === "in").reduce((sum, movement) => sum + movement.netWeightMg, 0),
-        transferredOutWeightMg: boxMovements.filter((movement) => movement.sourceTable === "box_transfers" && movement.direction === "out").reduce((sum, movement) => sum + movement.netWeightMg, 0),
-        currentPhysicalWeightMg,
+        metal: box.metal,
+        categories: box.metal ? [box.metal === "gold" ? "Gold" : "Silver"] : [],
+        itemCount: pieces,
+        // Opening stock entered on the box, plus any stock it held before the journal began.
+        openingWeightMg: openingRecorded + (weightMg - signed(() => true)),
+        // Net incoming purchases and manual corrections, so the roll-forward balances when an adjustment reduces weight.
+        stockAddedWeightMg: signed((movement) => movement.sourceTable === "purchases" || movement.sourceTable === "stock_adjustments"),
+        weightSoldMg: -signed((movement) => movement.sourceTable === "sales"),
+        transferredInWeightMg: moved("in"),
+        transferredOutWeightMg: moved("out"),
+        currentPhysicalWeightMg: weightMg,
       };
     });
   },
@@ -421,7 +352,8 @@ export const getStockJournal = query({
 
     return movements.map((m) => ({
       _id: m._id,
-      productName: productNameById.get(m.productId) ?? "Product",
+      productName: m.productId ? productNameById.get(m.productId) ?? "Item" : "—",
+      note: m.note,
       boxName: m.boxId ? boxById.get(m.boxId) ?? "Box unavailable" : "—",
       quantity: m.quantity,
       direction: m.direction,

@@ -24,6 +24,8 @@ export const purchaseLineFormSchema = z
     toItemStock: z.boolean().optional(),
     label: z.string().trim().min(1, "Item label is required"),
     metalPurityId: z.string().optional(),
+    // Pieces received, added to the box's piece count.
+    piecesText: z.string().trim().refine((v) => v === "" || (Number.isInteger(Number(v)) && Number(v) >= 0), "Pieces must be a whole number").optional(),
     grossWeightGrams: positiveNumberString("Gross weight is required"),
     stoneWeightGrams: nonNegativeNumberString("Invalid stone weight"),
     // Either a rate per gram or a fixed purchase price per piece.

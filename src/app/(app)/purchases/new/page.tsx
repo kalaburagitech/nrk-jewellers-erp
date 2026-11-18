@@ -29,6 +29,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { purchaseFormSchema, type PurchaseFormValues } from "@/lib/schemas/purchase";
 import { basisPointsOf, computePurchaseLine, gramsToMg } from "@/lib/jewelry-calc";
+import { boxOptionLabel } from "@/lib/box-label";
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,6 +54,7 @@ function emptyLine() {
     manualBoxNumber: "",
     label: "",
     metalPurityId: "",
+    piecesText: "1",
     grossWeightGrams: "",
     stoneWeightGrams: "",
     ratePerGramRupees: "",
@@ -180,6 +182,7 @@ export default function NewPurchasePage() {
         boxId: item.boxId ?? "",
         label: item.label,
         metalPurityId: item.metalPurityId ?? "",
+        piecesText: String(item.pieces ?? 1),
         grossWeightGrams: (item.grossWeightMg / 1000).toFixed(3),
         stoneWeightGrams: (item.stoneWeightMg / 1000).toFixed(3),
         ratePerGramRupees: item.ratePerGramPaise ? (item.ratePerGramPaise / 100).toFixed(2) : "",
@@ -262,7 +265,8 @@ export default function NewPurchasePage() {
         stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
         ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
         unitPricePaise: rupeesToPaise(item.unitPriceRupees || "0") ?? 0,
-        pieces: 1,
+        // A price per piece is multiplied by the Qty, same as the server.
+        pieces: Number(item.piecesText || 1),
         makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
         stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
         lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") ?? 0,
@@ -310,6 +314,7 @@ export default function NewPurchasePage() {
         productId: Id<"products">;
         boxId?: Id<"boxes">;
         pieces?: number;
+        metal?: "gold" | "silver";
         label: string;
         metalPurityId?: Id<"metalPurities">;
         grossWeightMg: number;
@@ -363,6 +368,7 @@ export default function NewPurchasePage() {
             resolvedBoxId = await createBox({
               boxNumber: boxNum,
               label: item.manualProductName || item.label || `Box ${boxNum}`,
+              metal: purities?.find((p) => p._id === item.metalPurityId)?.metal,
             });
           }
         } else if (item.boxId) {
@@ -380,6 +386,8 @@ export default function NewPurchasePage() {
         resolvedItems.push({
           productId: resolvedProductId,
           boxId: resolvedBoxId,
+          pieces: Number(item.piecesText || 1),
+          metal: purities?.find((p) => p._id === item.metalPurityId)?.metal,
           label,
           metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
           grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
@@ -852,9 +860,13 @@ export default function NewPurchasePage() {
                                       </SelectTrigger>
                                     </FormControl>
                                     <SelectContent className="max-h-64">
-                                      {boxes?.map((b) => (
+                                      {/* Gold lines only into gold boxes, silver into silver (by the line's purity). */}
+                                      {boxes?.filter((b) => {
+                                        const metal = purities?.find((p) => p._id === watchedItems?.[index]?.metalPurityId)?.metal;
+                                        return b.isActive && (!metal || !b.metal || b.metal === metal);
+                                      }).map((b) => (
                                         <SelectItem key={b._id} value={b._id}>
-                                          Box {b.boxNumber}
+                                          {boxOptionLabel(b)}
                                         </SelectItem>
                                       ))}
                                     </SelectContent>
@@ -905,7 +917,20 @@ export default function NewPurchasePage() {
                           </FormItem>
                         )}
                       />
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
+                        <FormField
+                          control={form.control}
+                          name={`items.${index}.piecesText`}
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Qty (pcs)</FormLabel>
+                              <FormControl>
+                                <Input {...field} inputMode="numeric" placeholder="1" />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
                         <FormField
                           control={form.control}
                           name={`items.${index}.grossWeightGrams`}
@@ -924,7 +949,7 @@ export default function NewPurchasePage() {
                           name={`items.${index}.stoneWeightGrams`}
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Stone wt (g)</FormLabel>
+                              <FormLabel>Less wt (g)</FormLabel>
                               <FormControl>
                                 <Input {...field} inputMode="decimal" placeholder="0.000" />
                               </FormControl>

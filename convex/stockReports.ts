@@ -1,10 +1,11 @@
 import { query } from "./_generated/server";
 import { requireAuthContext } from "./lib/auth";
 import { isGstCompanyType } from "./lib/itemStock";
+import { boxStockByProduct } from "./lib/boxStock";
 
 /**
- * Item-wise stock for the active company: in-stock box pieces, plus (GST
- * companies) loose item stock (productStock). Value = purchase
+ * Item-wise stock for the active company: each item's box stock (from the
+ * stock journal) plus, in GST companies, loose item stock (productStock). Value = purchase
  * price × stock (per gram for gram/kg items, per piece otherwise).
  */
 export const itemStock = query({
@@ -14,22 +15,16 @@ export const itemStock = query({
     const org = auth.organizationId;
     const company = await ctx.db.get(org);
     const gst = isGstCompanyType(company?.companyType);
-    const [products, categories, stockRows, boxItems] = await Promise.all([
+    const [products, categories, stockRows] = await Promise.all([
       ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       gst ? ctx.db.query("productStock").withIndex("by_org", (q) => q.eq("organizationId", org)).collect() : Promise.resolve([]),
-      // Both company types keep pieces in boxes; GST companies also have loose item stock.
-      ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
     ]);
-    const stock = new Map<string, { weightMg: number; pieces: number }>();
-    for (const r of stockRows) stock.set(String(r.productId), { weightMg: r.weightMg, pieces: r.pieces });
-    for (const b of boxItems) {
-      if (b.deletedAt || b.status !== "in_stock") continue;
-      const s = stock.get(String(b.productId)) ?? { weightMg: 0, pieces: 0 };
-      // GST item stock is kept in gross weight, so box pieces count the same way there.
-      s.weightMg += gst ? b.grossWeightMg : b.netWeightMg;
-      s.pieces += 1;
-      stock.set(String(b.productId), s);
+    // Both company types keep stock in boxes; GST companies also have loose item stock.
+    const stock = await boxStockByProduct(ctx, org);
+    for (const r of stockRows) {
+      const s = stock.get(String(r.productId)) ?? { weightMg: 0, pieces: 0 };
+      stock.set(String(r.productId), { weightMg: s.weightMg + r.weightMg, pieces: s.pieces + r.pieces });
     }
     const categoryName = new Map(categories.map((c) => [String(c._id), c.name]));
     return products

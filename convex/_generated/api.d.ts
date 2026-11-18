@@ -33,6 +33,7 @@ import type * as http from "../http.js";
 import type * as itemStock from "../itemStock.js";
 import type * as lib_accountingYears from "../lib/accountingYears.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_boxStock from "../lib/boxStock.js";
 import type * as lib_customFieldValues from "../lib/customFieldValues.js";
 import type * as lib_itemStock from "../lib/itemStock.js";
 import type * as lib_purity from "../lib/purity.js";
@@ -87,6 +88,7 @@ declare const fullApi: ApiFromModules<{
   itemStock: typeof itemStock;
   "lib/accountingYears": typeof lib_accountingYears;
   "lib/auth": typeof lib_auth;
+  "lib/boxStock": typeof lib_boxStock;
   "lib/customFieldValues": typeof lib_customFieldValues;
   "lib/itemStock": typeof lib_itemStock;
   "lib/purity": typeof lib_purity;

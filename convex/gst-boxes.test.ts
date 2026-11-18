@@ -33,6 +33,10 @@ async function fixture() {
 
 const line = { otherDeductionMg: 0, ratePerGramPaise: 700000, wastageBasisPoints: 0, makingChargePaise: 0, stoneChargePaise: 0 };
 const bill = { discountMode: "none" as const, discountValue: 0, payments: [] };
+const boxBalance = async (f: Awaited<ReturnType<typeof fixture>>, boxId: string) => {
+  const box = (await f.owner.query(api.boxes.list, {})).find((b) => b._id === boxId)!;
+  return { weightMg: box.weightMg, pieces: box.pieces };
+};
 const purchaseLine = { label: "Gold Ring", grossWeightMg: 10000, stoneWeightMg: 1000, ratePerGramPaise: 600000, makingChargePaise: 0, stoneChargePaise: 0 };
 
 describe("GST company box management (same as Daily Sales)", () => {
@@ -42,11 +46,9 @@ describe("GST company box management (same as Daily Sales)", () => {
       supplierId: f.supplier, gstBasisPoints: 300, amountPaidPaise: 0, idempotencyKey: "p-box",
       items: [{ ...purchaseLine, productId: f.ring, boxId: f.gstBox }],
     });
-    const pieces = await f.owner.query(api.boxes.getItems, { boxId: f.gstBox });
-    expect(pieces).toHaveLength(1);
-    expect(pieces[0]).toMatchObject({ grossWeightMg: 10000, stoneWeightMg: 1000, netWeightMg: 9000 });
-    expect((await f.t.run((ctx) => ctx.db.get(f.gstBox)))?.itemCount).toBe(1);
-    // GST stock = loose item stock + box pieces (gross weight).
+    // The box holds the purchase's gross weight and pieces.
+    expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 10000, pieces: 1 });
+    // GST stock = loose item stock + what is in boxes (gross weight).
     expect((await f.owner.query(api.itemStock.list, {})).find((r) => r.productId === f.ring)).toMatchObject({ weightMg: 10000, pieces: 1, boxPieces: 1, loosePieces: 0 });
     expect((await f.owner.query(api.stockReports.itemStock, {})).find((r) => r.id === f.ring)).toMatchObject({ weightMg: 10000, pieces: 1 });
     const [purchaseItem] = await f.owner.query(api.purchases.getItems, { purchaseId });
@@ -55,20 +57,20 @@ describe("GST company box management (same as Daily Sales)", () => {
 
     const { saleId } = await f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "s-box",
-      items: [{ ...line, boxItemId: pieces[0]._id, taxConfigurationId: f.gst3 }],
+      items: [{ ...line, boxId: f.gstBox, productId: f.ring, grossWeightMg: 10000, netWeightMg: 9000, pieces: 1, taxConfigurationId: f.gst3 }],
     });
-    expect(await f.owner.query(api.boxes.getItems, { boxId: f.gstBox })).toHaveLength(0);
+    expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 0, pieces: 0 });
     expect((await f.owner.query(api.itemStock.list, {})).find((r) => r.productId === f.ring)).toMatchObject({ weightMg: 0, pieces: 0 });
     const invoice = await f.owner.query(api.sales.getInvoiceData, { saleId });
     // 9 g net × ₹7,000 = ₹63,000 + 3% GST (CGST + SGST, same state).
     expect(invoice.sale).toMatchObject({ subtotalPaise: 6_300_000, taxPaise: 189_000, isGst: true });
 
     await f.owner.mutation(api.sales.cancel, { saleId, reason: "Returned" });
-    expect(await f.owner.query(api.boxes.getItems, { boxId: f.gstBox })).toHaveLength(1);
+    expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 10000, pieces: 1 });
     expect((await f.owner.query(api.itemStock.list, {})).find((r) => r.productId === f.ring)).toMatchObject({ weightMg: 10000, pieces: 1 });
 
     await f.owner.mutation(api.purchases.cancel, { purchaseId, reason: "Wrong bill" });
-    expect(await f.owner.query(api.boxes.getItems, { boxId: f.gstBox })).toHaveLength(0);
+    expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 0, pieces: 0 });
     expect((await f.owner.query(api.itemStock.list, {})).find((r) => r.productId === f.ring)).toMatchObject({ weightMg: 0, pieces: 0 });
   });
 
@@ -92,12 +94,11 @@ describe("GST company box management (same as Daily Sales)", () => {
     // Can't move more than the loose stock.
     await expect(f.owner.mutation(api.itemStock.moveToBox, { productId: f.ring, boxId: f.gstBox, label: "Too big", grossWeightMg: 15000, stoneWeightMg: 0 })).rejects.toThrow(/Not enough GST stock/);
 
-    const [piece] = await f.owner.query(api.boxes.getItems, { boxId: f.gstBox });
-    expect(piece).toMatchObject({ label: "Ring A", netWeightMg: 9500 });
+    expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 10000, pieces: 1 });
     await f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "mixed",
       items: [
-        { ...line, boxItemId: piece._id },
+        { ...line, boxId: f.gstBox, productId: f.ring, grossWeightMg: 10000, netWeightMg: 9500, pieces: 1 },
         { ...line, productId: f.ring, grossWeightMg: 10000, stoneWeightMg: 0, pieces: 1 },
       ],
     });
@@ -109,7 +110,7 @@ describe("GST company box management (same as Daily Sales)", () => {
     await f.owner.mutation(api.stockAdjustments.adjustBox, {
       boxId: f.gstBox, addWeightMg: 6000, deductWeightMg: 0, addPieces: 2, deductPieces: 0, reason: "Counted stock", productId: f.ring,
     });
-    expect(await f.owner.query(api.boxes.getItems, { boxId: f.gstBox })).toHaveLength(2);
+    expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 6000, pieces: 2 });
     expect((await f.owner.query(api.itemStock.list, {})).find((r) => r.productId === f.ring)).toMatchObject({ pieces: 2, boxPieces: 2 });
   });
 

@@ -6,6 +6,33 @@ jewellery billing/GST conventions vary by shop and by CA — **confirm each of
 these with NRK Jewellers' accountant before relying on them for real GST
 filing.**
 
+## Box-wise stock (Daily Sales company)
+
+A box is a running balance of **gross weight + pieces** (e.g. Box 100: 1000 g,
+100 pcs), not a list of individual pieces. Implemented in
+`convex/lib/boxStock.ts`; every change writes a Stock Journal row.
+
+| Operation | Effect on the box |
+|---|---|
+| Create box | Opening weight (+ optional pieces) |
+| Sale line | − gross weight, − pieces of the line's box (bill is priced on **net** weight) |
+| Purchase line | + gross weight, + pieces into the receiving box |
+| Stock adjustment | + / − weight and pieces, reason required |
+| Box transfer | − from one box, + into another of the same metal |
+| Cancel / edit / return | Puts back (or takes out) exactly what the line moved, once |
+
+- Gold lines only use gold boxes and silver lines only silver boxes.
+- Net weight ≤ gross weight on every line.
+- A sale cannot take a box below zero unless Settings → "Stop Sale on
+  Negative Stock" is turned off.
+- Boxes created before this change are valued from their in-stock pieces
+  (sum of gross weight) the first time they are used.
+
+## Making charge
+
+Per line, one of: fixed ₹, ₹ per gram × net weight, or % of metal value
+(net weight × rate).
+
 ## Per-item sale calculation
 
 ```

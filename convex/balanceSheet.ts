@@ -1,5 +1,6 @@
 import { query } from "./_generated/server";
 import { requireAuthContext } from "./lib/auth";
+import { boxStockByProduct } from "./lib/boxStock";
 
 /**
  * Balance Sheet as on today, from the books this app keeps:
@@ -16,7 +17,7 @@ export const get = query({
   handler: async (ctx) => {
     const auth = await requireAuthContext(ctx);
     const org = auth.organizationId;
-    const [accounts, payments, customers, suppliers, entries, purchases, purchaseItems, boxItems, productStock] = await Promise.all([
+    const [accounts, payments, customers, suppliers, entries, purchases, purchaseItems, boxStock, productStock] = await Promise.all([
       ctx.db.query("bankAccounts").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("payments").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("customers").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
@@ -24,7 +25,7 @@ export const get = query({
       ctx.db.query("accountEntries").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("purchases").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
       ctx.db.query("purchaseItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
-      ctx.db.query("boxItems").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
+      boxStockByProduct(ctx, org),
       ctx.db.query("productStock").withIndex("by_org", (q) => q.eq("organizationId", org)).collect(),
     ]);
 
@@ -45,13 +46,11 @@ export const get = query({
     const creditors = liveSuppliers.reduce((a, s) => a + Math.max(0, bal(s)), 0);
     const supplierAdvances = liveSuppliers.reduce((a, s) => a + Math.max(0, -bal(s)), 0);
 
-    // Stock at purchase cost: exact purchase line for a box piece, else the item's average purchase cost per gram.
+    // Stock at purchase cost: each item's box stock at its average purchase cost per gram.
     const validPurchase = new Set(purchases.filter((p) => !p.deletedAt && p.status === "finalized" && (p.documentType ?? "purchase_invoice") === "purchase_invoice").map((p) => String(p._id)));
-    const exact = new Map<string, number>();
     const avg = new Map<string, { cost: number; mg: number }>();
     for (const i of purchaseItems) {
       if (i.deletedAt || !validPurchase.has(String(i.purchaseId))) continue;
-      if (i.boxItemId) exact.set(String(i.boxItemId), i.lineTotalPaise);
       if (i.netWeightMg > 0) {
         const a = avg.get(String(i.productId)) ?? { cost: 0, mg: 0 };
         a.cost += i.lineTotalPaise;
@@ -65,10 +64,10 @@ export const get = query({
     };
     let stock = 0;
     let uncostedPieces = 0;
-    for (const b of boxItems) {
-      if (b.deletedAt || b.status !== "in_stock") continue;
-      const c = exact.get(String(b._id)) ?? costOfWeight(String(b.productId), b.netWeightMg);
-      if (!c) uncostedPieces++;
+    for (const [productId, row] of boxStock) {
+      if (row.weightMg <= 0) continue;
+      const c = costOfWeight(productId, row.weightMg);
+      if (!c) uncostedPieces += Math.max(1, row.pieces);
       stock += c;
     }
     for (const r of productStock) stock += costOfWeight(String(r.productId), Math.max(0, r.weightMg));

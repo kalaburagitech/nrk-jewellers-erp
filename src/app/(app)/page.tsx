@@ -458,7 +458,7 @@ export default function DashboardPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-xs text-muted-foreground">
-                    <th className="py-2 text-left">Purity</th>
+                    <th className="py-2 text-left">Stock</th>
                     <th className="text-left">Metal</th>
                     <th className="text-right">Net weight (g)</th>
                   </tr>
@@ -477,7 +477,7 @@ export default function DashboardPage() {
               </table>
               {summary?.stockByPurity.length === 0 && (
                 <p className="py-3 text-sm text-muted-foreground">
-                  Add metal purities to see your stock breakdown.
+                  Create boxes in Box Management to see your stock.
                 </p>
               )}
             </div>

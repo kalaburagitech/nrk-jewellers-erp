@@ -1,6 +1,7 @@
 import { query } from "./_generated/server";
 import { v } from "convex/values";
 import { requireAuthContext } from "./lib/auth";
+import { boxStockByProduct, listBoxBalances } from "./lib/boxStock";
 
 /**
  * One aggregated query for the whole dashboard — avoids a separate useQuery
@@ -53,9 +54,8 @@ export const getSummary = query({
       recentPurchases,
       customers,
       suppliers,
-      boxItems,
+      boxes,
       products,
-      purities,
       payments,
     ] = await Promise.all([
       ctx.db
@@ -80,19 +80,9 @@ export const getSummary = query({
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect(),
-      ctx.db
-        .query("boxItems")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .filter((q) => q.eq(q.field("status"), "in_stock"))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect(),
+      listBoxBalances(ctx, orgId),
       ctx.db
         .query("products")
-        .withIndex("by_org", (q) => q.eq("organizationId", orgId))
-        .filter((q) => q.eq(q.field("deletedAt"), undefined))
-      .collect(),
-      ctx.db
-        .query("metalPurities")
         .withIndex("by_org", (q) => q.eq("organizationId", orgId))
         .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .collect(),
@@ -162,26 +152,23 @@ export const getSummary = query({
       return sum + Math.max(0, balance);
     }, 0);
 
-    const purityById = new Map(purities.map((p) => [p._id, p]));
-    const productById = new Map(products.map((p) => [p._id, p]));
 
-    let goldStockMg = 0;
-    let silverStockMg = 0;
-    const stockMgByProduct = new Map<string, number>();
-    const stockMgByPurity = new Map<string, number>();
-    for (const item of boxItems) {
-      stockMgByProduct.set(item.productId, (stockMgByProduct.get(item.productId) ?? 0) + item.netWeightMg);
-      const product = productById.get(item.productId);
-      const purity = product?.metalPurityId ? purityById.get(product.metalPurityId) : undefined;
-      if (purity?.metal === "gold") goldStockMg += item.netWeightMg;
-      else if (purity?.metal === "silver") silverStockMg += item.netWeightMg;
-      if (product?.metalPurityId) {
-        stockMgByPurity.set(product.metalPurityId, (stockMgByPurity.get(product.metalPurityId) ?? 0) + item.netWeightMg);
-      }
+    // Box stock is gross weight, split by the metal each box holds.
+    const metalTotals = { gold: 0, silver: 0, unset: 0 };
+    let totalPieces = 0;
+    for (const { box, weightMg, pieces } of boxes) {
+      if (!box.isActive) continue;
+      metalTotals[box.metal ?? "unset"] += weightMg;
+      totalPieces += pieces;
     }
-    const stockByPurity = purities
-      .filter((p) => p.isActive)
-      .map((p) => ({ purityId: p._id, label: p.label, metal: p.metal, netWeightMg: stockMgByPurity.get(p._id) ?? 0 }));
+    const goldStockMg = metalTotals.gold;
+    const silverStockMg = metalTotals.silver;
+    const stockByPurity = [
+      { purityId: "gold", label: "Gold boxes", metal: "gold", netWeightMg: metalTotals.gold },
+      { purityId: "silver", label: "Silver boxes", metal: "silver", netWeightMg: metalTotals.silver },
+      ...(metalTotals.unset ? [{ purityId: "unset", label: "Boxes with no metal set", metal: "—", netWeightMg: metalTotals.unset }] : []),
+    ];
+    const stockMgByProduct = new Map([...(await boxStockByProduct(ctx, orgId))].map(([id, row]) => [id, row.weightMg]));
 
     // Today's receipts by payment mode — old gold/silver exchange is a trade-in, kept separate from cash/digital modes.
     const todaysPaymentsByMode: Record<string, number> = {};
@@ -223,7 +210,7 @@ export const getSummary = query({
       goldStockMg,
       silverStockMg,
       stockByPurity,
-      totalOrnamentCount: boxItems.length,
+      totalOrnamentCount: totalPieces,
       lowStockCount,
       recentInvoices,
       todaysPaymentsByMode,

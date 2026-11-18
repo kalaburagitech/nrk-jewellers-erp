@@ -79,9 +79,10 @@ export function SalesReturnFormDialog({
       setError("Select the invoice and at least one item to return");
       return;
     }
+    // Defaults to the box the item was sold from.
     const boxAssignments = [...selectedItemIds].map((saleItemId) => ({
       saleItemId,
-      boxId: returnBoxByItem[saleItemId] as Id<"boxes"> | undefined,
+      boxId: (returnBoxByItem[saleItemId] ?? items?.find((item) => item._id === saleItemId)?.previousBoxId) as Id<"boxes"> | undefined,
     }));
     if (boxAssignments.some((assignment) => !assignment.boxId)) {
       setError("Choose the physical box for every selected returned item.");
@@ -205,13 +206,13 @@ export function SalesReturnFormDialog({
                           disabled={submitting}
                           onCheckedChange={() => selection.toggle(item._id)}
                         />
-                        <span>{item.label} · {mgToGramsDisplay(item.netWeightMg)}g</span>
+                        <span>{item.label} · {mgToGramsDisplay(item.grossWeightMg)}g gross / {mgToGramsDisplay(item.netWeightMg)}g net</span>
                       </div>
                       <span className="shrink-0 font-medium">{formatPaise(item.lineTotalPaise)}</span>
                     </div>
                     {selectedItemIds.has(item._id) && (
                       <Select
-                        value={returnBoxByItem[item._id] ?? ""}
+                        value={returnBoxByItem[item._id] ?? item.previousBoxId ?? ""}
                         onValueChange={(value) =>
                           setReturnBoxByItem((previous) => ({ ...previous, [item._id]: value }))
                         }
@@ -220,7 +221,7 @@ export function SalesReturnFormDialog({
                           <SelectValue placeholder="Assign returned item to a box" />
                         </SelectTrigger>
                         <SelectContent className="max-h-64">
-                          {boxes?.filter((box) => box.isActive).map((box) => (
+                          {boxes?.filter((box) => box.isActive && (!item.metal || !box.metal || box.metal === item.metal)).map((box) => (
                             <SelectItem key={box._id} value={box._id}>
                               Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}
                               {item.previousBoxId === box._id ? " · previous box" : ""}

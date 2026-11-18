@@ -29,6 +29,19 @@ export function basisPointsOf(amountPaise: number, basisPoints: number): number 
   return Math.round((amountPaise * basisPoints) / 10000);
 }
 
+export type MakingChargeMode = "fixed" | "per_gram" | "percent";
+
+/**
+ * Making charge as entered on a bill line: a flat amount, an amount per gram
+ * of net weight, or a percentage of the metal value. `value` is paise,
+ * paise per gram, or basis points respectively.
+ */
+export function makingChargeFor(mode: MakingChargeMode, value: number, netWeightMg: number, metalValue: number): number {
+  if (mode === "per_gram") return Math.round((netWeightMg * value) / 1000);
+  if (mode === "percent") return basisPointsOf(metalValue, value);
+  return value;
+}
+
 export type PurchaseLineInput = {
   grossWeightMg: number;
   stoneWeightMg: number;

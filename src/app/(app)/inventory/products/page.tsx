@@ -214,13 +214,52 @@ function ProductDetailView({
   );
 }
 
+const MOVEMENT_LABEL: Record<string, string> = { box_opening: "Opening", purchases: "Purchase", sales: "Sale", stock_adjustments: "Adjustment", box_transfers: "Transfer" };
+
+/** Latest stock movements of a box: sales, purchases, adjustments and transfers. */
+function BoxMovementsTable({ boxId }: { boxId: Id<"boxes"> }) {
+  const movements = useQuery(api.boxes.movements, { boxId });
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b text-left font-semibold text-muted-foreground">
+            <th className="pb-2">DATE</th>
+            <th className="pb-2">TYPE</th>
+            <th className="pb-2">ITEM / REMARK</th>
+            <th className="pb-2 text-right">WEIGHT</th>
+            <th className="pb-2 text-right">PCS</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border/50">
+          {movements === undefined ? (
+            <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">Loading…</td></tr>
+          ) : movements.length === 0 ? (
+            <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No stock movements yet.</td></tr>
+          ) : (
+            movements.slice(0, 15).map((m) => (
+              <tr key={m._id} className="hover:bg-muted/30">
+                <td className="py-2.5">{new Date(m.createdAt).toLocaleDateString("en-IN")}</td>
+                <td className="py-2.5">{MOVEMENT_LABEL[m.sourceTable] ?? m.sourceTable}</td>
+                <td className="py-2.5">{m.productName ?? m.note ?? "—"}</td>
+                <td className={`py-2.5 text-right font-mono ${m.direction === "in" ? "text-emerald-600" : "text-rose-600"}`}>{m.direction === "in" ? "+" : "−"}{(m.netWeightMg / 1000).toFixed(3)}g</td>
+                <td className="py-2.5 text-right">{m.quantity || ""}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // Main 2-Pane Items / Products Screen (Page 10 Layout)
 export default function ProductsPage() {
   const { isLocked } = usePrivacyLock();
   const products = useQuery(api.products.list);
   const purities = useQuery(api.metalPurities.list);
   const boxes = useQuery(api.boxes.list);
-  const boxOverview = useQuery(api.boxes.getInventoryOverview);
+  const boxOverview = useMemo(() => boxes && { boxes: boxes.map((box) => ({ box, quantity: box.pieces, weightMg: box.weightMg })) }, [boxes]);
   const recentSales = useQuery(api.sales.list);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("products");
@@ -486,7 +525,7 @@ export default function ProductsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <StatCard label="Pieces in Box" value={`${activeBox.quantity} pcs`} tone="text-emerald-600" />
-                <StatCard label="Net Weight" value={`${(activeBox.weightMg / 1000).toFixed(3)} g`} />
+                <StatCard label="Gross Weight" value={`${(activeBox.weightMg / 1000).toFixed(3)} g`} />
               </div>
 
               {/* Box Transactions Table matching Page 10 */}
@@ -502,46 +541,7 @@ export default function ProductsPage() {
                   </Button>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b text-muted-foreground text-left font-semibold">
-                        <th className="pb-2">TYPE</th>
-                        <th className="pb-2">ITEM / LABEL</th>
-                        <th className="pb-2">WEIGHT</th>
-                        <th className="pb-2">STATUS</th>
-                        <th className="pb-2 text-right">ACTION</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {activeBox.items.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-6 text-center text-muted-foreground">
-                            No active items in Box {activeBox.box.boxNumber}.
-                          </td>
-                        </tr>
-                      ) : (
-                        activeBox.items.slice(0, 10).map((it) => (
-                          <tr key={it._id} className="hover:bg-muted/30">
-                            <td className="py-2.5">
-                              <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-600">
-                                In Stock
-                              </span>
-                            </td>
-                            <td className="py-2.5 font-medium">{it.label}</td>
-                            <td className="py-2.5 font-mono">{(it.netWeightMg / 1000).toFixed(3)}g</td>
-                            <td className="py-2.5 capitalize">{it.status}</td>
-                            <td className="py-2.5 text-right">
-                              <Button asChild variant="ghost" size="sm" className="h-7 text-xs">
-                                <Link href="/sales/new">Sell</Link>
-                              </Button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <BoxMovementsTable boxId={activeBox.box._id} />
               </div>
             </div>
           ) : activeProduct ? (

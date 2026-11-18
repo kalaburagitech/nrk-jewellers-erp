@@ -3,6 +3,7 @@
 import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
+import { readBoxBalance } from "./lib/boxStock";
 import type { TableNames } from "./_generated/dataModel";
 import { api, internal } from "./_generated/api";
 import type { RegisteredAction } from "convex/server";
@@ -296,6 +297,11 @@ export const remove = mutation({
     const row: any = await ctx.db.get(id);
     if (!row || row.organizationId !== auth.organizationId)
       throw new Error("Record not found");
+    if (args.table === "boxes") {
+      const balance = await readBoxBalance(ctx, row);
+      if (balance.weightMg !== 0 || balance.pieces !== 0)
+        throw new Error(`Box ${row.boxNumber} still holds ${(balance.weightMg / 1000).toFixed(3)} g, ${balance.pieces} pcs. Transfer or adjust its stock to zero before deleting it.`);
+    }
     if (args.table === "products") {
       // Product references are indexed, so deleting one item stays quick even
       // when the business has a long transaction history.

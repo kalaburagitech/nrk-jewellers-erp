@@ -41,22 +41,29 @@ async function ringInBox(f: Awaited<ReturnType<typeof fixture>>, opening = 2) {
     salePricePaise: 4_000_000, purchasePricePaise: 3_500_000, taxConfigurationId: f.gst3,
     defaultBoxId: boxId, openingPieces: opening,
   });
-  const pieces = await f.owner.query(api.boxes.getItems, { boxId });
-  return { boxId, productId, pieces };
+  return { boxId, productId };
 }
 
+const boxBalance = async (f: Awaited<ReturnType<typeof fixture>>, boxId: string) => {
+  const box = (await f.owner.query(api.boxes.list, {})).find((b) => b._id === boxId)!;
+  return { weightMg: box.weightMg, pieces: box.pieces };
+};
+
+/** One ring sold out of its box: 5 g gross, 4.5 g net, 1 piece. */
+const ringLine = (boxId: string, productId: string) => ({ boxId: boxId as never, productId: productId as never, grossWeightMg: 5000, netWeightMg: 4500, pieces: 1 });
+
 describe("Item master", () => {
-  it("saves karat purity, stone weight, wastage and box, and puts opening pieces into the box", async () => {
+  it("saves karat purity, stone weight, wastage and box, and puts opening stock into the box", async () => {
     const f = await fixture();
-    const { boxId, productId, pieces } = await ringInBox(f);
+    const { boxId, productId } = await ringInBox(f);
     const product = await f.t.run((ctx) => ctx.db.get(productId));
     expect(product).toMatchObject({ grossWeightMg: 5000, stoneWeightMg: 500, netWeightMg: 4500, wastageBasisPoints: 800, defaultBoxId: boxId });
     const purity = await f.t.run((ctx) => ctx.db.get(product!.metalPurityId!));
     expect(purity).toMatchObject({ metal: "gold", label: "22K", purityBasisPoints: 9160 });
-    expect(pieces).toHaveLength(2);
-    expect(pieces[0]).toMatchObject({ grossWeightMg: 5000, stoneWeightMg: 500, netWeightMg: 4500 });
+    // 2 opening pieces at the item's 5 g gross weight.
+    expect(await boxBalance(f, boxId)).toEqual({ weightMg: 10000, pieces: 2 });
     const box = await f.t.run((ctx) => ctx.db.get(boxId));
-    expect(box).toMatchObject({ itemCount: 2, category: "Ring Box", boxType: "Display Tray", description: "Front counter" });
+    expect(box).toMatchObject({ category: "Ring Box", boxType: "Display Tray", description: "Front counter" });
     // Same karat again reuses the purity row.
     const second = await f.owner.mutation(api.products.create, { name: "Chain", unit: "piece", purityKarat: "22K" });
     expect((await f.t.run((ctx) => ctx.db.get(second)))?.metalPurityId).toBe(product!.metalPurityId);
@@ -83,7 +90,7 @@ describe("Item master", () => {
 });
 
 describe("Box management", () => {
-  it("won't deactivate a box that still holds pieces", async () => {
+  it("won't deactivate a box that still holds stock", async () => {
     const f = await fixture();
     const { boxId } = await ringInBox(f);
     await expect(f.owner.mutation(api.boxes.update, { boxId, boxNumber: 201, isActive: false })).rejects.toThrow();
@@ -91,24 +98,17 @@ describe("Box management", () => {
     await f.owner.mutation(api.boxes.update, { boxId: empty, boxNumber: 300, isActive: false });
     expect((await f.t.run((ctx) => ctx.db.get(empty)))?.isActive).toBe(false);
   });
-
-  it("finds pieces across boxes by item code", async () => {
-    const f = await fixture();
-    await ringInBox(f);
-    const hits = await f.owner.query(api.boxes.searchItems, { term: "LR-01" });
-    expect(hits.length).toBe(2);
-    expect(hits[0]).toMatchObject({ boxNumber: 201, boxLabel: "22K rings" });
-  });
 });
 
 describe("Sales billing at the saved selling price", () => {
   it("bills at the item's price per piece, keeps cost off the invoice, and stores a cost snapshot", async () => {
     const f = await fixture();
-    const { pieces } = await ringInBox(f);
+    const { boxId, productId } = await ringInBox(f);
     const { saleId } = await f.operator.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "s1",
-      items: [{ ...priced, boxItemId: pieces[0]._id, unitPricePaise: 4_000_000, taxConfigurationId: f.gst3, lineDiscountPaise: 100_000 }],
+      items: [{ ...priced, ...ringLine(boxId, productId), unitPricePaise: 4_000_000, taxConfigurationId: f.gst3, lineDiscountPaise: 100_000 }],
     });
+    expect(await boxBalance(f, boxId)).toEqual({ weightMg: 5000, pieces: 1 });
     const invoice = await f.owner.query(api.sales.getInvoiceData, { saleId });
     // ₹40,000 − ₹1,000 line discount = ₹39,000 taxable, 3% GST = ₹1,170.
     expect(invoice.sale).toMatchObject({ subtotalPaise: 3_900_000, taxPaise: 117_000 });
@@ -120,20 +120,20 @@ describe("Sales billing at the saved selling price", () => {
 
   it("lets only the Owner/Admin change the price, and audit-logs it", async () => {
     const f = await fixture();
-    const { pieces } = await ringInBox(f);
+    const { boxId, productId } = await ringInBox(f);
     await expect(f.operator.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "s-op",
-      items: [{ ...priced, boxItemId: pieces[0]._id, unitPricePaise: 3_000_000, taxConfigurationId: f.gst3 }],
+      items: [{ ...priced, ...ringLine(boxId, productId), unitPricePaise: 3_000_000, taxConfigurationId: f.gst3 }],
     })).rejects.toThrow(/Only the Owner or an Admin/);
     // Billing by rate per gram instead of the saved price is an override too.
     await expect(f.operator.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "s-op2",
-      items: [{ ...priced, ratePerGramPaise: 700_000, boxItemId: pieces[0]._id, taxConfigurationId: f.gst3 }],
+      items: [{ ...priced, ratePerGramPaise: 700_000, ...ringLine(boxId, productId), taxConfigurationId: f.gst3 }],
     })).rejects.toThrow(/Only the Owner or an Admin/);
 
     const { saleId } = await f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "s-own",
-      items: [{ ...priced, boxItemId: pieces[0]._id, unitPricePaise: 3_800_000, taxConfigurationId: f.gst3 }],
+      items: [{ ...priced, ...ringLine(boxId, productId), unitPricePaise: 3_800_000, taxConfigurationId: f.gst3 }],
     });
     const [item] = await f.owner.query(api.sales.getItems, { saleId });
     expect(item).toMatchObject({ priceOverridden: true, unitPricePaise: 3_800_000, lineTaxPaise: 114_000, lineTotalPaise: 3_914_000 });
@@ -162,18 +162,18 @@ describe("Purchase at a fixed price per piece", () => {
 describe("GST module summary", () => {
   it("splits CGST/SGST vs IGST and nets input tax against output tax", async () => {
     const f = await fixture();
-    const { boxId, productId, pieces } = await ringInBox(f);
+    const { boxId, productId } = await ringInBox(f);
     await f.owner.mutation(api.purchases.create, {
       supplierId: f.supplier, gstBasisPoints: 300, amountPaidPaise: 0, idempotencyKey: "p-sum",
       items: [{ productId, boxId, label: "Ladies Ring", grossWeightMg: 5000, stoneWeightMg: 500, ratePerGramPaise: 0, unitPricePaise: 1_000_000, makingChargePaise: 0, stoneChargePaise: 0 }],
     });
     await f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.customer, isGst: true, idempotencyKey: "s-local",
-      items: [{ ...priced, boxItemId: pieces[0]._id, unitPricePaise: 4_000_000, taxConfigurationId: f.gst3 }],
+      items: [{ ...priced, ...ringLine(boxId, productId), unitPricePaise: 4_000_000, taxConfigurationId: f.gst3 }],
     });
     await f.owner.mutation(api.sales.create, {
       ...bill, customerId: f.outsider, isGst: true, stateOfSupply: "Kerala", idempotencyKey: "s-kerala",
-      items: [{ ...priced, boxItemId: pieces[1]._id, unitPricePaise: 4_000_000, taxConfigurationId: f.gst3 }],
+      items: [{ ...priced, ...ringLine(boxId, productId), unitPricePaise: 4_000_000, taxConfigurationId: f.gst3 }],
     });
     const s = await f.owner.query(api.gstReports.moduleSummary, { startDate: 0, endDate: Date.now() + 86_400_000 });
     expect(s.company).toMatchObject({ gstin: "29ABCDE1234F1Z5", state: "Karnataka" });
