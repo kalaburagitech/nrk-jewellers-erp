@@ -9,6 +9,7 @@ import { DeleteRecordButton } from "@/components/delete-record-button";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
+import { useBoxes } from "@/hooks/use-boxes";
 import { api } from "../../../../convex/_generated/api";
 import { Package, Pencil, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,10 +19,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
-import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
+import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { METAL_LABEL } from "@/lib/box-label";
 import { BoxScreensGate } from "@/components/privacy-lock-gate";
 import { toast } from "@/components/toaster";
+import { BoxItemsSection, type BoxEntryRow } from "@/components/box-items";
 
 type Metal = "gold" | "silver";
 
@@ -47,7 +49,7 @@ function CategoryTypeFields({ idPrefix, category, boxType, onCategory, onBoxType
     </>
   );
 }
-type BoxRow = Doc<"boxes"> & { weightMg: number; pieces: number };
+type BoxRow = Doc<"boxes"> & { weightMg: number; pieces: number; entries: BoxEntryRow[] };
 
 const SOURCE_LABEL: Record<string, string> = {
   box_opening: "Opening stock",
@@ -76,13 +78,11 @@ function StatTile({ label, value, unit }: { label: string; value: string; unit?:
   );
 }
 
-/** Box serial number, metal, opening weight (compulsory) and pieces (optional), location and description. */
-function CreateBoxForm() {
+/** Box serial number (unique), metal, name, category, location and description. Its items and their stock are added next. */
+function CreateBoxForm({ onCreated }: { onCreated: (boxId: Id<"boxes">) => void }) {
   const createNext = useMutation(api.boxes.createNext);
   const [boxNumber, setBoxNumber] = useState("");
   const [metal, setMetal] = useState<Metal | "">("");
-  const [weight, setWeight] = useState("");
-  const [pieces, setPieces] = useState("");
   const [location, setLocation] = useState("");
   const [label, setLabel] = useState("");
   const [description, setDescription] = useState("");
@@ -98,24 +98,21 @@ function CreateBoxForm() {
     const number = Number(boxNumber);
     if (!boxNumber.trim() || !Number.isInteger(number) || number < 1) return setError("Enter the box serial number (a whole number).");
     if (!metal) return setError("Choose whether this box holds Gold or Silver.");
-    if (weight.trim() === "" || !(Number(weight) >= 0)) return setError("Enter the opening weight in grams (0 for an empty box).");
-    if (pieces && (!Number.isInteger(Number(pieces)) || Number(pieces) < 0)) return setError("Opening pieces must be a whole number.");
     setCreating(true);
     try {
-      await createNext({
+      const boxId = await createNext({
         boxNumber: number,
         metal,
-        openingWeightMg: gramsToMg(weight),
-        openingPieces: Number(pieces || 0),
         label: label.trim() || undefined,
         location: location.trim() || undefined,
         description: description.trim() || undefined,
         category: category || undefined,
         boxType: boxType.trim() || undefined,
       });
-      setDone(`Box ${number} created.`);
+      setDone(`Box ${number} created — now add the items that go in it.`);
       toast.success(`Box ${number} added`);
-      setBoxNumber(""); setWeight(""); setPieces(""); setLabel(""); setDescription(""); setBoxType("");
+      setBoxNumber(""); setLabel(""); setDescription(""); setBoxType("");
+      onCreated(boxId);
     } catch (e) {
       setError(getUserErrorMessage(e, "Unable to create box"));
     } finally {
@@ -130,13 +127,11 @@ function CreateBoxForm() {
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(e) => { e.preventDefault(); void handleCreate(); }}>
           <div className="grid gap-1"><Label htmlFor="new-box-number">Box serial number *</Label><Input id="new-box-number" type="number" min="1" step="1" placeholder="101" value={boxNumber} onChange={(e) => setBoxNumber(e.target.value)} /></div>
           <div className="grid gap-1"><Label htmlFor="new-box-metal">Metal *</Label><MetalSelect id="new-box-metal" value={metal} onChange={setMetal} /></div>
-          <div className="grid gap-1"><Label htmlFor="new-box-weight">Opening weight (g) *</Label><Input id="new-box-weight" type="number" min="0" step="0.001" placeholder="1000" value={weight} onChange={(e) => setWeight(e.target.value)} /></div>
-          <div className="grid gap-1"><Label htmlFor="new-box-pieces">Opening pieces</Label><Input id="new-box-pieces" type="number" min="0" step="1" placeholder="100" value={pieces} onChange={(e) => setPieces(e.target.value)} /></div>
           <div className="grid gap-1"><Label htmlFor="new-box-label">Box name</Label><Input id="new-box-label" maxLength={60} placeholder="e.g. Silver Chains" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
           <CategoryTypeFields idPrefix="new-box" category={category} boxType={boxType} onCategory={setCategory} onBoxType={setBoxType} />
           <div className="grid gap-1"><Label htmlFor="new-box-location">Godown / location</Label><Input id="new-box-location" maxLength={60} placeholder="Main Shop" value={location} onChange={(e) => setLocation(e.target.value)} /></div>
           <div className="grid gap-1 sm:col-span-2"><Label htmlFor="new-box-description">Box description</Label><Input id="new-box-description" maxLength={200} placeholder="Optional" value={description} onChange={(e) => setDescription(e.target.value)} /></div>
-          <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">Weight is compulsory (gross weight). Pieces are optional. A box can hold different jewellery designs.</p>
+          <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">Each box number is unique. After creating the box, add the items inside it — each item with its HSN, purity, gross and net weight, pieces, wastage, making, prices, discount and tax. One box can hold several items (e.g. necklaces and a few small rings).</p>
           <Button type="submit" disabled={creating}><Plus className="h-4 w-4" />{creating ? "Creating…" : "Create Box"}</Button>
           {error && <p role="alert" className="text-sm text-destructive sm:col-span-2 lg:col-span-4">{error}</p>}
           {done && <p role="status" className="text-sm text-success sm:col-span-2 lg:col-span-4">{done}</p>}
@@ -199,7 +194,7 @@ function BoxDetailDialog({ box, onClose }: { box: BoxRow; onClose: () => void })
   const movements = useQuery(api.boxes.movements, { boxId: box._id });
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</DialogTitle>
         </DialogHeader>
@@ -207,6 +202,7 @@ function BoxDetailDialog({ box, onClose }: { box: BoxRow; onClose: () => void })
           <StatTile label="Available weight" value={mgToGramsDisplay(box.weightMg)} unit="g" />
           <StatTile label="Pieces" value={String(box.pieces)} />
         </div>
+        <BoxItemsSection box={box} entries={box.entries} />
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm"><Link href="/inventory/adjustments">Add / deduct stock</Link></Button>
           <Button asChild variant="outline" size="sm"><Link href="/boxes/transfers">Transfer to another box</Link></Button>
@@ -239,8 +235,41 @@ function BoxDetailDialog({ box, onClose }: { box: BoxRow; onClose: () => void })
   );
 }
 
+/** One-time: copy each item's saved details into its default box (for boxes set up before items lived in boxes). */
+function SetupFromItemList() {
+  const access = useQuery(api.organizations.getMyAccess);
+  const products = useQuery(api.products.list);
+  const boxes = useBoxes();
+  const setup = useMutation(api.boxEntries.setupFromItemList);
+  const [busy, setBusy] = useState(false);
+  const role = access?.membership?.role;
+  const pending = (products ?? []).filter(
+    (p) => p.defaultBoxId && !p.deletedAt && !(boxes ?? []).find((b) => b._id === p.defaultBoxId)?.entries.some((e) => e.productId === p._id),
+  ).length;
+  if (!pending || (role !== "owner" && role !== "admin")) return null;
+  async function run() {
+    setBusy(true);
+    try {
+      const r = await setup({});
+      toast.success(`${r.itemsAdded} item${r.itemsAdded === 1 ? "" : "s"} added to their boxes`);
+    } catch (e) {
+      toast.error(getUserErrorMessage(e, "Could not set up box items."));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <Card className="border-amber-500/40 bg-amber-500/5">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+        <p>{pending} item{pending === 1 ? " has" : "s have"} a box set in the Item List but {pending === 1 ? "is" : "are"} not listed inside that box yet. Copy their HSN, purity, prices and charges into their boxes?</p>
+        <Button type="button" size="sm" disabled={busy} onClick={run}>{busy ? "Setting up…" : "Add items to their boxes"}</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function BoxOverviewPage() {
-  const boxes = useQuery(api.boxes.list);
+  const boxes = useBoxes();
   const products = useQuery(api.products.list);
   const [search, setSearch] = useState("");
   const [metalFilter, setMetalFilter] = useState<Metal | "">("");
@@ -301,7 +330,8 @@ export default function BoxOverviewPage() {
           </CardContent>
         </Card>
 
-        <CreateBoxForm />
+        <SetupFromItemList />
+        <CreateBoxForm onCreated={setSelectedBox} />
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative max-w-sm flex-1">
@@ -341,6 +371,7 @@ export default function BoxOverviewPage() {
                             {box.category && <span>{box.category}</span>}
                             {box.boxType && <span>· {box.boxType}</span>}
                             {box.location && <span>· {box.location}</span>}
+                            {box.entries.length > 0 && <span className="truncate">· {box.entries.map((e) => e.productName).join(", ")}</span>}
                             {!box.isActive && <Badge variant="secondary" className="font-normal">Inactive</Badge>}
                           </span>
                         </span>

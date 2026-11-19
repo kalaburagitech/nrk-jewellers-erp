@@ -317,6 +317,40 @@ export default defineSchema({
     .index("by_org", ["organizationId"])
     .index("by_org_and_number", ["organizationId", "boxNumber"]),
 
+  // Items inside a box. A box (unique number) can hold several items — e.g.
+  // a Necklace box with a few small rings — and each item in a box carries
+  // its own billing details and its own stock (gross weight, net weight,
+  // pieces). One row per (box, item). The box's weightMg/pieces stay the
+  // total: the sum of its entries plus any older stock not yet assigned to
+  // an item. Changed only through lib/boxStock.ts.
+  boxEntries: defineTable({
+    deletedAt: v.optional(v.number()),
+    organizationId: v.id("organizations"),
+    boxId: v.id("boxes"),
+    productId: v.id("products"),
+    hsnCode: v.optional(v.string()),
+    metalPurityId: v.optional(v.id("metalPurities")),
+    description: v.optional(v.string()),
+    stockGroupId: v.optional(v.id("stockGroups")),
+    wastageBasisPoints: v.optional(v.number()),
+    makingChargeMode: v.optional(v.union(v.literal("fixed"), v.literal("per_gram"), v.literal("percent"))),
+    makingChargeValue: v.optional(v.number()), // paise, paise per gram, or basis points
+    // Selling / purchase price per piece. Blank → billed by net weight × rate.
+    salePricePaise: v.optional(v.number()),
+    purchasePricePaise: v.optional(v.number()),
+    saleDiscountMode: v.optional(v.union(v.literal("percent"), v.literal("amount"))),
+    saleDiscountValue: v.optional(v.number()), // basis points for percent, paise for amount
+    taxConfigurationId: v.optional(v.id("taxConfigurations")),
+    // Running stock of this item in this box.
+    weightMg: v.number(), // gross
+    netWeightMg: v.number(),
+    pieces: v.number(),
+    createdAt: v.number(),
+  })
+    .index("by_box", ["boxId"])
+    .index("by_box_and_product", ["boxId", "productId"])
+    .index("by_org", ["organizationId"]),
+
   // Current location of each physical item. One row per item; moving it
   // updates this row and writes a stockMovements record — an item can never
   // be in two boxes at once because this is the single source of truth.
@@ -351,6 +385,8 @@ export default defineSchema({
     // Physical location at the time of this movement. Kept on the ledger so
     // transfers and sales remain attributable after the item changes boxes.
     boxId: v.optional(v.id("boxes")),
+    // Item-in-box row the movement belongs to (unset: box-level / older stock).
+    boxEntryId: v.optional(v.id("boxEntries")),
     direction: v.union(v.literal("in"), v.literal("out")),
     // Weight moved. Box stock moves by gross weight; older piece rows used net.
     netWeightMg: v.number(),
@@ -471,6 +507,9 @@ export default defineSchema({
     stockWeightMg: v.optional(v.number()),
     // Gold / silver, for the gold & silver subtotals and box routing.
     metal: v.optional(v.union(v.literal("gold"), v.literal("silver"))),
+    // The item-in-box row this line's stock went into, and the net weight it added.
+    boxEntryId: v.optional(v.id("boxEntries")),
+    stockNetWeightMg: v.optional(v.number()),
     // Line sent back to the supplier by a purchase return (item-stock and box-stock lines).
     returnedAt: v.optional(v.number()),
     // On a purchase return's GST line: the original invoice line it sends back.
@@ -550,6 +589,11 @@ export default defineSchema({
     stockWeightMg: v.optional(v.number()),
     // Daily Sales line: the box its gross weight and pieces were taken from.
     boxId: v.optional(v.id("boxes")),
+    // The item-in-box row it was taken from, and the net weight taken.
+    boxEntryId: v.optional(v.id("boxEntries")),
+    stockNetWeightMg: v.optional(v.number()),
+    // HSN code at the time of sale (from the item's row in the box).
+    hsnCode: v.optional(v.string()),
     metal: v.optional(v.union(v.literal("gold"), v.literal("silver"))),
     // Description printed on the bill (defaults to the item name).
     label: v.optional(v.string()),

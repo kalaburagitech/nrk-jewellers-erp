@@ -17,6 +17,7 @@ import type * as auditTrail from "../auditTrail.js";
 import type * as auth from "../auth.js";
 import type * as autoBackup from "../autoBackup.js";
 import type * as balanceSheet from "../balanceSheet.js";
+import type * as boxEntries from "../boxEntries.js";
 import type * as boxes from "../boxes.js";
 import type * as cashBank from "../cashBank.js";
 import type * as cashReports from "../cashReports.js";
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   autoBackup: typeof autoBackup;
   balanceSheet: typeof balanceSheet;
+  boxEntries: typeof boxEntries;
   boxes: typeof boxes;
   cashBank: typeof cashBank;
   cashReports: typeof cashReports;

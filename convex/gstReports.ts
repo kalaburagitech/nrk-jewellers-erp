@@ -49,7 +49,7 @@ async function loadOutward(ctx: QueryCtx, org: Id<"organizations">, startDate: n
         taxablePaise: taxable,
         ...split,
         rateBp,
-        hsn: product?.hsnCode || tax?.hsnCode || "",
+        hsn: i.hsnCode || product?.hsnCode || tax?.hsnCode || "",
         description: product?.name ?? "",
         uqc: product ? UQC[product.unit] : "OTH-OTHERS",
         qty: product?.unit === "gram" ? i.netWeightMg / 1000 : product?.unit === "kilogram" ? i.netWeightMg / 1_000_000 : (i.pieces ?? 1),

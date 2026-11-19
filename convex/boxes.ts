@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import type { Doc } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireAuthContext, requireRole } from "./lib/auth";
-import { assertBoxMetal, boxName, changeBoxStock, getCompanyBox, readBoxBalance } from "./lib/boxStock";
+import { assertBoxMetal, boxName, changeBoxStock, ensureBoxEntry, entryDetails, findBoxEntry, getCompanyBox, listBoxEntries, readBoxBalance } from "./lib/boxStock";
+import { entryForRole } from "./boxEntries";
 
 const metalValidator = v.union(v.literal("gold"), v.literal("silver"));
 
@@ -16,7 +17,23 @@ export const list = query({
       .withIndex("by_org_and_number", (q) => q.eq("organizationId", auth.organizationId))
       .filter((q) => q.eq(q.field("deletedAt"), undefined))
       .take(1000);
-    return await Promise.all(boxes.map(async (box) => ({ ...box, ...(await readBoxBalance(ctx, box)) })));
+    // Item names and categories, read once for every box's item rows.
+    const products = new Map((await ctx.db.query("products").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId)).collect()).map((p) => [p._id as string, p]));
+    const categories = new Map((await ctx.db.query("stockCategories").withIndex("by_org", (q) => q.eq("organizationId", auth.organizationId)).collect()).map((c) => [c._id as string, c.name]));
+    return await Promise.all(
+      boxes.map(async (box) => {
+        const entries = (await listBoxEntries(ctx, box._id)).map((entry) => {
+          const product = products.get(entry.productId);
+          return {
+            ...entryForRole(entry, auth.role),
+            productName: product?.name ?? "Item",
+            sku: product?.sku,
+            categoryName: product?.stockCategoryId ? categories.get(product.stockCategoryId) : undefined,
+          };
+        });
+        return { ...box, ...(await readBoxBalance(ctx, box)), entries };
+      }),
+    );
   },
 });
 
@@ -158,7 +175,12 @@ export const update = mutation({
 
 /** Moves weight (and pieces) from one box to another box of the same company and metal. */
 export const transferStock = mutation({
-  args: { fromBoxId: v.id("boxes"), toBoxId: v.id("boxes"), weightMg: v.number(), pieces: v.number(), note: v.optional(v.string()) },
+  args: {
+    fromBoxId: v.id("boxes"), toBoxId: v.id("boxes"), weightMg: v.number(), pieces: v.number(), note: v.optional(v.string()),
+    // The item being moved: it leaves that item's row in the first box and joins its row in the other (created with the same details).
+    productId: v.optional(v.id("products")),
+    netWeightMg: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, ["inventory_manager"]);
@@ -172,8 +194,21 @@ export const transferStock = mutation({
     const note = cleanText(args.note, 200, "Remark");
     const now = Date.now();
     const sourceId = `${from._id}:${to._id}:${now}`;
-    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: from._id, weightDeltaMg: -weightMg, piecesDelta: -pieces, sourceTable: "box_transfers", sourceId, at: now, note: note ?? `To Box ${to.boxNumber}` });
-    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: to._id, weightDeltaMg: weightMg, piecesDelta: pieces, sourceTable: "box_transfers", sourceId, at: now, note: note ?? `From Box ${from.boxNumber}` });
+    let fromEntryId: Id<"boxEntries"> | undefined;
+    let toEntryId: Id<"boxEntries"> | undefined;
+    let netWeightMg: number | undefined;
+    if (args.productId) {
+      const fromEntry = await findBoxEntry(ctx, from._id, args.productId);
+      if (!fromEntry) throw new Error(`That item is not in ${boxName(from)}.`);
+      if (fromEntry.metalPurityId) assertBoxMetal(to, (await ctx.db.get(fromEntry.metalPurityId))?.metal);
+      // Net weight moves as entered, else in proportion to the gross weight.
+      netWeightMg = args.netWeightMg ?? (fromEntry.weightMg > 0 ? Math.round((weightMg * fromEntry.netWeightMg) / fromEntry.weightMg) : weightMg);
+      if (!Number.isSafeInteger(netWeightMg) || netWeightMg < 0 || netWeightMg > weightMg) throw new Error("Net weight must be between 0 and the weight moved");
+      fromEntryId = fromEntry._id;
+      toEntryId = (await ensureBoxEntry(ctx, { organizationId: auth.organizationId, boxId: to._id, productId: args.productId, details: entryDetails(fromEntry) }))._id;
+    }
+    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: from._id, boxEntryId: fromEntryId, weightDeltaMg: -weightMg, netDeltaMg: netWeightMg !== undefined ? -netWeightMg : undefined, piecesDelta: -pieces, productId: args.productId, sourceTable: "box_transfers", sourceId, at: now, note: note ?? `To Box ${to.boxNumber}` });
+    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: to._id, boxEntryId: toEntryId, weightDeltaMg: weightMg, netDeltaMg: netWeightMg, piecesDelta: pieces, productId: args.productId, sourceTable: "box_transfers", sourceId, at: now, note: note ?? `From Box ${from.boxNumber}` });
     await ctx.db.insert("auditLogs", {
       organizationId: auth.organizationId,
       userId: auth.userId,

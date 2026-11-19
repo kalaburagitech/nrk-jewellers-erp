@@ -4,7 +4,7 @@ import { canOverridePrice, canViewCost, requireAuthContext, requireRole } from "
 import { resolveKaratPurity } from "./lib/purity";
 import type { MutationCtx } from "./_generated/server";
 import type { PurityKarat } from "../src/lib/jewelry-calc";
-import { boxStockByProduct, changeBoxStock, getCompanyBox } from "./lib/boxStock";
+import { boxStockByProduct, changeBoxStock, ensureBoxEntry, getCompanyBox } from "./lib/boxStock";
 import { normalizeCustomFieldValues } from "./lib/customFieldValues";
 import { changeItemStock, gstStockByProduct, isGstCompanyType } from "./lib/itemStock";
 import type { QueryCtx } from "./_generated/server";
@@ -93,7 +93,9 @@ async function postOpeningStock(
     // Opening weight as entered, else the item's gross weight per piece.
     const weightMg = opening.weightMg || (product.grossWeightMg ?? 0) * opening.pieces;
     if (weightMg <= 0) throw new Error("Enter the item's gross weight (or the opening weight) to put opening stock into the box");
-    await changeBoxStock(ctx, { organizationId, boxId: box._id, weightDeltaMg: weightMg, piecesDelta: opening.pieces, productId: product._id, sourceTable: "opening_stock", sourceId: product._id, at: opening.at, note: "Opening stock" });
+    const entry = await ensureBoxEntry(ctx, { organizationId, boxId: box._id, productId: product._id });
+    const netMg = Math.max(0, weightMg - (product.stoneWeightMg ?? 0) * opening.pieces);
+    await changeBoxStock(ctx, { organizationId, boxId: box._id, boxEntryId: entry._id, weightDeltaMg: weightMg, netDeltaMg: netMg, piecesDelta: opening.pieces, productId: product._id, sourceTable: "opening_stock", sourceId: product._id, at: opening.at, note: "Opening stock" });
     return;
   }
   if (!gst) throw new Error("Choose the box for the opening stock. Daily Sales stock is kept in boxes.");

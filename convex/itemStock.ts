@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { requireAuthContext, requireRole } from "./lib/auth";
-import { assertBoxMetal, changeBoxStock, getCompanyBox, listBoxBalances } from "./lib/boxStock";
+import { assertBoxMetal, changeBoxStock, ensureBoxEntry, getCompanyBox, listBoxBalances } from "./lib/boxStock";
 import { changeItemStock, gstStockByProduct, isGstCompanyType } from "./lib/itemStock";
 
 /**
@@ -67,7 +67,8 @@ export const moveToBox = mutation({
     // Throws if there isn't that much loose stock — the move can't create stock.
     await changeItemStock(ctx, { organizationId: auth.organizationId, productId: product._id, weightDeltaMg: -args.grossWeightMg, piecesDelta: -pieces, sourceTable: "item_stock_to_box", sourceId: box._id, at: now });
     // Box stock is gross weight + pieces; the stock journal keeps the item and label.
-    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: box._id, weightDeltaMg: args.grossWeightMg, piecesDelta: pieces, productId: product._id, sourceTable: "item_stock_to_box", sourceId: box._id, at: now, note: label });
+    const entry = await ensureBoxEntry(ctx, { organizationId: auth.organizationId, boxId: box._id, productId: product._id });
+    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: box._id, boxEntryId: entry._id, weightDeltaMg: args.grossWeightMg, netDeltaMg: args.grossWeightMg - args.stoneWeightMg, piecesDelta: pieces, productId: product._id, sourceTable: "item_stock_to_box", sourceId: box._id, at: now, note: label });
     await ctx.db.insert("auditLogs", {
       organizationId: auth.organizationId,
       userId: auth.userId,

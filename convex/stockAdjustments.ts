@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
-import { changeBoxStock, getCompanyBox } from "./lib/boxStock";
+import { changeBoxStock, ensureBoxEntry, entryForRemoval, findBoxEntry, getCompanyBox } from "./lib/boxStock";
 
 export const listRecent = query({
   args: {},
@@ -29,6 +29,8 @@ export const listRecent = query({
 export const adjustBox = mutation({
   args: {
     boxId: v.id("boxes"), addWeightMg: v.number(), deductWeightMg: v.number(), addPieces: v.number(), deductPieces: v.number(), reason: v.string(),
+    // Net weight change of the item (optional; else it follows the gross weight).
+    netDeltaMg: v.optional(v.number()),
     // Optional: the item the corrected stock belongs to, so item-wise (GST) stock counts it.
     productId: v.optional(v.id("products")),
   },
@@ -50,7 +52,14 @@ export const adjustBox = mutation({
       if (!product || product.deletedAt || product.organizationId !== auth.organizationId) throw new Error("Item not found");
     }
     const now = Date.now();
-    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: box._id, weightDeltaMg, piecesDelta, productId: args.productId, sourceTable: "stock_adjustments", sourceId: box._id, at: now, note: reason });
+    // With an item: the change is to that item's row in the box (created when stock is added for a new item).
+    let boxEntryId = undefined;
+    if (args.productId) {
+      const existing = await findBoxEntry(ctx, box._id, args.productId);
+      if (weightDeltaMg > 0 || piecesDelta > 0) boxEntryId = (existing ?? (await ensureBoxEntry(ctx, { organizationId: auth.organizationId, boxId: box._id, productId: args.productId })))._id;
+      else boxEntryId = (await entryForRemoval(ctx, box, existing, -weightDeltaMg, -piecesDelta))?._id;
+    }
+    await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: box._id, boxEntryId, weightDeltaMg, netDeltaMg: boxEntryId ? args.netDeltaMg : undefined, piecesDelta, productId: args.productId, sourceTable: "stock_adjustments", sourceId: box._id, at: now, note: reason });
     await ctx.db.insert("auditLogs", { organizationId: auth.organizationId, userId: auth.userId, action: "stock.adjust_box", entityTable: "boxes", entityId: box._id, metadata: { boxNumber: box.boxNumber, addWeightMg: args.addWeightMg, deductWeightMg: args.deductWeightMg, addPieces: args.addPieces, deductPieces: args.deductPieces, reason }, createdAt: now });
   },
 });

@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { BarcodeScanInput } from "@/components/barcode-scan-input";
+import { BoxPicker } from "@/components/box-picker";
+import type { BoxEntryRow } from "@/components/box-items";
 import { gstRateBp, isInterState } from "@/lib/gst-rate";
 import { MessageCircle, Minus, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
@@ -83,7 +85,7 @@ function lineDiscountPaise(raw: string | undefined, taxablePaise: number): numbe
 
 type Metal = "gold" | "silver";
 type MakingMode = MakingChargeMode;
-type BoxRow = Doc<"boxes"> & { weightMg: number; pieces: number };
+type BoxRow = Doc<"boxes"> & { weightMg: number; pieces: number; entries?: BoxEntryRow[] };
 
 /** One editable bill row. Weights/amounts are kept as typed text until save. */
 type BillLine = {
@@ -462,9 +464,6 @@ export default function NewBillPage() {
       ratePerGramRupees: line.ratePerGramRupees || autoRate(productById.get(line.productId), metalPurityId),
     };
   }
-  function pickBox(index: number, boxId: string) {
-    updateLine(index, withBox(lines[index], boxId));
-  }
 
   function pickMetal(index: number, metal: Metal | "") {
     const line = lines[index];
@@ -481,17 +480,54 @@ export default function NewBillPage() {
 
   /** Description typed: an exact Item List name fills purity, category, fixed price and making charge from the item. */
   function typeDescription(index: number, label: string) {
-    const line = lines[index];
+    updateLine(index, descriptionPatch(lines[index], label));
+  }
+
+  /** Box picked from the dropdown: the box, and the item when the row was one of its items. */
+  function pickBoxItem(index: number, boxId: string, entry?: BoxEntryRow) {
+    let next: BillLine = { ...lines[index], ...withBox(lines[index], boxId) };
+    if (entry) next = { ...next, ...entryPatch(next, entry) };
+    updateLine(index, next);
+  }
+
+  /** The item as kept in its box: everything the line needs comes from the box. */
+  function entryPatch(line: BillLine, entry: BoxEntryRow): Partial<BillLine> {
+    const purity = activePurities.find((p) => p._id === entry.metalPurityId);
+    const box = boxById.get(line.boxId);
+    const metal = purity?.metal ?? box?.metal ?? line.metal;
+    const metalPurityId = purity?._id ?? (activePurities.find((p) => p._id === line.metalPurityId)?.metal === metal ? line.metalPurityId : defaultPurityFor(metal));
+    const discountValue = entry.saleDiscountValue ?? 0;
+    return {
+      label: entry.productName,
+      productId: entry.productId,
+      metal,
+      metalPurityId,
+      ratePerGramRupees: autoRate(productById.get(entry.productId), metalPurityId) || line.ratePerGramRupees,
+      makingMode: entry.makingChargeMode ?? "fixed",
+      makingValue: entry.makingChargeValue ? (entry.makingChargeValue / 100).toFixed(2) : "",
+      wastagePercent: entry.wastageBasisPoints ? String(entry.wastageBasisPoints / 100) : "",
+      taxConfigurationId: entry.taxConfigurationId ?? line.taxConfigurationId,
+      discount: discountValue ? (entry.saleDiscountMode === "amount" ? (discountValue / 100).toFixed(2) : `${discountValue / 100}%`) : "",
+      unitPriceRupees: entry.salePricePaise ? (entry.salePricePaise / 100).toFixed(2) : "",
+      savedPricePaise: entry.salePricePaise || undefined,
+      costPaise: entry.purchasePricePaise,
+    };
+  }
+
+  function descriptionPatch(line: BillLine, label: string): Partial<BillLine> {
     const product = productByName.get(label.trim().toLowerCase()) ?? productBySku.get(label.trim().toLowerCase());
-    if (!product) return updateLine(index, { label, productId: "", savedPricePaise: undefined, costPaise: undefined, ...(line.savedPricePaise !== undefined ? { unitPriceRupees: "" } : {}) });
-    if (product._id === line.productId) return updateLine(index, { label });
+    if (!product) return { label, productId: "", savedPricePaise: undefined, costPaise: undefined, ...(line.savedPricePaise !== undefined ? { unitPriceRupees: "" } : {}) };
+    if (product._id === line.productId) return { label };
+    // The box holds this item: its details come from the box.
+    const entry = boxById.get(line.boxId)?.entries?.find((e) => e.productId === product._id);
+    if (entry) return entryPatch(line, entry);
     const purity = activePurities.find((p) => p._id === product.metalPurityId);
     const box = boxById.get(line.boxId);
     const metal = purity?.metal ?? box?.metal ?? line.metal;
     const metalPurityId = purity?._id ?? (activePurities.find((p) => p._id === line.metalPurityId)?.metal === metal ? line.metalPurityId : defaultPurityFor(metal));
     const last = lastPrices?.[product._id];
     const makingPaise = product.makingChargePaise ?? last?.makingChargePaise;
-    updateLine(index, {
+    return {
       label: product.name,
       productId: product._id,
       metal,
@@ -504,7 +540,7 @@ export default function NewBillPage() {
       unitPriceRupees: product.salePricePaise ? (product.salePricePaise / 100).toFixed(2) : "",
       savedPricePaise: product.salePricePaise || undefined,
       costPaise: product.purchasePricePaise,
-    });
+    };
   }
 
   /** Gross typed: net follows it until the operator types a different net weight. */
@@ -1228,19 +1264,17 @@ export default function NewBillPage() {
                         <td className="py-2 px-2 pt-3.5 font-mono text-muted-foreground">{String(index + 1).padStart(2, "0")}</td>
                         {(
                           <td className="py-2 px-2">
-                            <select
-                              aria-label={`Row ${index + 1} box`}
-                              className="h-8 w-36 rounded-md border bg-background px-2 text-xs"
+                            <BoxPicker
+                              ariaLabel={`Row ${index + 1} box`}
+                              boxes={boxes as BoxRow[]}
+                              purities={activePurities}
+                              rateByPurity={rateByPurity}
                               value={line.boxId}
-                              onChange={(e) => pickBox(index, e.target.value)}
-                            >
-                              <option value="">{gstCompany ? "Loose GST stock" : "Select box"}</option>
-                              {boxes?.filter((b) => b.isActive || b._id === line.boxId).map((b) => (
-                                <option key={b._id} value={b._id}>
-                                  Box {b.boxNumber}{b.metal ? ` · ${b.metal === "gold" ? "Gold" : "Silver"}` : ""}{b.label ? ` · ${b.label}` : ""}
-                                </option>
-                              ))}
-                            </select>
+                              metal={line.metal}
+                              priceKind="sale"
+                              emptyLabel={gstCompany ? "Loose GST stock" : undefined}
+                              onPick={(boxId, entry) => pickBoxItem(index, boxId, entry)}
+                            />
                             {box && available && (
                               <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
                                 Has {mgToGramsDisplay(available.weightMg)} g · {available.pieces} pcs

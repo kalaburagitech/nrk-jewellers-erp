@@ -21,6 +21,28 @@ A box is a running balance of **gross weight + pieces** (e.g. Box 100: 1000 g,
 | Box transfer | − from one box, + into another of the same metal |
 | Cancel / edit / return | Puts back (or takes out) exactly what the line moved, once |
 
+### Items inside a box
+
+A box (unique number) holds one or more items — e.g. a Necklace box with a
+few small rings. The **Item List** only names an item (name, category, stock
+group, optional code). Everything billing needs is entered on the item **in
+its box** (`boxEntries`): HSN, purity, description, stock group, wastage,
+making (₹, ₹/g or %), sale price, purchase price, discount, tax, and the
+item's own stock — gross weight, net weight and pieces.
+
+- The box's total is the sum of its items, plus any older stock not yet
+  assigned to an item ("Other (not assigned)").
+- A bill line picked from "Box 105 · Small Ring" takes its details from that
+  row and deducts gross, net and pieces from it. The saved sale price and the
+  cost snapshot are the row's; the HSN is saved on the sale line.
+- Purchases add into the item's row (created with the item's details when
+  the box doesn't hold it yet). Returns and cancellations put back into the
+  same row; a return into another box creates the row there with the same
+  details. Transfers move one item between boxes, net weight in proportion.
+- An item can be removed from a box only when none of it is left there.
+- Box Overview → "Add items to their boxes" (Owner/Admin, one-time) copies
+  each item's old saved details into its default box.
+
 - Gold lines only use gold boxes and silver lines only silver boxes.
 - Net weight ≤ gross weight on every line.
 - A sale cannot take a box below zero unless Settings → "Stop Sale on

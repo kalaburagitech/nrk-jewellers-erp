@@ -2,7 +2,8 @@
 import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useMemo, useState } from "react";
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
+import { useBoxes } from "@/hooks/use-boxes";
 import { api } from "../../../../../convex/_generated/api";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,7 +16,7 @@ import type { Id } from "../../../../../convex/_generated/dataModel";
 import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 export default function BoxTransfersPage() {
-  const boxes = useQuery(api.boxes.list);
+  const boxes = useBoxes();
   const transferStock = useMutation(api.boxes.transferStock);
 
   const [fromBoxId, setFromBoxId] = useState("");
@@ -23,6 +24,7 @@ export default function BoxTransfersPage() {
   const [weight, setWeight] = useState("");
   const [pieces, setPieces] = useState("");
   const [note, setNote] = useState("");
+  const [productId, setProductId] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState("");
@@ -34,6 +36,13 @@ export default function BoxTransfersPage() {
   const targets = activeBoxes.filter((b) => b._id !== fromBoxId && (!fromBox?.metal || !b.metal || b.metal === fromBox.metal));
   const weightMg = gramsToMg(weight || "0");
   const pieceCount = Number(pieces || 0);
+  // Item being moved (from the items inside the "from" box); blank = the box's unassigned stock.
+  const fromEntry = fromBox?.entries.find((e) => e.productId === productId);
+  const available = fromEntry
+    ? { weightMg: fromEntry.weightMg, pieces: fromEntry.pieces }
+    : fromBox
+      ? { weightMg: fromBox.weightMg - fromBox.entries.reduce((s, e) => s + e.weightMg, 0), pieces: fromBox.pieces - fromBox.entries.reduce((s, e) => s + e.pieces, 0) }
+      : { weightMg: 0, pieces: 0 };
 
   async function handleTransfer() {
     setError(null);
@@ -41,10 +50,10 @@ export default function BoxTransfersPage() {
     if (!fromBox || !toBox) return setError("Choose the box to move from and the box to move into.");
     if (!(Number(weight || 0) >= 0) || !Number.isInteger(pieceCount) || pieceCount < 0) return setError("Enter a weight and whole pieces of 0 or more.");
     if (!weightMg && !pieceCount) return setError("Enter the weight or pieces to move.");
-    if (weightMg > fromBox.weightMg || pieceCount > fromBox.pieces) return setError(`Box ${fromBox.boxNumber} only has ${mgToGramsDisplay(fromBox.weightMg)} g, ${fromBox.pieces} pcs.`);
+    if (weightMg > available.weightMg || pieceCount > available.pieces) return setError(`${fromEntry ? `${fromEntry.productName} in ` : ""}Box ${fromBox.boxNumber} only has ${mgToGramsDisplay(available.weightMg)} g, ${available.pieces} pcs${fromEntry ? "" : " not assigned to an item"}.`);
     setSaving(true);
     try {
-      await transferStock({ fromBoxId: fromBox._id as Id<"boxes">, toBoxId: toBox._id as Id<"boxes">, weightMg, pieces: pieceCount, note: note.trim() || undefined });
+      await transferStock({ fromBoxId: fromBox._id as Id<"boxes">, toBoxId: toBox._id as Id<"boxes">, weightMg, pieces: pieceCount, note: note.trim() || undefined, productId: fromEntry ? fromEntry.productId : undefined });
       setDone(`Moved ${mgToGramsDisplay(weightMg)} g, ${pieceCount} pcs from Box ${fromBox.boxNumber} to Box ${toBox.boxNumber}.`);
       setWeight("");
       setPieces("");
@@ -72,7 +81,7 @@ export default function BoxTransfersPage() {
             <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
               <div className="grid gap-2">
                 <Label htmlFor="from-box">From box</Label>
-                <select id="from-box" className="h-10 rounded-md border bg-background px-3 text-sm" value={fromBoxId} onChange={(e) => { setFromBoxId(e.target.value); setToBoxId(""); setDone(""); }}>
+                <select id="from-box" className="h-10 rounded-md border bg-background px-3 text-sm" value={fromBoxId} onChange={(e) => { setFromBoxId(e.target.value); setToBoxId(""); setProductId(""); setDone(""); }}>
                   <option value="">Choose a box</option>
                   {activeBoxes.map((b) => <option key={b._id} value={b._id}>{boxOptionLabel(b)}</option>)}
                 </select>
@@ -86,6 +95,16 @@ export default function BoxTransfersPage() {
                 </select>
               </div>
             </div>
+            {fromBox && fromBox.entries.length > 0 && (
+              <div className="grid gap-2">
+                <Label htmlFor="transfer-item">Item to move</Label>
+                <select id="transfer-item" className="h-10 rounded-md border bg-background px-3 text-sm" value={productId} onChange={(e) => { setProductId(e.target.value); setDone(""); }}>
+                  {available.weightMg > 0 || available.pieces > 0 || !productId ? <option value="">Not assigned to an item</option> : null}
+                  {fromBox.entries.map((e) => <option key={e._id} value={e.productId}>{e.productName} — {mgToGramsDisplay(e.weightMg)} g, {e.pieces} pcs</option>)}
+                </select>
+                <p className="text-xs text-muted-foreground">The item joins its row in the other box with the same details (added there if the box doesn&apos;t hold it yet). Net weight moves in proportion.</p>
+              </div>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="transfer-weight">Weight to move (grams)</Label>

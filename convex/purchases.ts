@@ -6,7 +6,7 @@ import { allocateInvoiceNumber, resolveBranchId } from "./lib/sequences";
 import { computePurchaseLine, basisPointsOf } from "../src/lib/jewelry-calc";
 import type { Doc, Id } from "./_generated/dataModel";
 import { changeItemStock, isGstCompany } from "./lib/itemStock";
-import { assertBoxMetal, changeBoxStock, getCompanyBox, type Metal } from "./lib/boxStock";
+import { assertBoxMetal, changeBoxStock, ensureBoxEntry, entryForStockBack, getCompanyBox, type Metal } from "./lib/boxStock";
 import { assertBookingYearOpen } from "./lib/accountingYears";
 
 /** Purchase invoices only — purchase orders and purchase returns each have their own dedicated list page/query. */
@@ -340,6 +340,14 @@ async function applyPurchaseTransaction(
 
   for (const [index, { item, computed }] of computedLines.entries()) {
     const pieces = item.pieces ?? 1;
+    const boxEntry = item.boxId
+      ? await ensureBoxEntry(ctx, {
+          organizationId: auth.organizationId,
+          boxId: item.boxId,
+          productId: item.productId,
+          details: { metalPurityId: item.metalPurityId, purchasePricePaise: item.unitPricePaise || undefined },
+        })
+      : null;
     await ctx.db.insert("purchaseItems", {
       organizationId: auth.organizationId,
       purchaseId,
@@ -360,9 +368,11 @@ async function applyPurchaseTransaction(
       pieces,
       // Stock is kept in gross weight, so a sale can take the whole piece back out.
       stockWeightMg: item.grossWeightMg,
+      boxEntryId: boxEntry?._id,
+      stockNetWeightMg: boxEntry ? computed.netWeightMg : undefined,
     });
     if (item.boxId) {
-      await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: item.boxId, weightDeltaMg: item.grossWeightMg, piecesDelta: pieces, productId: item.productId, sourceTable: "purchases", sourceId: purchaseId, at: billDate });
+      await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: item.boxId, boxEntryId: boxEntry?._id, weightDeltaMg: item.grossWeightMg, netDeltaMg: computed.netWeightMg, piecesDelta: pieces, productId: item.productId, sourceTable: "purchases", sourceId: purchaseId, at: billDate });
     } else {
       await changeItemStock(ctx, { organizationId: auth.organizationId, productId: item.productId, weightDeltaMg: item.grossWeightMg, piecesDelta: pieces, sourceTable: "purchases", sourceId: purchaseId, at: billDate });
     }
@@ -425,7 +435,7 @@ async function reversePurchaseTransaction(ctx: MutationCtx, auth: AuthContext, p
       await ctx.db.patch(item.boxItemId, { deletedAt: Date.now(), status: "written_off" });
     } else if (item.boxId) {
       // Throws if the box no longer holds that weight (it was sold or moved) — reverse that first.
-      await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: item.boxId, weightDeltaMg: -(item.stockWeightMg ?? item.grossWeightMg), piecesDelta: -(item.pieces ?? 1), productId: item.productId, sourceTable: "purchases", sourceId: purchase._id, at: Date.now(), allowNegative });
+      await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: item.boxId, boxEntryId: item.boxEntryId, weightDeltaMg: -(item.stockWeightMg ?? item.grossWeightMg), netDeltaMg: item.stockNetWeightMg !== undefined ? -item.stockNetWeightMg : undefined, piecesDelta: -(item.pieces ?? 1), productId: item.productId, sourceTable: "purchases", sourceId: purchase._id, at: Date.now(), allowNegative });
     }
     if (!retainLines) await ctx.db.patch(item._id, { deletedAt: Date.now() });
   }
@@ -648,7 +658,8 @@ export const cancel = mutation({
         await ctx.db.patch(stock._id, { status: "in_stock" });
       } else if (item.boxId) {
         // Box line: the returned weight goes back into its box; the original line becomes returnable again.
-        await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: item.boxId, weightDeltaMg: item.stockWeightMg ?? item.grossWeightMg, piecesDelta: item.pieces ?? 0, productId: item.productId, sourceTable: "purchases", sourceId: purchase._id, at: Date.now() });
+        const boxEntryId = await entryForStockBack(ctx, { organizationId: auth.organizationId, boxId: item.boxId, productId: item.productId, boxEntryId: item.boxEntryId });
+        await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: item.boxId, boxEntryId, weightDeltaMg: item.stockWeightMg ?? item.grossWeightMg, netDeltaMg: item.stockNetWeightMg, piecesDelta: item.pieces ?? 0, productId: item.productId, sourceTable: "purchases", sourceId: purchase._id, at: Date.now() });
         if (item.returnOfPurchaseItemId) await ctx.db.patch(item.returnOfPurchaseItemId, { returnedAt: undefined });
       }
       const supplier = await ctx.db.get(purchase.supplierId);
@@ -965,7 +976,7 @@ export const createPurchaseReturn = mutation({
       const stockWeightMg = purchaseItem.stockWeightMg ?? purchaseItem.netWeightMg;
       const pieces = purchaseItem.pieces ?? 1;
       // Throws if those grams were already sold — nothing to send back.
-      if (purchaseItem.boxId) await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: purchaseItem.boxId, weightDeltaMg: -stockWeightMg, piecesDelta: -pieces, productId: purchaseItem.productId, sourceTable: "purchases", sourceId: returnId, at: now });
+      if (purchaseItem.boxId) await changeBoxStock(ctx, { organizationId: auth.organizationId, boxId: purchaseItem.boxId, boxEntryId: purchaseItem.boxEntryId, weightDeltaMg: -stockWeightMg, netDeltaMg: purchaseItem.stockNetWeightMg !== undefined ? -purchaseItem.stockNetWeightMg : undefined, piecesDelta: -pieces, productId: purchaseItem.productId, sourceTable: "purchases", sourceId: returnId, at: now });
       else await changeItemStock(ctx, { organizationId: auth.organizationId, productId: purchaseItem.productId, weightDeltaMg: -stockWeightMg, piecesDelta: -pieces, sourceTable: "purchases", sourceId: returnId, at: now });
       await ctx.db.insert("purchaseItems", {
         organizationId: auth.organizationId,
@@ -984,6 +995,8 @@ export const createPurchaseReturn = mutation({
         metal: purchaseItem.metal,
         pieces,
         stockWeightMg,
+        boxEntryId: purchaseItem.boxEntryId,
+        stockNetWeightMg: purchaseItem.stockNetWeightMg,
         returnOfPurchaseItemId: purchaseItem._id,
       });
       await ctx.db.patch(purchaseItem._id, { returnedAt: now });

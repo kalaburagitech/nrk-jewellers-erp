@@ -1,39 +1,35 @@
 "use client";
 import { getUserErrorMessage } from "@/lib/user-error";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { useFieldArray, useForm, useWatch } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Search, Trash2 } from "lucide-react";
+import { BarcodeScanInput } from "@/components/barcode-scan-input";
+import { BoxPicker } from "@/components/box-picker";
+import type { BoxEntryRow } from "@/components/box-items";
+import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { purchaseFormSchema, type PurchaseFormValues } from "@/lib/schemas/purchase";
-import { basisPointsOf, computePurchaseLine, gramsToMg } from "@/lib/jewelry-calc";
-import { boxOptionLabel } from "@/lib/box-label";
-import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
-import type { Id } from "../../../../../convex/_generated/dataModel";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  basisPointsOf,
+  computePurchaseLine,
+  gramsToMg,
+  makingChargeFor,
+  metalValuePaise,
+  mgToGramsDisplay,
+  type MakingChargeMode,
+} from "@/lib/jewelry-calc";
+import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
+import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { GST_STATES } from "@/lib/gst-state-codes";
 
 type PaymentModeValue = "cash" | "upi" | "card" | "cheque" | "bank_transfer";
@@ -46,24 +42,61 @@ const PAYMENT_MODES = [
   { value: "bank_transfer", label: "Bank Transfer" },
 ] as const;
 
-function emptyLine() {
+type Metal = "gold" | "silver";
+type MakingMode = MakingChargeMode;
+type BoxRow = Doc<"boxes"> & { weightMg: number; pieces: number; entries?: BoxEntryRow[] };
+
+const MAKING_MODES: { value: MakingMode; label: string }[] = [
+  { value: "fixed", label: "₹" },
+  { value: "per_gram", label: "₹/g" },
+  { value: "percent", label: "%" },
+];
+
+/** One editable purchase row — same columns as the sales bill. Weights/amounts stay typed text until save. */
+type PurchaseLine = {
+  key: string;
+  /** The box the gross weight and pieces go into (GST company: blank = loose GST item stock). */
+  boxId: string;
+  metal: Metal | "";
+  /** Picked from the Item List; empty = typed description (created in the Item List on save). */
+  productId: string;
+  label: string;
+  metalPurityId: string;
+  piecesText: string;
+  grossGrams: string;
+  netGrams: string;
+  ratePerGramRupees: string;
+  /** Purchase price per piece (₹). Blank → priced by net weight × rate per gram. */
+  unitPriceRupees: string;
+  makingMode: MakingMode;
+  makingValue: string;
+  /** Line discount, "5%" or rupees. */
+  discount: string;
+  /** Kept from older purchases so an edit doesn't drop it (not on the grid). */
+  stoneChargeRupees: string;
+};
+
+function blankLine(): PurchaseLine {
   return {
-    productId: "",
-    manualProductName: "",
+    key: crypto.randomUUID(),
     boxId: "",
-    manualBoxNumber: "",
+    metal: "",
+    productId: "",
     label: "",
     metalPurityId: "",
-    piecesText: "1",
-    grossWeightGrams: "",
-    stoneWeightGrams: "",
+    piecesText: "",
+    grossGrams: "",
+    netGrams: "",
     ratePerGramRupees: "",
     unitPriceRupees: "",
-    makingChargeRupees: "",
+    makingMode: "fixed",
+    makingValue: "",
+    discount: "",
     stoneChargeRupees: "",
-    discountRupees: "",
   };
 }
+
+const cellInput = "h-8 text-xs";
 
 /** Bill dates are a plain calendar day, stored/compared as UTC midnight — matches the dashboard's "UTC calendar day" convention for daily totals. */
 function todayDateInput(): string {
@@ -76,20 +109,121 @@ function dateInputToTimestamp(value: string): number {
   return new Date(`${value}T00:00:00.000Z`).getTime();
 }
 
+function numberFieldError(raw: string, opts?: { max?: number }): string | null {
+  if (!raw.trim()) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return "Enter a valid number";
+  if (n < 0) return "Cannot be negative";
+  if (opts?.max !== undefined && n > opts.max) return `Cannot exceed ${opts.max}`;
+  return null;
+}
+
+/** "5%" → 5% of the line's value; "200" → ₹200. Blank or invalid → no discount. */
+function lineDiscountPaise(raw: string, valuePaise: number): number {
+  const text = raw.trim();
+  if (!text) return 0;
+  if (text.endsWith("%")) {
+    const bp = percentToBasisPoints(text.slice(0, -1).trim());
+    return bp === null ? 0 : Math.round((valuePaise * bp) / 10000);
+  }
+  return Math.min(rupeesToPaise(text) ?? 0, valuePaise);
+}
+
+function makingValueUnits(mode: MakingMode, raw: string): number {
+  return mode === "percent" ? percentToBasisPoints(raw || "0") ?? 0 : rupeesToPaise(raw || "0") ?? 0;
+}
+
+/** Type-to-search-or-create supplier, like the customer field on the sales bill. */
+function SupplierPicker({
+  suppliers,
+  supplierId,
+  nameInput,
+  phoneInput,
+  allowNew,
+  onSelectExisting,
+  onNameChange,
+  onPhoneChange,
+}: {
+  suppliers: Doc<"suppliers">[];
+  supplierId: string;
+  nameInput: string;
+  phoneInput: string;
+  allowNew: boolean;
+  onSelectExisting: (supplier: Doc<"suppliers">) => void;
+  onNameChange: (value: string) => void;
+  onPhoneChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const term = nameInput.trim().toLowerCase();
+  const matches = (term.length === 0 ? suppliers : suppliers.filter((s) => s.name.toLowerCase().includes(term) || s.phone?.toLowerCase().includes(term))).slice(0, 8);
+  const isNew = !supplierId && nameInput.trim().length > 0;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          aria-label="Supplier name"
+          placeholder={allowNew ? "Type a name to search, or add a new supplier" : "Type a name to search suppliers"}
+          value={nameInput}
+          onChange={(e) => onNameChange(e.target.value)}
+          onFocus={() => setOpen(true)}
+        />
+      </div>
+      {open && matches.length > 0 && (
+        <div className="absolute z-10 mt-1 max-h-72 w-full overflow-y-auto rounded-md border border-border bg-popover py-1 shadow-md">
+          {matches.map((s) => (
+            <button
+              type="button"
+              key={s._id}
+              className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
+              onClick={() => {
+                onSelectExisting(s);
+                setOpen(false);
+              }}
+            >
+              <span className="flex flex-col">
+                <span>{s.name}</span>
+                {s.phone && <span className="text-xs text-muted-foreground">{s.phone}</span>}
+              </span>
+              <span className="text-xs tabular-nums text-muted-foreground">{formatPaise(s.currentBalancePaise ?? s.openingBalancePaise ?? 0)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="mt-2 flex flex-col gap-2">
+        <Input placeholder="Phone number" aria-label="Supplier phone" inputMode="tel" value={phoneInput} disabled={!!supplierId} onChange={(e) => onPhoneChange(e.target.value)} />
+        {isNew && allowNew && (
+          <Badge variant="secondary" className="w-fit font-normal">
+            New supplier — saved when you save this purchase
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function NewPurchasePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const editPurchaseId = searchParams.get("edit") as Id<"purchases"> | null;
-  const existingPurchase = useQuery(
-    api.purchases.getForEdit,
-    editPurchaseId ? { purchaseId: editPurchaseId } : "skip",
-  );
+  const existingPurchase = useQuery(api.purchases.getForEdit, editPurchaseId ? { purchaseId: editPurchaseId } : "skip");
 
   const suppliers = useQuery(api.suppliers.list);
   const products = useQuery(api.products.list);
   const boxes = useQuery(api.boxes.list);
   const access = useQuery(api.organizations.getMyAccess);
-  // GST companies keep item-wise stock: purchased lines go there, not into boxes.
   const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
   const purities = useQuery(api.metalPurities.list);
   const currentRates = useQuery(api.metalRates.getCurrent);
@@ -101,30 +235,29 @@ export default function NewPurchasePage() {
   const updatePurchase = useMutation(api.purchases.update);
   const createSupplier = useMutation(api.suppliers.create);
   const createProduct = useMutation(api.products.create);
-  const createBox = useMutation(api.boxes.createNext);
+  const uploadBillUrl = useMutation(api.purchases.generateBillImageUploadUrl);
 
-  const [idempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [serverError, setServerError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [prefilled, setPrefilled] = useState(false);
 
-  const [isNewSupplier, setIsNewSupplier] = useState(false);
-  const [manualProductFlags, setManualProductFlags] = useState<Record<number, boolean>>({});
-  const [manualBoxFlags, setManualBoxFlags] = useState<Record<number, boolean>>({});
-  const [quickIsManualProduct, setQuickIsManualProduct] = useState(false);
-  const [quickManualProductName, setQuickManualProductName] = useState("");
-  const [quickIsManualBox, setQuickIsManualBox] = useState(false);
-  const [quickManualBoxNumber, setQuickManualBoxNumber] = useState("");
-  // Vyapar purchase-form extras kept outside react-hook-form (all optional).
+  const [supplierId, setSupplierId] = useState("");
+  const [supplierNameInput, setSupplierNameInput] = useState("");
+  const [supplierPhoneInput, setSupplierPhoneInput] = useState("");
+  const [billDate, setBillDate] = useState(() => todayDateInput());
   const [supplierBillNumber, setSupplierBillNumber] = useState("");
   const [stateOfSupply, setStateOfSupply] = useState("");
+  const [lines, setLines] = useState<PurchaseLine[]>(() => [blankLine()]);
+  const [gstPercent, setGstPercent] = useState("");
   const [roundOff, setRoundOff] = useState(true);
+  const [payments, setPayments] = useState<{ mode: PaymentModeValue; rupees: string }[]>([{ mode: "cash", rupees: "" }]);
+  const [payFull, setPayFull] = useState(false);
   const [notes, setNotes] = useState("");
   const [showNotes, setShowNotes] = useState(false);
-  const [extraPayments, setExtraPayments] = useState<{ mode: PaymentModeValue; rupees: string }[]>([]);
   const [billImageId, setBillImageId] = useState<Id<"_storage"> | undefined>();
   const [billImageName, setBillImageName] = useState("");
   const [uploadingBill, setUploadingBill] = useState(false);
-  const uploadBillUrl = useMutation(api.purchases.generateBillImageUploadUrl);
 
   async function uploadBill(file: File | undefined) {
     if (!file) return;
@@ -144,24 +277,16 @@ export default function NewPurchasePage() {
     }
   }
 
-  const form = useForm<PurchaseFormValues>({
-    resolver: zodResolver(purchaseFormSchema),
-    defaultValues: {
-      supplierId: "",
-      manualSupplierName: "",
-      manualSupplierPhone: "",
-      billDate: todayDateInput(),
-      gstPercent: "",
-      amountPaidRupees: "",
-      paymentMode: undefined,
-      items: [emptyLine()],
-    },
-  });
-
+  // One-time prefill in edit mode.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!editPurchaseId || !existingPurchase || prefilled) return;
-    const { purchase, items, payment, payments } = existingPurchase;
+    if (!editPurchaseId || !existingPurchase || !suppliers || prefilled) return;
+    const { purchase, items, payments: existingPayments } = existingPurchase;
+    const supplier = suppliers.find((s) => s._id === purchase.supplierId);
+    setSupplierId(purchase.supplierId);
+    setSupplierNameInput(supplier?.name ?? "");
+    setSupplierPhoneInput(supplier?.phone ?? "");
+    setBillDate(timestampToDateInput(purchase.createdAt));
     setSupplierBillNumber(purchase.supplierBillNumber ?? "");
     setStateOfSupply(purchase.stateOfSupply ?? "");
     setRoundOff((purchase.roundOffPaise ?? 0) !== 0);
@@ -169,302 +294,407 @@ export default function NewPurchasePage() {
     setShowNotes(!!purchase.notes);
     setBillImageId(purchase.billImageStorageId);
     setBillImageName(purchase.billImageStorageId ? "Bill attached" : "");
-    setExtraPayments(payments.slice(1).map((p) => ({ mode: p.mode as PaymentModeValue, rupees: (p.amountPaise / 100).toFixed(2) })));
-    const gstPercent = purchase.subtotalPaise > 0 ? ((purchase.taxPaise / purchase.subtotalPaise) * 100).toFixed(2) : "0";
-    form.reset({
-      supplierId: purchase.supplierId,
-      billDate: timestampToDateInput(purchase.createdAt),
-      gstPercent,
-      amountPaidRupees: ((payment?.amountPaise ?? purchase.amountPaidPaise) / 100).toFixed(2),
-      paymentMode: payment?.mode as PurchaseFormValues["paymentMode"],
-      items: items.map((item) => ({
-        productId: item.productId,
+    setGstPercent(purchase.subtotalPaise > 0 ? String(Math.round((purchase.taxPaise / purchase.subtotalPaise) * 10000) / 100) : "");
+    if (existingPayments.length > 0) {
+      setPayments(existingPayments.map((p) => ({ mode: p.mode as PaymentModeValue, rupees: (p.amountPaise / 100).toFixed(2) })));
+    }
+    setLines(
+      items.map((item) => ({
+        key: item._id,
         boxId: item.boxId ?? "",
+        metal: item.metal ?? "",
+        productId: item.productId,
         label: item.label,
         metalPurityId: item.metalPurityId ?? "",
         piecesText: String(item.pieces ?? 1),
-        grossWeightGrams: (item.grossWeightMg / 1000).toFixed(3),
-        stoneWeightGrams: (item.stoneWeightMg / 1000).toFixed(3),
+        grossGrams: (item.grossWeightMg / 1000).toFixed(3),
+        netGrams: (item.netWeightMg / 1000).toFixed(3),
         ratePerGramRupees: item.ratePerGramPaise ? (item.ratePerGramPaise / 100).toFixed(2) : "",
         unitPriceRupees: item.unitPricePaise ? (item.unitPricePaise / 100).toFixed(2) : "",
-        makingChargeRupees: (item.makingChargePaise / 100).toFixed(2),
-        stoneChargeRupees: (item.stoneChargePaise / 100).toFixed(2),
-        discountRupees: item.lineDiscountPaise ? (item.lineDiscountPaise / 100).toFixed(2) : "",
-      })),
-    });
-    setPrefilled(true);
-  }, [editPurchaseId, existingPurchase, prefilled, form]);
-  /* eslint-enable react-hooks/set-state-in-effect */
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: "items" });
-
-  // Every purchased piece goes into a box — the GST company has its own boxes, like Daily Sales.
-  const lineCount = fields.length;
-  useEffect(() => {
-    for (let i = 0; i < lineCount; i++) form.setValue(`items.${i}.toItemStock`, false);
-  }, [lineCount, form]);
-
-  // Quick-add: pick a product/box/rate once and generate that many pre-filled
-  // lines at once — the operator still enters each piece's actual weight
-  // (gold pieces of the "same" design never weigh exactly the same), but
-  // doesn't have to re-pick product/box/charges N times for a bulk receipt.
-  const [quickProductId, setQuickProductId] = useState("");
-  const [quickBoxId, setQuickBoxId] = useState("");
-  const [quickQuantity, setQuickQuantity] = useState("1");
-  function handleQuickAdd() {
-    const product = products?.find((p) => p._id === quickProductId);
-    const prodName = product ? product.name : quickManualProductName.trim();
-    if (!prodName) return;
-    const quantity = Math.max(1, Math.min(50, Math.round(Number(quickQuantity)) || 1));
-    const latestRate = product?.metalPurityId
-      ? currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise
-      : undefined;
-    const existingCount = fields.length;
-    append(
-      Array.from({ length: quantity }, (_, i) => ({
-        ...emptyLine(),
-        productId: quickProductId || "",
-        manualProductName: quickIsManualProduct ? prodName : "",
-        boxId: quickBoxId || product?.defaultBoxId || "",
-        manualBoxNumber: quickIsManualBox ? quickManualBoxNumber.trim() : "",
-        label: `${prodName} ${existingCount + i + 1}`,
-        metalPurityId: product?.metalPurityId ?? "",
-        grossWeightGrams: product?.grossWeightMg ? (product.grossWeightMg / 1000).toFixed(3) : "",
-        stoneWeightGrams: product?.stoneWeightMg ? (product.stoneWeightMg / 1000).toFixed(3) : "",
-        unitPriceRupees: product?.purchasePricePaise ? (product.purchasePricePaise / 100).toFixed(2) : "",
-        makingChargeRupees: product?.makingChargePaise ? (product.makingChargePaise / 100).toFixed(2) : "",
-        ratePerGramRupees: latestRate ? (latestRate / 100).toFixed(2) : "",
+        makingMode: "fixed",
+        makingValue: item.makingChargePaise ? (item.makingChargePaise / 100).toFixed(2) : "",
+        discount: item.lineDiscountPaise ? (item.lineDiscountPaise / 100).toFixed(2) : "",
+        stoneChargeRupees: item.stoneChargePaise ? (item.stoneChargePaise / 100).toFixed(2) : "",
       })),
     );
-    setQuickQuantity("1");
-    if (quickIsManualProduct) {
-      for (let k = existingCount; k < existingCount + quantity; k++) {
-        setManualProductFlags((prev) => ({ ...prev, [k]: true }));
-      }
-    }
-    if (quickIsManualBox) {
-      for (let k = existingCount; k < existingCount + quantity; k++) {
-        setManualBoxFlags((prev) => ({ ...prev, [k]: true }));
-      }
-    }
+    setPrefilled(true);
+  }, [editPurchaseId, existingPurchase, suppliers, prefilled]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  const selectedSupplier = suppliers?.find((s) => s._id === supplierId);
+  // State of supply defaults to the supplier's state.
+  /* eslint-disable-next-line react-hooks/set-state-in-effect */
+  useEffect(() => { if (selectedSupplier?.state && !stateOfSupply) setStateOfSupply(selectedSupplier.state); }, [selectedSupplier, stateOfSupply]);
+
+  const productById = useMemo(() => new Map((products ?? []).map((p) => [p._id as string, p])), [products]);
+  const productByName = useMemo(() => new Map((products ?? []).filter((p) => p.isActive).map((p) => [p.name.trim().toLowerCase(), p])), [products]);
+  const productBySku = useMemo(() => new Map((products ?? []).filter((p) => p.isActive && p.sku).map((p) => [p.sku!.trim().toLowerCase(), p])), [products]);
+  const boxById = useMemo(() => new Map((boxes ?? []).map((b) => [b._id as string, b as BoxRow])), [boxes]);
+  const activePurities = useMemo(() => (purities ?? []).filter((p) => p.isActive), [purities]);
+  const rateByPurity = useMemo(() => {
+    const map = new Map<string, number>();
+    currentRates?.forEach(({ purity, latest }) => { if (latest) map.set(purity._id, latest.ratePerGramPaise); });
+    return map;
+  }, [currentRates]);
+
+  const isLoose = useCallback((line: PurchaseLine) => gstCompany && !line.boxId, [gstCompany]);
+  /** Pcs left blank: 1 for loose GST stock, else 0 (weight-only box receipt). */
+  const piecesOf = useCallback((line: PurchaseLine) => (line.piecesText.trim() === "" ? (isLoose(line) ? 1 : 0) : Number(line.piecesText)), [isLoose]);
+
+  function defaultPurityFor(metal: Metal | "") {
+    if (!metal) return "";
+    const ofMetal = activePurities.filter((p) => p.metal === metal);
+    return (ofMetal.find((p) => metal === "gold" && p.label.includes("22")) ?? ofMetal[0])?._id ?? "";
+  }
+  function autoRate(purityId: string) {
+    const ratePaise = purityId ? rateByPurity.get(purityId) : undefined;
+    return ratePaise ? (ratePaise / 100).toFixed(2) : "";
   }
 
-  const watchedItems = useWatch({ control: form.control, name: "items" });
-  const watchedSupplierId = useWatch({ control: form.control, name: "supplierId" });
-  const selectedSupplier = suppliers?.find((sup) => sup._id === watchedSupplierId);
-  const supplierState = selectedSupplier?.state;
-  // Vyapar defaults State of supply to the party's state.
-  /* eslint-disable-next-line react-hooks/set-state-in-effect */
-  useEffect(() => { if (supplierState && !stateOfSupply) setStateOfSupply(supplierState); }, [supplierState, stateOfSupply]);
-  const watchedGst = useWatch({ control: form.control, name: "gstPercent" });
-  const watchedPaid = useWatch({ control: form.control, name: "amountPaidRupees" });
+  function updateLine(index: number, patch: Partial<PurchaseLine>) {
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  /** Box picked: category follows the box's metal; purity and rate default from it. */
+  function withBox(line: PurchaseLine, boxId: string): Partial<PurchaseLine> {
+    const box = boxById.get(boxId);
+    const metal = box?.metal ?? line.metal;
+    const purityOk = activePurities.find((p) => p._id === line.metalPurityId)?.metal === metal;
+    const metalPurityId = purityOk ? line.metalPurityId : defaultPurityFor(metal) || line.metalPurityId;
+    return {
+      boxId,
+      metal,
+      metalPurityId,
+      piecesText: line.piecesText || (box && box.pieces > 0 ? "1" : ""),
+      ratePerGramRupees: line.ratePerGramRupees || autoRate(metalPurityId),
+    };
+  }
+  /** Box picked from the dropdown: the box, and the item when the row was one of its items. */
+  function pickBoxItem(index: number, boxId: string, entry?: BoxEntryRow) {
+    let next: PurchaseLine = { ...lines[index], ...withBox(lines[index], boxId) };
+    if (entry) next = { ...next, ...entryPatch(next, entry) };
+    updateLine(index, next);
+  }
+
+  /** The item as kept in its box: purity, purchase price and making come from the box. */
+  function entryPatch(line: PurchaseLine, entry: BoxEntryRow): Partial<PurchaseLine> {
+    const purity = activePurities.find((p) => p._id === entry.metalPurityId);
+    const box = boxById.get(line.boxId);
+    const metal = purity?.metal ?? box?.metal ?? line.metal;
+    const metalPurityId = purity?._id ?? (activePurities.find((p) => p._id === line.metalPurityId)?.metal === metal ? line.metalPurityId : defaultPurityFor(metal));
+    return {
+      label: entry.productName,
+      productId: entry.productId,
+      metal,
+      metalPurityId,
+      ratePerGramRupees: autoRate(metalPurityId) || line.ratePerGramRupees,
+      makingMode: entry.makingChargeMode ?? "fixed",
+      makingValue: entry.makingChargeValue ? (entry.makingChargeValue / 100).toFixed(2) : "",
+      unitPriceRupees: entry.purchasePricePaise ? (entry.purchasePricePaise / 100).toFixed(2) : line.unitPriceRupees,
+    };
+  }
+  function pickMetal(index: number, metal: Metal | "") {
+    const line = lines[index];
+    if (activePurities.find((p) => p._id === line.metalPurityId)?.metal === metal) return updateLine(index, { metal });
+    const metalPurityId = defaultPurityFor(metal);
+    updateLine(index, { metal, metalPurityId, ratePerGramRupees: autoRate(metalPurityId) || line.ratePerGramRupees });
+  }
+  function pickPurity(index: number, metalPurityId: string) {
+    const line = lines[index];
+    const purity = activePurities.find((p) => p._id === metalPurityId);
+    updateLine(index, { metalPurityId, metal: purity?.metal ?? line.metal, ratePerGramRupees: autoRate(metalPurityId) || line.ratePerGramRupees });
+  }
+
+  /** Description typed: an Item List name or code fills purity, box, weights, purchase price and making charge. */
+  function typeDescription(index: number, label: string) {
+    updateLine(index, descriptionPatch(lines[index], label));
+  }
+
+  function descriptionPatch(line: PurchaseLine, label: string): Partial<PurchaseLine> {
+    const product = productByName.get(label.trim().toLowerCase()) ?? productBySku.get(label.trim().toLowerCase());
+    if (!product) return { label, productId: "" };
+    if (product._id === line.productId) return { label };
+    // The box already holds this item: its details come from the box.
+    const entry = boxById.get(line.boxId)?.entries?.find((e) => e.productId === product._id);
+    if (entry) return entryPatch(line, entry);
+    const purity = activePurities.find((p) => p._id === product.metalPurityId);
+    const boxId = line.boxId || product.defaultBoxId || "";
+    const box = boxById.get(boxId);
+    const metal = purity?.metal ?? box?.metal ?? line.metal;
+    const metalPurityId = purity?._id ?? (activePurities.find((p) => p._id === line.metalPurityId)?.metal === metal ? line.metalPurityId : defaultPurityFor(metal));
+    const gross = product.grossWeightMg ? (product.grossWeightMg / 1000).toFixed(3) : "";
+    const net = product.grossWeightMg ? ((product.grossWeightMg - (product.stoneWeightMg ?? 0)) / 1000).toFixed(3) : "";
+    // GST % from the item's tax rate, when the bill has none yet.
+    const tax = product.taxConfigurationId ? taxConfigs?.find((t) => t._id === product.taxConfigurationId) : undefined;
+    if (gstCompany && tax && !gstPercent) setGstPercent(String((tax.cgstBasisPoints + tax.sgstBasisPoints || tax.igstBasisPoints) / 100));
+    return {
+      label: product.name,
+      productId: product._id,
+      boxId,
+      metal,
+      metalPurityId,
+      ratePerGramRupees: autoRate(metalPurityId) || line.ratePerGramRupees,
+      ...(line.grossGrams === "" && gross ? { grossGrams: gross, netGrams: net } : {}),
+      ...(product.makingChargePaise ? { makingMode: "fixed" as const, makingValue: (product.makingChargePaise / 100).toFixed(2) } : {}),
+      unitPriceRupees: product.purchasePricePaise ? (product.purchasePricePaise / 100).toFixed(2) : line.unitPriceRupees,
+    };
+  }
+
+  /** Gross typed: net follows it until the operator types a different net weight. */
+  function typeGross(index: number, grossGrams: string) {
+    const line = lines[index];
+    updateLine(index, { grossGrams, ...(line.netGrams === "" || line.netGrams === line.grossGrams ? { netGrams: grossGrams } : {}) });
+  }
+
+  function addRow(boxId?: string) {
+    const blank = blankLine();
+    const line = boxId ? { ...blank, ...withBox(blank, boxId) } : blank;
+    setLines((prev) => [...prev, line]);
+    setTimeout(() => document.querySelector<HTMLElement>(`[data-line="${line.key}"] ${boxId ? "input" : "select"}`)?.focus());
+  }
+  function removeLine(index: number) {
+    setLines((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  const computedLines = useMemo(
+    () =>
+      lines.map((line) => {
+        const grossWeightMg = gramsToMg(line.grossGrams || "0");
+        const netWeightMg = gramsToMg(line.netGrams || "0");
+        const ratePerGramPaise = rupeesToPaise(line.ratePerGramRupees || "0") ?? 0;
+        const unitPricePaise = rupeesToPaise(line.unitPriceRupees || "0") ?? 0;
+        const pieces = piecesOf(line) || 0;
+        const metalValue = unitPricePaise > 0 ? unitPricePaise * pieces : metalValuePaise(netWeightMg, ratePerGramPaise);
+        const input = {
+          grossWeightMg,
+          stoneWeightMg: Math.max(0, grossWeightMg - netWeightMg),
+          ratePerGramPaise,
+          unitPricePaise,
+          pieces,
+          makingChargePaise: makingChargeFor(line.makingMode, makingValueUnits(line.makingMode, line.makingValue), netWeightMg, metalValue),
+          stoneChargePaise: rupeesToPaise(line.stoneChargeRupees || "0") ?? 0,
+        };
+        const discount = lineDiscountPaise(line.discount, computePurchaseLine(input).lineTotalPaise);
+        return { ...computePurchaseLine({ ...input, lineDiscountPaise: discount }), lineDiscountPaise: discount };
+      }),
+    [lines, piecesOf],
+  );
+
+  /** Weight and pieces this purchase puts into each box. */
+  const addedByBox = useMemo(() => {
+    const added = new Map<string, { weightMg: number; pieces: number }>();
+    lines.forEach((line) => {
+      if (!line.boxId) return;
+      const row = added.get(line.boxId) ?? { weightMg: 0, pieces: 0 };
+      row.weightMg += gramsToMg(line.grossGrams || "0");
+      row.pieces += piecesOf(line) || 0;
+      added.set(line.boxId, row);
+    });
+    return added;
+  }, [lines, piecesOf]);
+
+  /** On an edited purchase, its original lines are already in the boxes — take them out to show the true "before". */
+  const ownByBox = useMemo(() => {
+    const own = new Map<string, { weightMg: number; pieces: number }>();
+    for (const item of existingPurchase?.items ?? []) {
+      if (!item.boxId) continue;
+      const row = own.get(item.boxId) ?? { weightMg: 0, pieces: 0 };
+      row.weightMg += item.stockWeightMg ?? item.grossWeightMg;
+      row.pieces += item.pieces ?? 1;
+      own.set(item.boxId, row);
+    }
+    return own;
+  }, [existingPurchase]);
+
+  function boxBefore(boxId: string) {
+    const box = boxById.get(boxId);
+    if (!box) return null;
+    const own = ownByBox.get(boxId) ?? { weightMg: 0, pieces: 0 };
+    return { weightMg: box.weightMg - own.weightMg, pieces: box.pieces - own.pieces };
+  }
+
+  const lineErrors = useMemo(
+    () =>
+      lines.map((line, index) => {
+        const box = boxById.get(line.boxId);
+        if (!gstCompany && !line.boxId) return "Choose the box.";
+        if (!line.label.trim()) return "Enter the description.";
+        if (!line.productId && blockNewItems) return "Pick an item from the Item List (adding new items from a bill is turned off).";
+        if (box?.metal && line.metal && box.metal !== line.metal) return `Box ${box.boxNumber} holds ${box.metal === "gold" ? "Gold" : "Silver"}.`;
+        const pieces = piecesOf(line);
+        if (!Number.isInteger(pieces) || pieces < 0) return "Pcs must be a whole number.";
+        if (isLoose(line) && pieces < 1) return "Pcs must be 1 or more.";
+        const checks: [string, string | null][] = [
+          ["Gross wt", numberFieldError(line.grossGrams)],
+          ["Net wt", numberFieldError(line.netGrams)],
+          ["Rate/g", numberFieldError(line.ratePerGramRupees)],
+          ["Price / pc", numberFieldError(line.unitPriceRupees)],
+          ["Making", numberFieldError(line.makingValue, line.makingMode === "percent" ? { max: 100 } : undefined)],
+        ];
+        const failed = checks.find(([, error]) => error);
+        if (failed) return `${failed[0]}: ${failed[1]}`;
+        const computed = computedLines[index];
+        if (!(computed.grossWeightMg > 0)) return "Enter the gross weight.";
+        if (!(computed.netWeightMg > 0)) return "Enter the net weight.";
+        if (computed.netWeightMg > computed.grossWeightMg) return "Net weight cannot be more than gross weight.";
+        if (!(computed.ratePerGramPaise > 0) && !((computed.unitPricePaise ?? 0) > 0)) return "Enter the rate per gram (or a price per piece).";
+        return null;
+      }),
+    [lines, computedLines, boxById, gstCompany, blockNewItems, isLoose, piecesOf],
+  );
+
+  const metalTotals = useMemo(() => {
+    const totals = { gold: { grossMg: 0, paise: 0 }, silver: { grossMg: 0, paise: 0 } };
+    lines.forEach((line, index) => {
+      const metal = line.metal || activePurities.find((p) => p._id === line.metalPurityId)?.metal;
+      if (!metal) return;
+      totals[metal].grossMg += computedLines[index].grossWeightMg;
+      totals[metal].paise += computedLines[index].lineTotalPaise;
+    });
+    return totals;
+  }, [lines, computedLines, activePurities]);
+
+  const gstError = numberFieldError(gstPercent, { max: 100 });
+  const paymentErrors = payments.map((p) => numberFieldError(p.rupees));
 
   const totals = useMemo(() => {
-    const lines = (watchedItems ?? []).map((item) =>
-      computePurchaseLine({
-        grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
-        stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
-        ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
-        unitPricePaise: rupeesToPaise(item.unitPriceRupees || "0") ?? 0,
-        // A price per piece is multiplied by the Qty, same as the server.
-        pieces: Number(item.piecesText || 1),
-        makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
-        stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
-        lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") ?? 0,
-      }),
-    );
-    const subtotalPaise = lines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
-    const gstBasisPoints = percentToBasisPoints(watchedGst || "0") ?? 0;
-    const taxPaise = basisPointsOf(subtotalPaise, gstBasisPoints);
+    const subtotalPaise = computedLines.reduce((sum, l) => sum + l.lineTotalPaise, 0);
+    const taxPaise = basisPointsOf(subtotalPaise, percentToBasisPoints(gstPercent || "0") ?? 0);
     const unrounded = subtotalPaise + taxPaise;
     const roundOffPaise = roundOff ? Math.round(unrounded / 100) * 100 - unrounded : 0;
     const totalPaise = unrounded + roundOffPaise;
-    const paid = (rupeesToPaise(watchedPaid || "0") ?? 0) + extraPayments.reduce((a, p) => a + (rupeesToPaise(p.rupees || "0") ?? 0), 0);
-    const amountPaidPaise = Math.min(paid, totalPaise);
-    return { lines, subtotalPaise, taxPaise, roundOffPaise, totalPaise, amountPaidPaise, balancePaise: totalPaise - amountPaidPaise };
-  }, [watchedItems, watchedGst, watchedPaid, roundOff, extraPayments]);
+    const otherPaid = payments.slice(payFull ? 1 : 0).reduce((a, p) => a + (rupeesToPaise(p.rupees || "0") ?? 0), 0);
+    const fullFirstPaymentPaise = Math.max(0, totalPaise - otherPaid);
+    const amountPaidPaise = otherPaid + (payFull ? fullFirstPaymentPaise : 0);
+    return { subtotalPaise, taxPaise, roundOffPaise, totalPaise, amountPaidPaise, fullFirstPaymentPaise, balancePaise: totalPaise - amountPaidPaise };
+  }, [computedLines, gstPercent, roundOff, payments, payFull]);
 
-  async function onSubmit(values: PurchaseFormValues) {
+  function resetForm() {
+    setIdempotencyKey(crypto.randomUUID());
+    setSupplierId("");
+    setSupplierNameInput("");
+    setSupplierPhoneInput("");
+    setBillDate(todayDateInput());
+    setSupplierBillNumber("");
+    setStateOfSupply("");
+    setLines([blankLine()]);
+    setGstPercent("");
+    setRoundOff(true);
+    setPayments([{ mode: "cash", rupees: "" }]);
+    setPayFull(false);
+    setNotes("");
+    setShowNotes(false);
+    setBillImageId(undefined);
+    setBillImageName("");
+  }
+
+  async function savePurchase(after: "list" | "new") {
     setServerError(null);
+    if (!supplierId && !supplierNameInput.trim()) return setServerError("Select or enter a supplier.");
+    if (!supplierId && blockNewParties) return setServerError("Select an existing supplier. Adding new parties from the bill is turned off in Settings → General.");
+    if (lines.length === 0) return setServerError("Add at least one item.");
+    const firstLineError = lineErrors.findIndex(Boolean);
+    if (firstLineError >= 0) return setServerError(`Row ${firstLineError + 1}: ${lineErrors[firstLineError]}`);
+    if (gstError) return setServerError(`GST %: ${gstError}`);
+    const firstPaymentError = paymentErrors.find(Boolean);
+    if (firstPaymentError) return setServerError(`Payment amount: ${firstPaymentError}`);
+    if (totals.amountPaidPaise > totals.totalPaise) return setServerError("Amount paid cannot be more than the bill total.");
+
+    setSubmitting(true);
     try {
-      // 1. Resolve supplierId
       let resolvedSupplierId: Id<"suppliers">;
-      if (isNewSupplier || !values.supplierId) {
-        const manualName = values.manualSupplierName?.trim() || "";
-        if (!manualName) {
-          setServerError("Please select a supplier or enter a supplier name.");
-          return;
-        }
-        const existing = suppliers?.find(
-          (s) => s.name.trim().toLowerCase() === manualName.toLowerCase()
-        );
-        if (existing) {
-          resolvedSupplierId = existing._id;
-        } else {
-          resolvedSupplierId = await createSupplier({
-            name: manualName,
-            phone: values.manualSupplierPhone?.trim() || undefined,
-          });
-        }
+      if (supplierId) {
+        resolvedSupplierId = supplierId as Id<"suppliers">;
       } else {
-        resolvedSupplierId = values.supplierId as Id<"suppliers">;
+        const name = supplierNameInput.trim();
+        const existing = suppliers?.find((s) => s.name.trim().toLowerCase() === name.toLowerCase());
+        resolvedSupplierId = existing ? existing._id : await createSupplier({ name, phone: supplierPhoneInput.trim() || undefined });
       }
 
-      // 2. Resolve items
-      const resolvedItems: Array<{
-        productId: Id<"products">;
-        boxId?: Id<"boxes">;
-        pieces?: number;
-        metal?: "gold" | "silver";
-        label: string;
-        metalPurityId?: Id<"metalPurities">;
-        grossWeightMg: number;
-        stoneWeightMg: number;
-        ratePerGramPaise: number;
-        unitPricePaise?: number;
-        makingChargePaise: number;
-        stoneChargePaise: number;
-        lineDiscountPaise?: number;
-      }> = [];
-
-      for (let i = 0; i < values.items.length; i++) {
-        const item = values.items[i];
-
-        // Resolve Product
-        let resolvedProductId: Id<"products">;
-        if (item.manualProductName?.trim()) {
-          const manualProd = item.manualProductName.trim();
-          const existingProd = products?.find(
-            (p) => p.name.trim().toLowerCase() === manualProd.toLowerCase()
-          );
-          if (existingProd) {
-            resolvedProductId = existingProd._id;
-          } else {
-            resolvedProductId = await createProduct({
-              name: manualProd,
+      // Typed descriptions become Item List entries (one per distinct name).
+      const createdProducts = new Map<string, Id<"products">>();
+      const items = [];
+      for (const [index, line] of lines.entries()) {
+        let productId = line.productId as Id<"products"> | "";
+        if (!productId) {
+          const key = line.label.trim().toLowerCase();
+          productId = productByName.get(key)?._id ?? createdProducts.get(key) ?? "";
+          if (!productId) {
+            productId = await createProduct({
+              name: line.label.trim(),
               unit: "piece",
               itemType: "product",
-              metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
+              metalPurityId: line.metalPurityId ? (line.metalPurityId as Id<"metalPurities">) : undefined,
+              defaultBoxId: line.boxId ? (line.boxId as Id<"boxes">) : undefined,
             });
-          }
-        } else if (item.productId) {
-          resolvedProductId = item.productId as Id<"products">;
-        } else {
-          setServerError(`Item ${i + 1}: Please select or type a product name.`);
-          return;
-        }
-
-        // Resolve the box (each company has its own boxes)
-        let resolvedBoxId: Id<"boxes"> | undefined;
-        if (item.manualBoxNumber?.trim()) {
-          const boxNum = Number(item.manualBoxNumber.trim());
-          if (!Number.isSafeInteger(boxNum) || boxNum < 1) {
-            setServerError(`Item ${i + 1}: Please enter a valid box number (e.g. 101).`);
-            return;
-          }
-          const existingBox = boxes?.find((b) => b.boxNumber === boxNum);
-          if (existingBox) {
-            resolvedBoxId = existingBox._id;
-          } else {
-            resolvedBoxId = await createBox({
-              boxNumber: boxNum,
-              label: item.manualProductName || item.label || `Box ${boxNum}`,
-              metal: purities?.find((p) => p._id === item.metalPurityId)?.metal,
-            });
-          }
-        } else if (item.boxId) {
-          resolvedBoxId = item.boxId as Id<"boxes">;
-        } else {
-          if (boxes && boxes.length > 0) {
-            resolvedBoxId = boxes[0]._id;
-          } else {
-            resolvedBoxId = await createBox({ label: "Main Counter Box" });
+            createdProducts.set(key, productId);
           }
         }
-
-        const label = item.label?.trim() || item.manualProductName?.trim() || `Item ${i + 1}`;
-
-        resolvedItems.push({
-          productId: resolvedProductId,
-          boxId: resolvedBoxId,
-          pieces: Number(item.piecesText || 1),
-          metal: purities?.find((p) => p._id === item.metalPurityId)?.metal,
-          label,
-          metalPurityId: item.metalPurityId ? (item.metalPurityId as Id<"metalPurities">) : undefined,
-          grossWeightMg: gramsToMg(item.grossWeightGrams || "0"),
-          stoneWeightMg: gramsToMg(item.stoneWeightGrams || "0"),
-          ratePerGramPaise: rupeesToPaise(item.ratePerGramRupees || "0") ?? 0,
-          unitPricePaise: rupeesToPaise(item.unitPriceRupees || "0") || undefined,
-          makingChargePaise: rupeesToPaise(item.makingChargeRupees || "0") ?? 0,
-          stoneChargePaise: rupeesToPaise(item.stoneChargeRupees || "0") ?? 0,
-          lineDiscountPaise: rupeesToPaise(item.discountRupees || "0") || undefined,
+        const computed = computedLines[index];
+        items.push({
+          productId,
+          boxId: line.boxId ? (line.boxId as Id<"boxes">) : undefined,
+          pieces: piecesOf(line),
+          metal: line.metal || undefined,
+          label: line.label.trim(),
+          metalPurityId: line.metalPurityId ? (line.metalPurityId as Id<"metalPurities">) : undefined,
+          grossWeightMg: computed.grossWeightMg,
+          stoneWeightMg: computed.stoneWeightMg,
+          ratePerGramPaise: computed.ratePerGramPaise,
+          unitPricePaise: computed.unitPricePaise || undefined,
+          makingChargePaise: computed.makingChargePaise,
+          stoneChargePaise: computed.stoneChargePaise,
+          lineDiscountPaise: computed.lineDiscountPaise || undefined,
         });
       }
 
-      const amountPaidPaise = rupeesToPaise(values.amountPaidRupees || "0") ?? 0;
-      if (amountPaidPaise > 0 && !values.paymentMode) throw new Error("Select the payment mode for the amount paid.");
-      const payments = [
-        ...(amountPaidPaise > 0 && values.paymentMode ? [{ mode: values.paymentMode, amountPaise: amountPaidPaise }] : []),
-        ...extraPayments.map((p) => {
-          const amountPaise = rupeesToPaise(p.rupees || "0");
-          if (amountPaise === null) throw new Error("One of the split payment amounts is not valid.");
-          return { mode: p.mode, amountPaise };
-        }).filter((p) => p.amountPaise > 0),
-      ];
-      const extras = {
-        payments,
+      const paymentSplits = payments
+        .map((p, index) => ({ mode: p.mode, amountPaise: payFull && index === 0 ? totals.fullFirstPaymentPaise : rupeesToPaise(p.rupees || "0") ?? 0 }))
+        .filter((p) => p.amountPaise > 0);
+      const common = {
+        supplierId: resolvedSupplierId,
+        items,
+        gstBasisPoints: percentToBasisPoints(gstPercent || "0") ?? 0,
+        amountPaidPaise: totals.amountPaidPaise,
+        payments: paymentSplits,
         roundOff,
         supplierBillNumber: supplierBillNumber.trim() || undefined,
         stateOfSupply: stateOfSupply || undefined,
         notes: notes.trim() || undefined,
         billImageStorageId: billImageId,
+        billDate: dateInputToTimestamp(billDate),
       };
 
       if (editPurchaseId) {
-        await updatePurchase({
-          purchaseId: editPurchaseId,
-          supplierId: resolvedSupplierId,
-          gstBasisPoints: percentToBasisPoints(values.gstPercent || "0") ?? 0,
-          amountPaidPaise,
-          paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
-          billDate: dateInputToTimestamp(values.billDate),
-          ...extras,
-          items: resolvedItems,
-        });
+        await updatePurchase({ purchaseId: editPurchaseId, ...common });
         router.push(`/purchases/invoices?updated=${editPurchaseId}`);
-      } else {
-        const result = await createPurchase({
-          supplierId: resolvedSupplierId,
-          gstBasisPoints: percentToBasisPoints(values.gstPercent || "0") ?? 0,
-          amountPaidPaise,
-          paymentMode: amountPaidPaise > 0 ? values.paymentMode : undefined,
-          billDate: dateInputToTimestamp(values.billDate),
-          ...extras,
-          idempotencyKey,
-          items: resolvedItems,
-        });
-        router.push(`/purchases/invoices?created=${result.purchaseId}`);
+        return;
       }
+      const result = await createPurchase({ ...common, idempotencyKey });
+      if (after === "new") resetForm();
+      else router.push(`/purchases/invoices?created=${result.purchaseId}`);
     } catch (e) {
-      setServerError(
-        getUserErrorMessage(e, "Could not save purchase. You may need Purchase Manager access, or check item details."),
-      );
+      setServerError(getUserErrorMessage(e, "Could not save the purchase. You may need Purchase Manager access, or check the item details."));
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  const loading =
-    suppliers === undefined ||
-    products === undefined ||
-    boxes === undefined ||
-    purities === undefined ||
-    currentRates === undefined ||
-    (editPurchaseId ? !prefilled : false);
+  if (!suppliers || !products || !boxes || !purities || (editPurchaseId && !prefilled)) {
+    return (
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <h1 className="text-2xl font-semibold tracking-tight">{editPurchaseId ? "Edit Purchase" : "New Purchase"}</h1>
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
       <div>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">{editPurchaseId ? "Edit Purchase" : "New Purchase"}</h1>
-          <Button type="button" variant="outline" size="sm" onClick={() => window.open("/purchases/new", "_blank", "noopener")} title="Open another blank bill in a new tab; this one stays open">
+          <Button type="button" variant="outline" size="sm" onClick={() => window.open("/purchases/new", "_blank", "noopener")} title="Open another blank purchase in a new tab; this one stays open">
             <Plus className="h-4 w-4" />
             New Bill Tab
           </Button>
@@ -472,721 +702,346 @@ export default function NewPurchasePage() {
         <p className="text-sm text-muted-foreground">
           {editPurchaseId
             ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
-            : "Gold, silver or ready-ornament inward from a supplier — items are placed directly into a box."}
+            : "Choose the box, enter gross and net weight — the gross weight and pieces are added to the box."}
         </p>
       </div>
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : (
-        <Form {...form}>
-          <form className="flex flex-col gap-6" onSubmit={form.handleSubmit(onSubmit)}>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="text-base">Supplier Details</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-0.5">Select an existing supplier or add a new supplier manually.</p>
-                </div>
-                {!blockNewParties && <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setIsNewSupplier((prev) => !prev);
-                    if (!isNewSupplier) {
-                      form.setValue("supplierId", "");
-                    } else {
-                      form.setValue("manualSupplierName", "");
-                      form.setValue("manualSupplierPhone", "");
-                    }
-                  }}
-                >
-                  {isNewSupplier ? "Select Existing Supplier" : "+ Manual / New Supplier"}
-                </Button>}
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-4 items-start">
-                  {!isNewSupplier ? (
-                    <FormField
-                      control={form.control}
-                      name="supplierId"
-                      render={({ field }) => (
-                        <FormItem className="max-w-sm flex-1">
-                          <FormLabel>Select Supplier</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <FormControl>
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select supplier" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {suppliers?.map((s) => (
-                                <SelectItem key={s._id} value={s._id}>
-                                  {s.name} {s.phone ? `(${s.phone})` : ""}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  ) : (
-                    <>
-                      <FormField
-                        control={form.control}
-                        name="manualSupplierName"
-                        render={({ field }) => (
-                          <FormItem className="max-w-sm flex-1">
-                            <FormLabel>Supplier Name *</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="e.g. Balaji Ornaments, Raj Jewellers" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="manualSupplierPhone"
-                        render={({ field }) => (
-                          <FormItem className="w-48">
-                            <FormLabel>Phone Number</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="e.g. 9876543210" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </>
-                  )}
-                  <FormField
-                    control={form.control}
-                    name="billDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Bill date</FormLabel>
-                        <FormControl>
-                          <Input type="date" className="w-44" max={todayDateInput()} {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {!isNewSupplier && selectedSupplier && (
-                    <div className="grid gap-2">
-                      <span className="text-sm font-medium">Phone No.</span>
-                      <Input readOnly value={selectedSupplier.phone ?? ""} placeholder="—" className="w-40 bg-muted/40" aria-label="Supplier phone" />
-                    </div>
-                  )}
-                  <div className="grid gap-2">
-                    <span className="text-sm font-medium">Supplier Bill Number</span>
-                    <Input value={supplierBillNumber} onChange={(e) => setSupplierBillNumber(e.target.value)} placeholder="No. on supplier's bill" className="w-44" aria-label="Supplier bill number" />
-                  </div>
-                  <div className="grid gap-2">
-                    <span className="text-sm font-medium">State of supply</span>
-                    <Select value={stateOfSupply} onValueChange={setStateOfSupply}>
-                      <SelectTrigger className="w-48" aria-label="State of supply"><SelectValue placeholder={access?.organization?.state ?? "Select state"} /></SelectTrigger>
-                      <SelectContent>{GST_STATES.map((st) => <SelectItem key={st} value={st}>{st}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+      <MetalRateTicker currentRates={currentRates} />
 
-            <section className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h2 className="font-semibold">Receiving multiple pieces of the same design?</h2>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      Pick or type the product, box and quantity — each piece gets its own line to enter actual weight.
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!blockNewItems && <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => setQuickIsManualProduct((p) => !p)}
-                    >
-                      {quickIsManualProduct ? "Select Product from list" : "+ Type custom product"}
-                    </Button>}
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7"
-                      onClick={() => setQuickIsManualBox((p) => !p)}
-                    >
-                      {quickIsManualBox ? "Select Box from list" : "+ Type box number"}
-                    </Button>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="grid min-w-[12rem] flex-1 gap-1.5">
-                    <label className="text-xs font-medium">Product</label>
-                    {quickIsManualProduct ? (
-                      <Input
-                        placeholder="e.g. Silver Chain, Gold Bangle"
-                        value={quickManualProductName}
-                        onChange={(e) => setQuickManualProductName(e.target.value)}
-                      />
-                    ) : (
-                      <Select value={quickProductId} onValueChange={setQuickProductId}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select product" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {products?.map((p) => (
-                            <SelectItem key={p._id} value={p._id}>
-                              {p.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  <div className="grid min-w-[10rem] flex-1 gap-1.5">
-                    <label className="text-xs font-medium">Destination box</label>
-                    {quickIsManualBox ? (
-                      <Input
-                        placeholder="Box #, e.g. 101, 102"
-                        value={quickManualBoxNumber}
-                        onChange={(e) => setQuickManualBoxNumber(e.target.value)}
-                      />
-                    ) : (
-                      <Select value={quickBoxId} onValueChange={setQuickBoxId}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Select box" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-64">
-                          {boxes?.map((b) => (
-                            <SelectItem key={b._id} value={b._id}>
-                              Box {b.boxNumber}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                  <div className="grid w-24 gap-1.5">
-                    <label className="text-xs font-medium">Quantity</label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="50"
-                      value={quickQuantity}
-                      onChange={(e) => setQuickQuantity(e.target.value)}
-                    />
-                  </div>
-                  <Button
-                    type="button"
-                    disabled={
-                      (quickIsManualProduct ? !quickManualProductName.trim() : !quickProductId) ||
-                      (quickIsManualBox ? !quickManualBoxNumber.trim() : !quickBoxId)
-                    }
-                    onClick={handleQuickAdd}
-                  >
-                    <Plus className="h-4 w-4 mr-1" /> Add {quickQuantity || "1"} piece{Number(quickQuantity) === 1 ? "" : "s"}
-                  </Button>
-                </div>
+      <Card className="border-border/80 shadow-xs">
+        <CardContent className="p-4 sm:p-5">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-muted-foreground">Supplier</Label>
+              <SupplierPicker
+                suppliers={suppliers}
+                supplierId={supplierId}
+                nameInput={supplierNameInput}
+                phoneInput={supplierPhoneInput}
+                allowNew={!blockNewParties}
+                onSelectExisting={(s) => {
+                  setSupplierId(s._id);
+                  setSupplierNameInput(s.name);
+                  setSupplierPhoneInput(s.phone ?? "");
+                }}
+                onNameChange={(value) => {
+                  setSupplierNameInput(value);
+                  setSupplierId("");
+                }}
+                onPhoneChange={(value) => {
+                  setSupplierPhoneInput(value);
+                  const match = suppliers.find((s) => s.phone && s.phone === value.trim());
+                  if (match) {
+                    setSupplierId(match._id);
+                    setSupplierNameInput(match.name);
+                  }
+                }}
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-muted-foreground">Supplier Bill No.</Label>
+                <Input value={supplierBillNumber} onChange={(e) => setSupplierBillNumber(e.target.value)} placeholder="No. on their bill" aria-label="Supplier bill number" className="h-9 text-xs" />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-muted-foreground">Bill Date</Label>
+                <Input type="date" aria-label="Bill date" className="h-9 text-xs" value={billDate} max={todayDateInput()} onChange={(e) => setBillDate(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-muted-foreground">State of Supply</Label>
+                <Select value={stateOfSupply} onValueChange={setStateOfSupply}>
+                  <SelectTrigger className="h-9 text-xs" aria-label="State of supply"><SelectValue placeholder={access?.organization?.state ?? "Select state"} /></SelectTrigger>
+                  <SelectContent>{GST_STATES.map((st) => <SelectItem key={st} value={st}>{st}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card p-4">
-                <div>
-                  <h2 className="font-semibold">Items in this bill <span className="text-muted-foreground">({fields.length})</span></h2>
-                  <p className="mt-1 text-sm text-muted-foreground">Add one line for each product or ornament received.</p>
-                </div>
-                <Button type="button" variant="outline" onClick={() => append(emptyLine())}>
-                  <Plus className="h-4 w-4" /> Add one-off item
-                </Button>
-              </div>
-              {fields.map((field, index) => {
-                const line = totals.lines[index];
-                return (
-                  <Card key={field.id}>
-                    <CardHeader className="flex flex-row items-center justify-between">
-                      <CardTitle className="text-base">Item {index + 1}</CardTitle>
-                      {fields.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => remove(index)}
-                          aria-label="Remove item"
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
+      {prefs?.items.barcodeScan !== false && <BarcodeScanInput onBox={(box) => addRow(box._id)} />}
+
+      {/* Item grid: one row per item, same as the sales bill. Each row's gross weight and pieces go into its box. */}
+      <Card className="overflow-hidden border-border/80 shadow-xs">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b bg-muted/20 p-4">
+          <CardTitle className="text-sm font-bold uppercase tracking-wide">Items in this purchase ({lines.length})</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            {gstCompany
+              ? "Priced on net weight (or price per piece); the gross weight and pieces go into the selected box — or loose GST item stock when no box is chosen."
+              : "Priced on net weight (or price per piece); the gross weight and pieces are added to the selected box."}
+          </p>
+        </CardHeader>
+        <CardContent className="p-0">
+          <datalist id="purchase-items">
+            {products.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
+          </datalist>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1100px] text-xs">
+              <thead>
+                <tr className="border-b bg-muted/30 text-left font-semibold text-muted-foreground">
+                  <th className="w-8 px-2 py-2.5">SL</th>
+                  <th className="px-2 py-2.5">BOX NO</th>
+                  <th className="px-2 py-2.5">CATEGORY</th>
+                  <th className="px-2 py-2.5">DESCRIPTION</th>
+                  <th className="px-2 py-2.5">PURITY</th>
+                  <th className="px-2 py-2.5">PCS</th>
+                  <th className="px-2 py-2.5">GROSS WT (g)</th>
+                  <th className="px-2 py-2.5">NET WT (g)</th>
+                  <th className="px-2 py-2.5">RATE / G (₹)</th>
+                  <th className="px-2 py-2.5">PRICE / PC (₹)</th>
+                  <th className="px-2 py-2.5">MAKING</th>
+                  <th className="px-2 py-2.5">DISC. (₹ / %)</th>
+                  <th className="px-2 py-2.5 text-right">AMOUNT (₹)</th>
+                  <th className="w-8 px-2 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {lines.map((line, index) => {
+                  const computed = computedLines[index];
+                  const error = lineErrors[index];
+                  const box = boxById.get(line.boxId);
+                  const before = line.boxId ? boxBefore(line.boxId) : null;
+                  const added = addedByBox.get(line.boxId);
+                  return (
+                    <tr
+                      key={line.key}
+                      data-line={line.key}
+                      className="align-top hover:bg-muted/20"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && index === lines.length - 1) {
+                          e.preventDefault();
+                          addRow();
+                        }
+                      }}
+                    >
+                      <td className="px-2 py-2 pt-3.5 font-mono text-muted-foreground">{String(index + 1).padStart(2, "0")}</td>
+                      <td className="px-2 py-2">
+                        <BoxPicker
+                          ariaLabel={`Row ${index + 1} box`}
+                          boxes={boxes as BoxRow[]}
+                          purities={activePurities}
+                          rateByPurity={rateByPurity}
+                          value={line.boxId}
+                          metal={line.metal}
+                          priceKind="purchase"
+                          emptyLabel={gstCompany ? "Loose GST stock" : undefined}
+                          onPick={(boxId, entry) => pickBoxItem(index, boxId, entry)}
+                        />
+                        {box && before && (
+                          <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
+                            Has {mgToGramsDisplay(before.weightMg)} g · {before.pieces} pcs
+                            {added ? ` → ${mgToGramsDisplay(before.weightMg + added.weightMg)} g · ${before.pieces + added.pieces} pcs` : ""}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <select aria-label={`Row ${index + 1} category`} className="h-8 w-20 rounded-md border bg-background px-2 text-xs" value={line.metal} onChange={(e) => pickMetal(index, e.target.value as Metal | "")}>
+                          <option value="">—</option>
+                          <option value="gold">Gold</option>
+                          <option value="silver">Silver</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} description`} list="purchase-items" placeholder="Item name or code" value={line.label} maxLength={80} onChange={(e) => typeDescription(index, e.target.value)} className={`${cellInput} w-40`} />
+                        {line.label.trim() && !line.productId && !blockNewItems && <p className="mt-1 text-[10px] text-muted-foreground">New item — added to Item List on save</p>}
+                        {line.productId && productById.get(line.productId)?.sku && <p className="mt-1 text-[10px] text-muted-foreground">Code {productById.get(line.productId)?.sku}</p>}
+                      </td>
+                      <td className="px-2 py-2">
+                        <select aria-label={`Row ${index + 1} purity`} className="h-8 w-24 rounded-md border bg-background px-2 text-xs" value={line.metalPurityId} onChange={(e) => pickPurity(index, e.target.value)}>
+                          <option value="">—</option>
+                          {activePurities.filter((p) => !line.metal || p.metal === line.metal).map((p) => <option key={p._id} value={p._id}>{p.label}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => updateLine(index, { piecesText: e.target.value })} className={`${cellInput} w-14 text-right`} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-20 text-right font-mono`} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${cellInput} w-20 text-right font-mono text-emerald-600`} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${cellInput} w-24 text-right font-mono`} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} price per piece`} inputMode="decimal" placeholder="by rate/g" title="Purchase price per piece — leave blank to price by net weight × rate per gram" value={line.unitPriceRupees} onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })} className={`${cellInput} w-24 text-right font-mono`} />
+                      </td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1">
+                          <select aria-label={`Row ${index + 1} making charge type`} className="h-8 rounded-md border bg-background px-1 text-xs" value={line.makingMode} onChange={(e) => updateLine(index, { makingMode: e.target.value as MakingMode })}>
+                            {MAKING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                          </select>
+                          <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${cellInput} w-16 text-right`} />
+                        </div>
+                        {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && <p className="mt-1 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>}
+                      </td>
+                      <td className="px-2 py-2">
+                        <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${cellInput} w-20 text-right`} />
+                      </td>
+                      <td className="px-2 py-2 pt-3.5 text-right font-bold tabular-nums text-foreground">
+                        {formatPaise(computed.lineTotalPaise)}
+                        {error && <p className="mt-1 max-w-40 text-left text-[10px] font-medium text-destructive">{error}</p>}
+                      </td>
+                      <td className="px-2 py-2">
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove row ${index + 1}`} onClick={() => removeLine(index)}>
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
-                      )}
-                    </CardHeader>
-                    <CardContent className="flex flex-col gap-4">
-                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                        {/* Product Column */}
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium">Product</span>
-                            {!blockNewItems && <button
-                              type="button"
-                              className="text-[11px] text-primary hover:underline"
-                              onClick={() => {
-                                setManualProductFlags((prev) => ({
-                                  ...prev,
-                                  [index]: !prev[index],
-                                }));
-                              }}
-                            >
-                              {manualProductFlags[index] ? "Select list" : "+ Type manual"}
-                            </button>}
-                          </div>
-                          {manualProductFlags[index] ? (
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.manualProductName`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      {...field}
-                                      placeholder="e.g. Silver Chain, Gold Ring"
-                                      onChange={(e) => {
-                                        field.onChange(e);
-                                        if (!form.getValues(`items.${index}.label`)) {
-                                          form.setValue(`items.${index}.label`, e.target.value);
-                                        }
-                                      }}
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          ) : (
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.productId`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <Select
-                                    value={field.value}
-                                    onValueChange={(productId) => {
-                                      field.onChange(productId);
-                                      const product = products?.find((item) => item._id === productId);
-                                      if (!product) return;
-                                      form.setValue(`items.${index}.label`, product.name, { shouldDirty: true });
-                                      form.setValue(`items.${index}.metalPurityId`, product.metalPurityId ?? "", { shouldDirty: true });
-                                      // Fill the rest from the item master: box, weights, purchase price, making.
-                                      const opts = { shouldDirty: true };
-                                      if (product.defaultBoxId && !form.getValues(`items.${index}.boxId`)) form.setValue(`items.${index}.boxId`, product.defaultBoxId, opts);
-                                      if (product.grossWeightMg) form.setValue(`items.${index}.grossWeightGrams`, (product.grossWeightMg / 1000).toFixed(3), opts);
-                                      if (product.stoneWeightMg !== undefined) form.setValue(`items.${index}.stoneWeightGrams`, (product.stoneWeightMg / 1000).toFixed(3), opts);
-                                      if (product.purchasePricePaise) form.setValue(`items.${index}.unitPriceRupees`, (product.purchasePricePaise / 100).toFixed(2), opts);
-                                      if (product.makingChargePaise) form.setValue(`items.${index}.makingChargeRupees`, (product.makingChargePaise / 100).toFixed(2), opts);
-                                      // GST % from the item's tax rate, when the bill has none yet.
-                                      const tax = product.taxConfigurationId ? taxConfigs?.find((t) => t._id === product.taxConfigurationId) : undefined;
-                                      if (gstCompany && tax && !form.getValues("gstPercent")) {
-                                        form.setValue("gstPercent", String((tax.cgstBasisPoints + tax.sgstBasisPoints || tax.igstBasisPoints) / 100), opts);
-                                      }
-                                      const latestRate = currentRates?.find((rate) => rate.purity._id === product.metalPurityId)?.latest?.ratePerGramPaise;
-                                      if (latestRate) form.setValue(`items.${index}.ratePerGramRupees`, (latestRate / 100).toFixed(2), { shouldDirty: true });
-                                    }}
-                                  >
-                                    <FormControl>
-                                      <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Select product" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent>
-                                      {products?.map((p) => (
-                                        <SelectItem key={p._id} value={p._id}>
-                                          {p.name}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          )}
-                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {lines.length > 0 && (
+                <tfoot>
+                  <tr className="border-t bg-muted/20 font-semibold">
+                    <td colSpan={5} className="px-2 py-2 text-right text-muted-foreground">Total</td>
+                    <td className="px-2 py-2 text-right tabular-nums">{lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0)}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0))}</td>
+                    <td className="px-2 py-2 text-right font-mono tabular-nums text-emerald-600">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.netWeightMg, 0))}</td>
+                    <td colSpan={4} />
+                    <td className="px-2 py-2 text-right tabular-nums">{formatPaise(totals.subtotalPaise)}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3">
+            <Button type="button" variant="outline" size="sm" onClick={() => addRow()}>
+              <Plus className="h-3.5 w-3.5" /> Add Row
+            </Button>
+            <p className="text-[11px] text-muted-foreground">Tip: press Enter in the last row to add a new row. Typing an item name or code fills its purity, weights, purchase price and making charge.</p>
+          </div>
+        </CardContent>
+      </Card>
 
-                        {/* Box column (both companies — each has its own boxes) */}
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium">Destination Box</span>
-                            <button
-                              type="button"
-                              className="text-[11px] text-primary hover:underline"
-                              onClick={() => {
-                                setManualBoxFlags((prev) => ({
-                                  ...prev,
-                                  [index]: !prev[index],
-                                }));
-                              }}
-                            >
-                              {manualBoxFlags[index] ? "Select list" : "+ Type box #"}
-                            </button>
-                          </div>
-                          {manualBoxFlags[index] ? (
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.manualBoxNumber`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <FormControl>
-                                    <Input
-                                      {...field}
-                                      type="number"
-                                      placeholder="e.g. 101, 102"
-                                    />
-                                  </FormControl>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          ) : (
-                            <FormField
-                              control={form.control}
-                              name={`items.${index}.boxId`}
-                              render={({ field }) => (
-                                <FormItem>
-                                  <Select value={field.value} onValueChange={field.onChange}>
-                                    <FormControl>
-                                      <SelectTrigger className="w-full">
-                                        <SelectValue placeholder="Select box" />
-                                      </SelectTrigger>
-                                    </FormControl>
-                                    <SelectContent className="max-h-64">
-                                      {/* Gold lines only into gold boxes, silver into silver (by the line's purity). */}
-                                      {boxes?.filter((b) => {
-                                        const metal = purities?.find((p) => p._id === watchedItems?.[index]?.metalPurityId)?.metal;
-                                        return b.isActive && (!metal || !b.metal || b.metal === metal);
-                                      }).map((b) => (
-                                        <SelectItem key={b._id} value={b._id}>
-                                          {boxOptionLabel(b)}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectContent>
-                                  </Select>
-                                  <FormMessage />
-                                </FormItem>
-                              )}
-                            />
-                          )}
-                        </div>
+      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNotes((v) => !v)}>
+              {showNotes ? "Hide Description" : "+ Add Description / Terms"}
+            </Button>
+            <label className="inline-flex h-8 cursor-pointer items-center rounded-md border px-3 text-xs font-medium hover:bg-muted">
+              {uploadingBill ? "Uploading…" : billImageName ? `Bill: ${billImageName} (change)` : "+ Upload Bill (photo / PDF)"}
+              <input type="file" accept="image/*,application/pdf" className="sr-only" disabled={uploadingBill} onChange={(e) => uploadBill(e.target.files?.[0])} />
+            </label>
+            {billImageId && (
+              <Button type="button" variant="ghost" size="sm" className="h-8 text-xs text-destructive" onClick={() => { setBillImageId(undefined); setBillImageName(""); }}>
+                Remove bill
+              </Button>
+            )}
+          </div>
+          {showNotes && <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Description, terms & conditions, remarks…" aria-label="Description and terms" />}
 
-                        {/* Purity Column */}
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.metalPurityId`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Purity</FormLabel>
-                              <Select value={field.value} onValueChange={field.onChange}>
-                                <FormControl>
-                                  <SelectTrigger className="w-full">
-                                    <SelectValue placeholder="None" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {purities?.map((p) => (
-                                    <SelectItem key={p._id} value={p._id}>
-                                      {p.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <FormField
-                        control={form.control}
-                        name={`items.${index}.label`}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Item label</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="e.g. Chain #1, 22K" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-6">
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.piecesText`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Qty (pcs)</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="numeric" placeholder="1" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.grossWeightGrams`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Gross wt (g)</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="decimal" placeholder="0.000" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.stoneWeightGrams`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Less wt (g)</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="decimal" placeholder="0.000" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.ratePerGramRupees`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Rate / g (₹)</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="decimal" placeholder="0.00" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.unitPriceRupees`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Purchase price (₹/pc)</FormLabel>
-                              <FormControl>
-                                <Input {...field} value={field.value ?? ""} inputMode="decimal" placeholder="or by rate/g" title="Fixed price per piece — when set, it is used instead of weight × rate" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.makingChargeRupees`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Making (₹)</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="decimal" placeholder="0.00" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.stoneChargeRupees`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Stone chg (₹)</FormLabel>
-                              <FormControl>
-                                <Input {...field} inputMode="decimal" placeholder="0.00" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name={`items.${index}.discountRupees`}
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Discount (₹)</FormLabel>
-                              <FormControl>
-                                <Input {...field} value={field.value ?? ""} inputMode="decimal" placeholder="0.00" />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      {line && (
-                        <p className="text-sm text-muted-foreground">
-                          Net weight {(line.netWeightMg / 1000).toFixed(3)}g · Metal value{" "}
-                          {formatPaise(line.metalValuePaise)} · Line total{" "}
-                          <span className="font-medium text-foreground">{formatPaise(line.lineTotalPaise)}</span>
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </section>
-
+          {(metalTotals.gold.grossMg > 0 || metalTotals.silver.grossMg > 0) && (
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Payment</CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                  <div className="space-y-1.5">
-                    <FormField
-                      control={form.control}
-                      name="gstPercent"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>GST (%)</FormLabel>
-                          <FormControl>
-                            <Input {...field} inputMode="decimal" placeholder="0" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="flex flex-wrap gap-1 pt-1">
-                      {[
-                        { label: "0% Non-GST", val: "0" },
-                        { label: "3% Jewellery", val: "3" },
-                        { label: "5%", val: "5" },
-                        { label: "18%", val: "18" },
-                      ].map((item) => (
-                        <button
-                          key={item.val}
-                          type="button"
-                          onClick={() => form.setValue("gstPercent", item.val, { shouldDirty: true })}
-                          className={`rounded px-2 py-0.5 text-[11px] font-medium border transition-colors ${
-                            watchedGst === item.val
-                              ? "bg-amber-500 text-white border-amber-600 shadow-sm"
-                              : "bg-muted/60 text-muted-foreground border-border hover:bg-muted"
-                          }`}
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <FormField
-                    control={form.control}
-                    name="amountPaidRupees"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Amount paid now (₹)</FormLabel>
-                        <FormControl>
-                          <Input {...field} inputMode="decimal" placeholder="0.00" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  {Number(watchedPaid || "0") > 0 && (
-                    <FormField
-                      control={form.control}
-                      name="paymentMode"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Payment mode</FormLabel>
-                          <Select value={field.value} onValueChange={field.onChange}>
-                            <FormControl>
-                              <SelectTrigger className="w-full">
-                                <SelectValue placeholder="Select mode" />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              {PAYMENT_MODES.map((m) => (
-                                <SelectItem key={m.value} value={m.value}>
-                                  {m.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
-                </div>
-
-                {extraPayments.map((p, i) => (
-                  <div key={i} className="flex flex-wrap items-end gap-2">
-                    <div className="grid gap-1.5">
-                      <span className="text-sm font-medium">Payment type {i + 2}</span>
-                      <Select value={p.mode} onValueChange={(v) => setExtraPayments((all) => all.map((x, j) => (j === i ? { ...x, mode: v as PaymentModeValue } : x)))}>
-                        <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
-                        <SelectContent>{PAYMENT_MODES.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-                      </Select>
-                    </div>
-                    <Input aria-label={`Payment ${i + 2} amount`} inputMode="decimal" placeholder="0.00" className="w-40" value={p.rupees} onChange={(e) => setExtraPayments((all) => all.map((x, j) => (j === i ? { ...x, rupees: e.target.value } : x)))} />
-                    <Button type="button" variant="ghost" size="icon" aria-label="Remove payment" onClick={() => setExtraPayments((all) => all.filter((_, j) => j !== i))}><Trash2 className="h-4 w-4" /></Button>
+              <CardContent className="grid grid-cols-2 gap-3 p-3 text-xs">
+                {(["gold", "silver"] as const).filter((m) => metalTotals[m].grossMg > 0).map((m) => (
+                  <div key={m}>
+                    <p className="font-semibold">{m === "gold" ? "Gold" : "Silver"} received</p>
+                    <p className="tabular-nums text-muted-foreground">{mgToGramsDisplay(metalTotals[m].grossMg)} g · {formatPaise(metalTotals[m].paise)}</p>
                   </div>
                 ))}
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="link" className="h-auto p-0" onClick={() => setExtraPayments((all) => [...all, { mode: "upi", rupees: "" }])}>+ Add Payment type</Button>
-                  <Button type="button" variant="link" className="h-auto p-0" onClick={() => setShowNotes((v) => !v)}>{showNotes ? "Hide description" : "+ Add Description / Terms"}</Button>
-                  <label className="cursor-pointer text-sm font-medium text-primary underline-offset-4 hover:underline">
-                    {uploadingBill ? "Uploading…" : billImageName ? `Bill: ${billImageName} (change)` : "+ Upload Bill (photo / PDF)"}
-                    <input type="file" accept="image/*,application/pdf" className="sr-only" disabled={uploadingBill} onChange={(e) => uploadBill(e.target.files?.[0])} />
-                  </label>
-                  {billImageId && <Button type="button" variant="link" className="h-auto p-0 text-destructive" onClick={() => { setBillImageId(undefined); setBillImageName(""); }}>Remove bill</Button>}
-                </div>
-                {showNotes && (
-                  <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Description, terms & conditions, remarks…" aria-label="Description and terms" />
-                )}
-
-                <Separator />
-
-                <div className="flex flex-col gap-1 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatPaise(totals.subtotalPaise)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">GST</span>
-                    <span>{formatPaise(totals.taxPaise)}</span>
-                  </div>
-                  <label className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 text-muted-foreground">
-                      <Checkbox checked={roundOff} onCheckedChange={(c) => setRoundOff(c === true)} aria-label="Round off" />
-                      Round Off
-                    </span>
-                    <span>{formatPaise(totals.roundOffPaise)}</span>
-                  </label>
-                  <div className="flex justify-between text-base font-semibold">
-                    <span>Total</span>
-                    <span>{formatPaise(totals.totalPaise)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Paid</span>
-                    <span>{formatPaise(totals.amountPaidPaise)}</span>
-                  </div>
-                  <div className="flex justify-between text-muted-foreground">
-                    <span>Balance payable to supplier</span>
-                    <span>{formatPaise(totals.balancePaise)}</span>
-                  </div>
-                </div>
-
-                {serverError && <p className="text-sm text-destructive">{serverError}</p>}
-
-                <Button type="submit" disabled={form.formState.isSubmitting} className="self-end">
-                  {form.formState.isSubmitting ? "Saving…" : editPurchaseId ? "Save Changes" : "Save Purchase"}
-                </Button>
               </CardContent>
             </Card>
-          </form>
-        </Form>
-      )}
+          )}
+        </div>
+
+        <Card>
+          <CardContent className="flex flex-col gap-3 p-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-muted-foreground">GST (%)</Label>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Input aria-label="GST percent" inputMode="decimal" placeholder="0" value={gstPercent} onChange={(e) => setGstPercent(e.target.value)} className="h-8 w-20 text-right text-xs" />
+                {[
+                  { label: "0% Non-GST", val: "0" },
+                  { label: "3% Jewellery", val: "3" },
+                  { label: "5%", val: "5" },
+                  { label: "18%", val: "18" },
+                ].map((item) => (
+                  <button
+                    key={item.val}
+                    type="button"
+                    onClick={() => setGstPercent(item.val)}
+                    className={`rounded border px-2 py-0.5 text-[11px] font-medium transition-colors ${gstPercent === item.val ? "border-amber-600 bg-amber-500 text-white shadow-sm" : "border-border bg-muted/60 text-muted-foreground hover:bg-muted"}`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <Separator />
+
+            <div className="flex flex-col gap-1 text-sm">
+              <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{formatPaise(totals.subtotalPaise)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">GST</span><span>{formatPaise(totals.taxPaise)}</span></div>
+              <label className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-muted-foreground">
+                  <Checkbox checked={roundOff} onCheckedChange={(c) => setRoundOff(c === true)} aria-label="Round off" />
+                  Round Off
+                </span>
+                <span>{formatPaise(totals.roundOffPaise)}</span>
+              </label>
+              <div className="flex justify-between text-base font-semibold"><span>Total</span><span>{formatPaise(totals.totalPaise)}</span></div>
+            </div>
+
+            <Separator />
+
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold text-muted-foreground">Payment to supplier</Label>
+              <label className="flex items-center gap-2 text-xs">
+                <Checkbox checked={payFull} onCheckedChange={(c) => setPayFull(c === true)} aria-label="Paid in full" />
+                Paid in full
+              </label>
+            </div>
+            {payments.map((p, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <Select value={p.mode} onValueChange={(v) => setPayments((all) => all.map((x, j) => (j === i ? { ...x, mode: v as PaymentModeValue } : x)))}>
+                  <SelectTrigger className="h-8 w-36 text-xs" aria-label={`Payment ${i + 1} mode`}><SelectValue /></SelectTrigger>
+                  <SelectContent>{PAYMENT_MODES.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
+                </Select>
+                <Input
+                  aria-label={`Payment ${i + 1} amount`}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  className="h-8 flex-1 text-right font-mono text-xs"
+                  disabled={payFull && i === 0}
+                  value={payFull && i === 0 ? (totals.fullFirstPaymentPaise / 100).toFixed(2) : p.rupees}
+                  onChange={(e) => setPayments((all) => all.map((x, j) => (j === i ? { ...x, rupees: e.target.value } : x)))}
+                />
+                {payments.length > 1 && (
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8" aria-label="Remove payment" onClick={() => setPayments((all) => all.filter((_, j) => j !== i))}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            <Button type="button" variant="link" className="h-auto self-start p-0 text-xs" onClick={() => setPayments((all) => [...all, { mode: "upi", rupees: "" }])}>
+              + Add Payment type
+            </Button>
+
+            <div className="flex flex-col gap-1 text-sm">
+              <div className="flex justify-between text-muted-foreground"><span>Paid</span><span>{formatPaise(totals.amountPaidPaise)}</span></div>
+              <div className="flex justify-between font-medium"><span>Balance payable to supplier</span><span>{formatPaise(totals.balancePaise)}</span></div>
+            </div>
+
+            {serverError && <p className="text-sm text-destructive">{serverError}</p>}
+
+            <div className="flex flex-wrap justify-end gap-2">
+              {!editPurchaseId && (
+                <Button type="button" variant="outline" disabled={submitting} onClick={() => savePurchase("new")}>
+                  Save &amp; New
+                </Button>
+              )}
+              <Button type="button" disabled={submitting} onClick={() => savePurchase("list")}>
+                {submitting ? "Saving…" : editPurchaseId ? "Save Changes" : "Save Purchase"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

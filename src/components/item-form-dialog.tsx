@@ -9,12 +9,9 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CustomFieldInputs } from "@/components/custom-field-inputs";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { paiseToRupeesInput, rupeesToPaise } from "@/lib/money";
 import { PURITY_KARATS, type PurityKarat } from "@/lib/jewelry-calc";
@@ -33,15 +30,9 @@ function purityValue(product: Doc<"products"> | undefined, purities: Doc<"metalP
   return product?.purityOther ? OTHER_PURITY : NONE;
 }
 
-const UNITS = [
-  { value: "gram", label: "Gram (g)" },
-  { value: "kilogram", label: "Kilogram (kg)" },
-  { value: "piece", label: "Piece (pcs)" },
-  { value: "carat", label: "Carat (ct)" },
-] as const;
 
-// Common jewellery HSN/SAC codes offered as suggestions in the HSN box.
-const HSN_SUGGESTIONS = [
+// Common jewellery HSN/SAC codes offered as suggestions in HSN boxes.
+export const HSN_SUGGESTIONS = [
   ["7113", "Jewellery of precious metal"],
   ["711319", "Gold jewellery"],
   ["711311", "Silver jewellery"],
@@ -117,14 +108,10 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const purities = useQuery(api.metalPurities.list);
   const groups = useQuery(api.stockGroups.list);
   const categories = useQuery(api.stockCategories.list);
-  const taxes = useQuery(api.taxConfigurations.list);
   const products = useQuery(api.products.list);
-  const access = useQuery(api.organizations.getMyAccess);
   const details = useQuery(api.products.details, product ? { id: product._id } : "skip");
-  const boxes = useQuery(api.boxes.list);
   const pricing = useQuery(api.products.myPricingAccess);
   const showCost = pricing?.canViewCost ?? false;
-  const isGstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
 
   const isEdit = !!product;
   const defaultUnit = useQuery(api.appPreferences.get)?.items.defaultUnit ?? "piece";
@@ -134,10 +121,8 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState("pricing");
   const set = <K extends keyof typeof f>(key: K, value: (typeof f)[K]) => setF((prev) => ({ ...prev, [key]: value }));
   const isService = f.itemType === "service";
-  const otherPurities = (purities ?? []).filter((p) => !(p.metal === "gold" && (PURITY_KARATS as string[]).includes(p.label.replace(/\s+/g, "").toUpperCase())));
   // Net weight follows gross − stone until it's typed in.
   const autoNet = (() => {
     const g = Number(f.grossWeight);
@@ -149,7 +134,6 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
     setF(blank(product, defaultUnit, purities));
     setImagePreview(null);
     setError(null);
-    setTab("pricing");
   }
 
   /** Next free numeric item code, like Vyapar's "Assign Code". */
@@ -240,7 +224,6 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
       if (andNew && !isEdit) {
         setF(blank(undefined, defaultUnit, purities));
         setImagePreview(null);
-        setTab("pricing");
       } else {
         setOpen(false);
         if (!isEdit) reset();
@@ -277,20 +260,8 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
 
         <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Item Name *" className="sm:col-span-2">
+            <Field label="Item Name *" className="sm:col-span-3">
               <Input autoFocus value={f.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Gold Chain 22K" />
-            </Field>
-            <Field label="Item HSN">
-              <Input list="hsn-codes" value={f.hsnCode} onChange={(e) => set("hsnCode", e.target.value)} placeholder="Search or type HSN" />
-              <datalist id="hsn-codes">
-                {HSN_SUGGESTIONS.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-              </datalist>
-            </Field>
-            <Field label="Unit">
-              <Select value={f.unit} onValueChange={(v) => set("unit", v as Unit)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>{UNITS.map((u) => <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>)}</SelectContent>
-              </Select>
             </Field>
             <Field label="Category">
               <Select value={f.stockCategoryId} onValueChange={(v) => set("stockCategoryId", v)}>
@@ -307,52 +278,6 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
                 <Button type="button" variant="secondary" size="sm" className="absolute right-1 top-1/2 h-7 -translate-y-1/2 px-2 text-xs" onClick={assignCode}>Assign Code</Button>
               </div>
             </Field>
-            {!isService && (
-              <>
-                <Field label="Purity / Karat">
-                  <Select value={f.purity} onValueChange={(v) => set("purity", v)}>
-                    <SelectTrigger aria-label="Purity / Karat"><SelectValue placeholder="Purity" /></SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      <SelectItem value={NONE}>None</SelectItem>
-                      {PURITY_KARATS.map((k) => <SelectItem key={k} value={karatValue(k)}>{k.replace("K", "")} Karat ({k})</SelectItem>)}
-                      {otherPurities.map((p) => <SelectItem key={p._id} value={p._id}>{p.label} ({p.metal})</SelectItem>)}
-                      <SelectItem value={OTHER_PURITY}>Other…</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {f.purity === OTHER_PURITY && (
-                    <Input className="mt-1" aria-label="Other purity" value={f.purityOther} maxLength={40} onChange={(e) => set("purityOther", e.target.value)} placeholder="e.g. 916 hallmark, 23K" />
-                  )}
-                </Field>
-                <Field label="Box Number">
-                  <Select value={f.defaultBoxId} onValueChange={(v) => set("defaultBoxId", v)}>
-                    <SelectTrigger aria-label="Box Number"><SelectValue placeholder="Box" /></SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      <SelectItem value={NONE}>No box</SelectItem>
-                      {boxes?.filter((b) => b.isActive || b._id === f.defaultBoxId).map((b) => (
-                        <SelectItem key={b._id} value={b._id}>Box {b.boxNumber}{b.label ? ` · ${b.label}` : ""}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Gross wt (g)">
-                  <Input inputMode="decimal" value={f.grossWeight} onChange={(e) => set("grossWeight", e.target.value)} placeholder="0.000" />
-                </Field>
-                <Field label="Stone wt (g)">
-                  <Input inputMode="decimal" value={f.stoneWeight} onChange={(e) => set("stoneWeight", e.target.value)} placeholder="0.000" />
-                </Field>
-                <Field label="Net wt (g)">
-                  <Input inputMode="decimal" value={f.netWeight} onChange={(e) => set("netWeight", e.target.value)} placeholder={autoNet || "0.000"} title="Leave blank to use gross − stone" />
-                </Field>
-              </>
-            )}
-            <Field label="Making (₹)">
-              <Input inputMode="decimal" value={f.making} onChange={(e) => set("making", e.target.value)} placeholder="0.00" />
-            </Field>
-            {!isService && (
-              <Field label="Wastage (%)">
-                <Input inputMode="decimal" value={f.wastage} onChange={(e) => set("wastage", e.target.value)} placeholder="0" />
-              </Field>
-            )}
             <Field label="Stock Group">
               <Select value={f.stockGroupId} onValueChange={(v) => set("stockGroupId", v)}>
                 <SelectTrigger><SelectValue placeholder="Stock Group" /></SelectTrigger>
@@ -362,9 +287,10 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
                 </SelectContent>
               </Select>
             </Field>
-            <Field label="Description" className="sm:col-span-3">
-              <Textarea rows={2} value={f.description} onChange={(e) => set("description", e.target.value)} placeholder="Design details, stones, notes…" className="resize-none" />
-            </Field>
+            <p className="text-xs text-muted-foreground sm:col-span-3">
+              HSN, purity, weights, wastage, making, prices, discount and tax are entered on the box: open{" "}
+              <Link className="underline" href="/boxes">Box Overview</Link>, choose the box and add this item to it.
+            </p>
           </div>
 
           <div className="flex flex-col items-center gap-2">
@@ -386,100 +312,6 @@ export function ItemFormDialog({ product, trigger }: { product?: Doc<"products">
           </div>
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="pricing">Pricing</TabsTrigger>
-            {!isService && <TabsTrigger value="stock">Stock</TabsTrigger>}
-            <TabsTrigger value="more">Additional Fields</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="pricing" className="space-y-3 pt-2">
-            <section className="rounded-xl border bg-muted/20 p-4">
-              <p className="mb-1 font-semibold">Sale Price</p>
-              <p className="mb-3 text-xs text-muted-foreground">Price per piece filled on new bills. Leave blank to bill by today&apos;s rate per gram. Only the Owner or an Admin can change it on a bill.</p>
-              <div className="flex flex-wrap gap-3">
-                <PriceWithTax label="Sale Price" value={f.salePrice} onValue={(v) => set("salePrice", v)} incTax={f.saleIncTax} onIncTax={(v) => set("saleIncTax", v)} />
-                <div className="flex">
-                  <Input aria-label="Discount on sale price" inputMode="decimal" className="w-36 rounded-r-none" placeholder="Disc. On Sale Price" value={f.discount} onChange={(e) => set("discount", e.target.value)} />
-                  <Select value={f.discountMode} onValueChange={(v) => set("discountMode", v as "percent" | "amount")}>
-                    <SelectTrigger className="w-32 rounded-l-none border-l-0"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percent">Percentage</SelectItem>
-                      <SelectItem value="amount">Amount (₹)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              {f.showWholesale ? (
-                <div className="mt-3 flex flex-wrap items-end gap-3">
-                  <Field label="Wholesale Price (₹)"><Input inputMode="decimal" value={f.wholesalePrice} onChange={(e) => set("wholesalePrice", e.target.value)} className="w-44" /></Field>
-                  <Field label="Minimum Wholesale Qty"><Input inputMode="numeric" value={f.wholesaleMinQty} onChange={(e) => set("wholesaleMinQty", e.target.value)} className="w-44" /></Field>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setF((p) => ({ ...p, showWholesale: false, wholesalePrice: "", wholesaleMinQty: "" }))}>Remove</Button>
-                </div>
-              ) : (
-                <button type="button" className="mt-3 text-sm font-semibold text-primary" onClick={() => set("showWholesale", true)}>+ Add Wholesale Price</button>
-              )}
-            </section>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {showCost && (
-                <section className="rounded-xl border bg-muted/20 p-4">
-                  <p className="mb-1 font-semibold">Purchase Price</p>
-                  <p className="mb-3 text-xs text-muted-foreground">Internal — fills purchase bills; never printed on invoices or shown at the billing counter.</p>
-                  <PriceWithTax label="Purchase Price" value={f.purchasePrice} onValue={(v) => set("purchasePrice", v)} incTax={f.purchaseIncTax} onIncTax={(v) => set("purchaseIncTax", v)} />
-                </section>
-              )}
-              <section className="rounded-xl border bg-muted/20 p-4">
-                <p className="mb-3 font-semibold">Taxes</p>
-                <Field label="Tax Rate">
-                  <Select value={f.taxConfigurationId} onValueChange={(v) => set("taxConfigurationId", v)}>
-                    <SelectTrigger className="w-60"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={NONE}>None</SelectItem>
-                      {taxes?.map((t) => <SelectItem key={t._id} value={t._id}>{t.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                {taxes?.length === 0 && <p className="mt-2 text-xs text-muted-foreground">Add tax rates in <Link className="underline" href="/settings/gst">Settings → GST</Link>.</p>}
-              </section>
-            </div>
-          </TabsContent>
-
-          {!isService && (
-            <TabsContent value="stock" className="pt-2">
-              <div className="grid gap-3 sm:grid-cols-3">
-                {!isEdit && (
-                  <>
-                    <Field label="Opening Quantity (pcs)"><Input inputMode="numeric" value={f.openingPieces} onChange={(e) => set("openingPieces", e.target.value)} /></Field>
-                    {(isGstCompany || f.defaultBoxId !== NONE) && (
-                      <Field label={f.defaultBoxId !== NONE ? "Opening Weight (g, if no gross wt)" : "Opening Weight (g)"}><Input inputMode="decimal" value={f.openingWeight} onChange={(e) => set("openingWeight", e.target.value)} /></Field>
-                    )}
-                  </>
-                )}
-                <Field label="At Price (₹)"><Input inputMode="decimal" value={f.atPrice} onChange={(e) => set("atPrice", e.target.value)} /></Field>
-                <Field label="As Of Date"><Input type="date" value={f.asOf} onChange={(e) => set("asOf", e.target.value)} /></Field>
-                <Field label="Min Stock To Maintain (g)"><Input inputMode="decimal" value={f.minStock} onChange={(e) => set("minStock", e.target.value)} /></Field>
-                <Field label="Location"><Input value={f.location} onChange={(e) => set("location", e.target.value)} placeholder="e.g. Counter 2, Locker A" /></Field>
-              </div>
-              <p className="mt-3 text-xs text-muted-foreground">
-                {isEdit
-                  ? "Editing an item never adds stock or creates boxes. To change stock, use Adjust Item, a purchase, or Box Overview."
-                  : f.defaultBoxId !== NONE
-                    ? "Each opening piece is put into the chosen box at the item's gross/stone weight when you save."
-                    : isGstCompany
-                      ? "No box chosen: opening quantity and weight go into loose GST item stock. Choose a Box Number to put them in a box."
-                      : "Choose a Box Number above to add opening pieces — Daily Sales stock is kept in boxes."}
-              </p>
-            </TabsContent>
-          )}
-
-          <TabsContent value="more" className="pt-2">
-            <CustomFieldInputs entity="product" values={f.customFields} onChange={(v) => set("customFields", v)} />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Add fields like MRP, Size, Model No. or Serial No. in <Link className="underline" href="/settings/custom-fields">Settings → Custom Fields</Link>.
-            </p>
-          </TabsContent>
-        </Tabs>
-
         {error && <p className="text-sm font-medium text-destructive">{error}</p>}
 
         <DialogFooter className="gap-2">
@@ -500,21 +332,6 @@ function Field({ label, className, children }: { label: string; className?: stri
     <div className={`grid gap-1 ${className ?? ""}`}>
       <Label className="text-xs font-semibold">{label}</Label>
       {children}
-    </div>
-  );
-}
-
-function PriceWithTax({ label, value, onValue, incTax, onIncTax }: { label: string; value: string; onValue: (v: string) => void; incTax: boolean; onIncTax: (v: boolean) => void }) {
-  return (
-    <div className="flex">
-      <Input aria-label={label} inputMode="decimal" className="w-36 rounded-r-none" placeholder={label} value={value} onChange={(e) => onValue(e.target.value)} />
-      <Select value={incTax ? "with" : "without"} onValueChange={(v) => onIncTax(v === "with")}>
-        <SelectTrigger className="w-32 rounded-l-none border-l-0"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="without">Without Tax</SelectItem>
-          <SelectItem value="with">With Tax</SelectItem>
-        </SelectContent>
-      </Select>
     </div>
   );
 }

@@ -44,7 +44,7 @@ export const getDocumentData = query({
     // One row per distinct HSN code, as the e-way bill format expects — not one row per physical item.
     const hsnSummary = new Map<string, { taxableValuePaise: number; taxPaise: number }>();
     saleItems.forEach((item, i) => {
-      const hsn = products[i]?.hsnCode || "7113";
+      const hsn = item.hsnCode || products[i]?.hsnCode || "7113";
       const existing = hsnSummary.get(hsn) ?? { taxableValuePaise: 0, taxPaise: 0 };
       existing.taxableValuePaise += item.lineTotalPaise - item.lineTaxPaise;
       existing.taxPaise += item.lineTaxPaise;
