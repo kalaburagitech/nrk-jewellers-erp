@@ -844,6 +844,8 @@ export const create = mutation({
     oldGoldExchange: v.optional(oldGoldExchangeValidator),
     billDate: v.optional(v.number()),
     idempotencyKey: v.string(),
+    // The held bill this sale was finished from; it is removed once the sale is booked.
+    heldBillId: v.optional(v.id("heldBills")),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
@@ -915,6 +917,11 @@ export const create = mutation({
       metadata: { invoiceNumber, totalPaise: result.totalPaise, itemCount: result.itemCount },
       createdAt: Date.now(),
     });
+
+    if (args.heldBillId) {
+      const held = await ctx.db.get(args.heldBillId);
+      if (held && held.organizationId === auth.organizationId) await ctx.db.delete(held._id);
+    }
 
     return { saleId, duplicate: false };
   },

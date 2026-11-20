@@ -769,4 +769,19 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_sale", ["saleId"]),
+
+  // ---------- Held bills ----------
+  // A New Bill parked mid-way ("Hold") so the counter can bill another customer
+  // and come back to it. Nothing is booked: no invoice number, stock or money
+  // moves until it is opened and saved as a real bill, which removes it.
+  heldBills: defineTable({
+    organizationId: v.id("organizations"),
+    customerName: v.string(),
+    itemCount: v.number(),
+    totalPaise: v.number(),
+    draft: v.string(), // the bill form as JSON, restored when the bill is reopened
+    createdByUserId: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_org", ["organizationId"]),
 });

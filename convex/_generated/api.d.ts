@@ -30,6 +30,7 @@ import type * as ewayBills from "../ewayBills.js";
 import type * as expenses from "../expenses.js";
 import type * as girvi from "../girvi.js";
 import type * as gstReports from "../gstReports.js";
+import type * as heldBills from "../heldBills.js";
 import type * as http from "../http.js";
 import type * as itemStock from "../itemStock.js";
 import type * as lib_accountingYears from "../lib/accountingYears.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   expenses: typeof expenses;
   girvi: typeof girvi;
   gstReports: typeof gstReports;
+  heldBills: typeof heldBills;
   http: typeof http;
   itemStock: typeof itemStock;
   "lib/accountingYears": typeof lib_accountingYears;

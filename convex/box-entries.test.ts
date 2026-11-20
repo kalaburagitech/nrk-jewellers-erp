@@ -146,3 +146,30 @@ describe("items inside a box", () => {
     expect(await f.owner.mutation(api.boxEntries.setupFromItemList, {})).toEqual({ itemsAdded: 0, stockAssigned: 0 });
   });
 });
+
+describe("held bills", () => {
+  it("holds a bill without touching stock, re-holds it in place, and saving the sale removes it", async () => {
+    const f = await fixture();
+    const heldBillId = await f.owner.mutation(api.heldBills.hold, { customerName: "Asha", itemCount: 1, totalPaise: 800_000, draft: '{"lines":[]}' });
+    expect(await f.entry(f.box105, f.ring)).toMatchObject({ weightMg: 40_000, pieces: 20 });
+    // Re-holding a reopened bill updates the same entry rather than adding another.
+    await f.owner.mutation(api.heldBills.hold, { heldBillId, customerName: "Asha", itemCount: 2, totalPaise: 900_000, draft: "{}" });
+    const list = await f.owner.query(api.heldBills.list, {});
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ customerName: "Asha", itemCount: 2, totalPaise: 900_000 });
+    expect(list[0]).not.toHaveProperty("draft");
+    expect((await f.owner.query(api.heldBills.get, { heldBillId }))?.draft).toBe("{}");
+
+    await f.owner.mutation(api.sales.create, { ...sale(f, [ringLine(f)], "held-1"), heldBillId });
+    expect(await f.owner.query(api.heldBills.list, {})).toHaveLength(0);
+    expect(await f.owner.query(api.heldBills.get, { heldBillId })).toBeNull();
+  });
+
+  it("drops a held bill when the customer leaves", async () => {
+    const f = await fixture();
+    const heldBillId = await f.owner.mutation(api.heldBills.hold, { customerName: "", itemCount: 0, totalPaise: 0, draft: "{}" });
+    expect((await f.owner.query(api.heldBills.list, {}))[0].customerName).toBe("Walk-in customer");
+    await f.owner.mutation(api.heldBills.remove, { heldBillId });
+    expect(await f.owner.query(api.heldBills.list, {})).toHaveLength(0);
+  });
+});
