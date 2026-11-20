@@ -4,7 +4,7 @@ import { use, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../../convex/_generated/api";
-import { MapPin, MessageCircle, Phone, Printer } from "lucide-react";
+import { MessageCircle, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -195,15 +195,19 @@ export default function PrintInvoicePage({
   const grandTotalNetPaise =
     sale.totalPaise - (oldGoldExchange?.exchangeValuePaise ?? 0);
   const balanceDuePaise = Math.max(0, sale.totalPaise - sale.amountPaidPaise);
-  // Item table columns. The bill shows net weight only (gross weight is what
-  // left stock, not what the customer pays for). Daily Sales bills have no
-  // Tax column, so every span below is derived from this one list instead of
-  // hard-coded GST numbers.
-  const itemColumnWidths = sale.isGst
-    ? ["4%", "20%", "8%", "5%", "9%", "9%", "11%", "10%", "10%", "14%"]
-    : ["5%", "23%", "9%", "6%", "10%", "10%", "12%", "11%", "14%"];
-  const itemColumnCount = itemColumnWidths.length;
-  const adjustmentLeadSpan = itemColumnCount - 3;
+  const compact = template === "half-a4";
+  const cellPad = compact ? "px-1 py-1" : "px-2 py-2";
+  const cell = `${cellPad} border border-[#5b6f8f] whitespace-nowrap tabular-nums`;
+  const boxPad = compact ? "px-1.5 py-1" : "px-3 py-2";
+  const totalPieces = items.reduce((sum, i) => sum + (i.pieces ?? 1), 0);
+  const totalGrossMg = items.reduce((sum, i) => sum + i.grossWeightMg, 0);
+  const totalNetMg = items.reduce((sum, i) => sum + i.netWeightMg, 0);
+  const totalMakingPaise = items.reduce((sum, i) => sum + i.makingChargePaise, 0);
+  // "(GST 3%)" when every line was taxed at one rate.
+  const totalGstBp = gst?.rates
+    ? gst.igstPaise > 0 ? gst.rates.igstBasisPoints : gst.rates.cgstBasisPoints + gst.rates.sgstBasisPoints
+    : undefined;
+  const totalGstLabel = totalGstBp ? ` (GST ${totalGstBp / 100}%)` : "";
   const paymentTypeLabel =
     cashPayments.length > 0
       ? [
@@ -301,9 +305,6 @@ export default function PrintInvoicePage({
           padding: 1mm 0.7mm !important;
           font-size: 7pt !important;
         }
-        [data-invoice-compact="true"] [data-pdf-keep-together] > div {
-          padding: 1.2mm !important;
-        }
         ${template === "thermal" ? "@page { size: 80mm auto; margin: 2mm; }" : ""}
       `}</style>
       {paper && <PrintPageStyle paper={paper} />}
@@ -348,19 +349,21 @@ export default function PrintInvoicePage({
             ref={invoiceRef}
             data-invoice-sheet
             data-print-sheet
-            data-invoice-compact={template === "half-a4" ? "true" : undefined}
+            data-invoice-compact={compact ? "true" : undefined}
             style={fit.style}
-            className={`mx-auto flex flex-col bg-white text-[#13253f] ${template === "half-a4" ? "min-h-[140mm] gap-1 p-1.5" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
+            className={`mx-auto flex flex-col border-2 border-[#5b6f8f] bg-[#f7f9fc] text-[#13253f] ${compact ? "min-h-[140mm] gap-1 p-1.5" : "min-h-[202mm] gap-3 p-4"} ${widthClass}`}
           >
-            <h1 className={`-mb-1 text-center font-bold tracking-[0.3em] text-[#13253f] ${template === "half-a4" ? "text-lg" : "text-2xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
+            <h1 className={`text-center font-serif font-bold text-[#13253f] ${compact ? "-mb-0.5 text-xl" : "text-3xl"}`}>{DOCUMENT_TITLE[sale.documentType] ?? "Invoice"}</h1>
             {sale.status === "cancelled" && (
               <p className="text-center font-bold text-red-700">
                 CANCELLED · {sale.cancelReason}
               </p>
             )}
-            <div className={`flex items-center justify-between border border-[#655c36] border-l-4 border-l-[#655c36] bg-[#f8f5ea] ${template === "half-a4" ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
-              <div className={`flex min-w-0 flex-1 ${template === "half-a4" ? "items-center gap-2" : "items-center gap-5"}`}>
-                <div className={`flex shrink-0 flex-col items-center justify-center bg-white px-2 py-1 ${template === "half-a4" ? "w-[32mm]" : "w-[43mm] pr-4"}`}>
+
+            {/* Shop header card: logo + motto, name, tagline, address, phone; state top-right. */}
+            <div className={`flex items-center justify-between rounded-md border border-[#b5c2d6] bg-white ${compact ? "gap-2 px-2 py-1" : "gap-5 px-4 py-3"}`}>
+              <div className={`flex min-w-0 flex-1 items-center ${compact ? "gap-3" : "gap-6"}`}>
+                <div className={`flex shrink-0 flex-col items-center justify-center ${compact ? "w-[30mm]" : "w-[42mm]"}`}>
                   {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -372,231 +375,175 @@ export default function PrintInvoicePage({
                         }
                       }}
                       onError={() => setUseHighResolutionLogo(true)}
-                      className={`shrink-0 object-contain ${template === "half-a4" ? "h-[16mm] w-[28mm]" : "h-[23mm] w-[38mm]"}`}
+                      className={`shrink-0 object-contain ${compact ? "h-[15mm] w-[26mm]" : "h-[23mm] w-[38mm]"}`}
                     />
                   }
-                <p className={`mt-1 text-center font-serif italic text-[#655c36] ${template === "half-a4" ? "text-[9px]" : "text-base"}`}>
+                  <p className={`mt-0.5 text-center font-serif italic text-[#8a6d2b] ${compact ? "text-[8px]" : "text-sm"}`}>
                     {organization?.motto || BUSINESS_PROFILE_DEFAULTS.motto}
                   </p>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className={`font-extrabold tracking-tight text-[#13253f] ${template === "half-a4" ? "text-xl" : "text-3xl"}`}>
+                  <h2 className={`font-extrabold tracking-tight text-[#13253f] ${compact ? "text-xl" : "text-3xl"}`}>
                     {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
                   </h2>
-                  <p className={`font-bold text-[#13253f] ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
+                  <p className={`font-bold text-[#13253f] ${compact ? "text-[10px]" : "text-lg"}`}>
                     {organization?.tagline || BUSINESS_PROFILE_DEFAULTS.tagline}
                   </p>
-                  <p className={`flex items-center gap-1 text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-sm"}`}>
-                    <MapPin className="h-3.5 w-3.5 shrink-0" />
-                    <span className="whitespace-pre-line">
-                      {organization?.address || BUSINESS_PROFILE_DEFAULTS.address}
-                    </span>
+                  <p className={`whitespace-pre-line text-[#2b3a52] ${compact ? "text-[8px]" : "text-sm"}`}>
+                    {organization?.address || BUSINESS_PROFILE_DEFAULTS.address}
                   </p>
-                  <p className={`flex items-center gap-1 text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-sm"}`}>
-                    <Phone className="h-3.5 w-3.5 shrink-0" />
-                    {organization?.phone || BUSINESS_PROFILE_DEFAULTS.phone}
+                  <p className={`text-[#2b3a52] ${compact ? "text-[8px]" : "text-sm"}`}>
+                    Phone: {organization?.phone || BUSINESS_PROFILE_DEFAULTS.phone}
                   </p>
+                  {showGstin && sale.isGst && organization?.gstin && (
+                    <p className={`font-semibold text-[#2b3a52] ${compact ? "text-[8px]" : "text-sm"}`}>GSTIN: {organization.gstin}</p>
+                  )}
                 </div>
               </div>
-              {
-                <p className={`shrink-0 self-start rounded-full border border-[#655c36]/40 bg-white font-semibold text-[#13253f] ${template === "half-a4" ? "px-2 py-1 text-[8px]" : "px-3 py-1.5 text-sm"}`}>
-                  State: {sale.isGst
-                    ? withGstStateCode(organization?.state || BUSINESS_PROFILE_DEFAULTS.state)
-                    : organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
-                </p>
-              }
+              <p className={`shrink-0 self-start rounded-md border border-[#b5c2d6] bg-white text-[#13253f] ${compact ? "px-2 py-0.5 text-[8px]" : "px-3 py-1.5 text-sm"}`}>
+                State: {sale.isGst
+                  ? withGstStateCode(organization?.state || BUSINESS_PROFILE_DEFAULTS.state)
+                  : organization?.state || BUSINESS_PROFILE_DEFAULTS.state}
+              </p>
             </div>
 
-            <div className={`grid grid-cols-[3fr_1fr] ${template === "half-a4" ? "gap-1" : "gap-3"}`}>
-              <div className={`border border-[#655c36] border-l-4 border-l-[#655c36] bg-[#f4f0df] ${template === "half-a4" ? "p-2" : "p-3"}`}>
-                <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Bill To</p>
-                <p className={`font-bold text-[#28231b] ${template === "half-a4" ? "text-sm" : "text-lg"}`}>{customer?.name}</p>
-                {customer?.phone && (
-                  <p className={`text-gray-600 ${template === "half-a4" ? "text-[9px]" : "text-sm"}`}>{customer.phone}</p>
-                )}
-                {showGstin && customer?.gstin && (
-                  <p className={`text-gray-600 ${template === "half-a4" ? "text-[9px]" : "text-sm"}`}>
-                    GSTIN: {customer.gstin}
-                  </p>
-                )}
+            {/* Bill To | Invoice Details */}
+            <div className={`grid grid-cols-[2fr_1fr] rounded-md border border-[#b5c2d6] bg-white ${compact ? "text-[9px]" : ""}`}>
+              <div className={compact ? "px-2 py-1" : "p-3"}>
+                <p className={`font-bold uppercase text-[#13253f] ${compact ? "text-[9px]" : "text-base"}`}>Bill To</p>
+                <p className={`font-bold text-[#13253f] ${compact ? "text-sm" : "text-xl"}`}>{customer?.name}</p>
+                {customer?.phone && <p>Mobile: {customer.phone}</p>}
+                {showGstin && customer?.gstin && <p>GSTIN: {customer.gstin}</p>}
               </div>
-              <div className={`border border-[#655c36] bg-[#f8f5ea] ${template === "half-a4" ? "p-2 text-[9px]" : "p-3"}`}>
-                <p className="mb-1 text-xs font-bold uppercase tracking-wider text-[#655a46]">Invoice Details</p>
-                <p className="font-bold text-[#28231b]">No.: {sale.invoiceNumber}</p>
-                <p>
-                  Date: {new Date(sale.createdAt).toLocaleDateString("en-IN")}
-                </p>
+              <div className={`border-l border-[#b5c2d6] ${compact ? "px-2 py-1" : "p-3"}`}>
+                <p className={`font-bold uppercase text-[#13253f] ${compact ? "text-[9px]" : "text-base"}`}>Invoice Details</p>
+                <p className="font-bold">Invoice No.: {sale.invoiceNumber}</p>
+                <p>Date: {new Date(sale.createdAt).toLocaleDateString("en-IN")}</p>
               </div>
             </div>
 
-            <table className="w-full table-fixed border-collapse border border-[#655c36] leading-tight" data-invoice-items-table>
+            <table className="w-full table-fixed border-collapse border-2 border-[#5b6f8f] bg-white leading-tight" data-invoice-items-table>
               <colgroup>
-                {itemColumnWidths.map((width, index) => <col key={index} style={{ width }} />)}
+                {["6%", "22%", "8%", "6%", "12%", "12%", "11%", "10%", "13%"].map((width, index) => <col key={index} style={{ width }} />)}
               </colgroup>
               <thead>
-                <tr className="bg-[#f4f0df] text-center font-bold text-[#13253f]">
-                  <th className="border border-[#655c36] px-1 py-2">Sl.No</th>
-                  <th className="border border-[#655c36] px-1 py-2 text-left">
-                    Description
-                  </th>
-                  <th className="border border-[#655c36] px-1 py-2">Purity</th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    Qty
-                  </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    Gross Wt
-                  </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    Net Wt
-                  </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                    Rate(₹)
-                  </th>
-                  <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                    Making(₹)
-                  </th>
-                  {sale.isGst && (
-                    <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                      Tax(₹)
-                    </th>
-                  )}
-                  <th className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                    Total(₹)
-                  </th>
+                <tr className="bg-[#e6ecf4] font-bold text-[#13253f]">
+                  <th className={`${cell} text-center`}>Sl.No</th>
+                  <th className={`${cell} text-left`}>Description</th>
+                  <th className={`${cell} text-center`}>Purity</th>
+                  <th className={`${cell} text-center`}>Qty</th>
+                  <th className={`${cell} text-right`}>Gross Wt (g)</th>
+                  <th className={`${cell} text-right`}>Net Wt (g)</th>
+                  <th className={`${cell} text-right`}>Rate(₹)</th>
+                  <th className={`${cell} text-right`}>Making(₹)</th>
+                  <th className={`${cell} text-right`}>Total(₹)</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item, i) => (
                   <tr key={item._id}>
-                    <td className="border border-[#655c36] px-1 py-2">
-                      {i + 1}
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2">
+                    <td className={`${cell} text-center`}>{i + 1}</td>
+                    <td className={`${cell} whitespace-normal`}>
                       {item.label}
-                      {(item.boxNumber || item.metal || item.hsnCode) && (
-                        <span className="block text-[10px] text-[#655c36]">
-                          {[item.metal === "gold" ? "Gold" : item.metal === "silver" ? "Silver" : null, item.boxNumber ? `Box ${item.boxNumber}` : null, item.hsnCode ? `HSN ${item.hsnCode}` : null].filter(Boolean).join(" · ")}
-                        </span>
+                      {sale.isGst && item.hsnCode && (
+                        <span className="block text-[0.8em] text-[#5b6f8f]">HSN {item.hsnCode}</span>
                       )}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2">
-                      {item.purityLabel ?? "—"}
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                      {item.pieces ?? 1}
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                      {mgToGramsDisplay(item.grossWeightMg)}
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                      {mgToGramsDisplay(item.netWeightMg)}
-                    </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
+                    <td className={`${cell} text-center`}>{item.purityLabel ?? "—"}</td>
+                    <td className={`${cell} text-center`}>{item.pieces ?? 1}</td>
+                    <td className={`${cell} text-right`}>{mgToGramsDisplay(item.grossWeightMg)}</td>
+                    <td className={`${cell} text-right`}>{mgToGramsDisplay(item.netWeightMg)}</td>
+                    <td className={`${cell} text-right`}>
                       {item.unitPricePaise ? `${formatPaise(item.unitPricePaise)}/pc` : formatPaise(item.ratePerGramPaise)}
                     </td>
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                      {formatPaise(item.makingChargePaise)}
-                    </td>
-                    {sale.isGst && (
-                      <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                        {formatPaise(item.lineTaxPaise)}
-                      </td>
-                    )}
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                      {formatPaise(item.lineTotalPaise)}
-                    </td>
+                    <td className={`${cell} text-right`}>{formatPaise(item.makingChargePaise)}</td>
+                    {/* Before tax: GST is shown once, in the tax box below. */}
+                    <td className={`${cell} text-right`}>{formatPaise(item.lineTotalPaise - item.lineTaxPaise)}</td>
                   </tr>
                 ))}
-                {/* Blank filler rows reserve the same table height regardless of item
-                    count, so the totals/footer below never shift up or down. The
-                    column guides (vertical borders) carry through so it still reads
-                    as the same table, but there are no horizontal row lines across
-                    the blank space — just empty space within the columns. */}
+                {/* Blank filler rows keep the totals below in the same place whatever the item count. */}
                 {Array.from({ length: Math.max(0, MIN_INVOICE_ITEM_ROWS - items.length) }, (_, i) => (
                   <tr key={`blank-${i}`}>
-                    {Array.from({ length: itemColumnCount }, (_, col) => (
-                      <td key={col} className="border-x border-[#655c36] px-1 py-2">
-                        &nbsp;
-                      </td>
+                    {Array.from({ length: 9 }, (_, col) => (
+                      <td key={col} className={`${cellPad} border-x border-[#5b6f8f]`}>&nbsp;</td>
                     ))}
                   </tr>
                 ))}
-                <tr className="bg-[#f4f0df] font-bold">
-                  <td className="border border-[#655c36] px-1 py-2" colSpan={3}>
-                    Sub Total
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    {items.reduce((sum, i) => sum + (i.pieces ?? 1), 0)}
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    {mgToGramsDisplay(
-                      items.reduce((sum, i) => sum + i.grossWeightMg, 0),
-                    )}
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2 text-center whitespace-nowrap tabular-nums">
-                    {mgToGramsDisplay(
-                      items.reduce((sum, i) => sum + i.netWeightMg, 0),
-                    )}
-                  </td>
-                  <td className="border border-[#655c36] px-1 py-2" />
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                    {formatPaise(
-                      items.reduce((sum, i) => sum + i.makingChargePaise, 0),
-                    )}
-                  </td>
-                  {sale.isGst && (
-                    <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                      {formatPaise(
-                        items.reduce((sum, i) => sum + i.lineTaxPaise, 0),
-                      )}
-                    </td>
-                  )}
-                  <td className="border border-[#655c36] px-1 py-2 text-right whitespace-nowrap tabular-nums">
-                    {formatPaise(
-                      items.reduce((sum, i) => sum + i.lineTotalPaise, 0),
-                    )}
-                  </td>
-                </tr>
-                <tr data-pdf-keep-together>
-                  <td className={`border border-[#655c36] align-top ${template === "half-a4" ? "px-1.5 py-1 text-[9px]" : "p-3"}`} colSpan={adjustmentLeadSpan}>
-                    <p className="font-bold">Amount in words</p>
-                    <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
-                    <p className="mt-1 font-bold">Payment type</p>
-                    <p>{paymentTypeLabel}</p>
-                  </td>
-                  <td className={`border border-[#655c36] bg-[#f4f0df] align-top ${template === "half-a4" ? "px-1.5 py-1 text-[9px]" : "p-3"}`} colSpan={3}>
-                    {/* GST company bills only: taxable value, CGST / SGST / IGST and the GST-inclusive total. Daily Sales bills have no GST lines. */}
-                    {gst && (
-                      <>
-                        <TotalsLine label="Taxable Value" value={formatPaiseExact(sale.subtotalPaise)} />
-                        <TotalsLine label={`Add: CGST${rateLabel(gst.rates?.cgstBasisPoints)}`} value={formatPaiseExact(gst.cgstPaise)} />
-                        <TotalsLine label={`Add: SGST${rateLabel(gst.rates?.sgstBasisPoints)}`} value={formatPaiseExact(gst.sgstPaise)} />
-                        <TotalsLine label={`Add: IGST${rateLabel(gst.rates?.igstBasisPoints)} (Inter-State)`} value={formatPaiseExact(gst.igstPaise)} />
-                        <TotalsLine label="Total Invoice Value (Incl. GST)" value={formatPaiseExact(sale.subtotalPaise + sale.taxPaise)} bold />
-                      </>
-                    )}
-                    <TotalsLine label="Less: Discount" value={`-${formatPaise(sale.discountPaise)}`} less />
-                    <TotalsLine label={`Less: Old Item Deduction${sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}`} value={`-${formatPaise(sale.oldItemDeductionPaise ?? 0)}`} less />
-                    {oldGoldExchange && (
-                      <TotalsLine label="Less: Old Gold / Silver Exchange" value={`-${formatPaise(oldGoldExchange.exchangeValuePaise)}`} less />
-                    )}
-                    <div className={`mt-0.5 flex justify-between border-y border-[#655c36]/40 py-0.5 font-extrabold ${template === "half-a4" ? "text-[10px]" : "text-lg"}`}>
-                      <span>Grand Total</span>
-                      <span className="tabular-nums text-[#191919]">{formatPaise(grandTotalNetPaise)}</span>
-                    </div>
-                    <TotalsLine label="Amount received" value={formatPaise(cashReceivedPaise)} />
-                    <TotalsLine label="Balance due" value={formatPaise(balanceDuePaise)} />
-                  </td>
+                <tr className="bg-[#e6ecf4] font-bold">
+                  <td className={cell} colSpan={3}>Sub Total</td>
+                  <td className={`${cell} text-center`}>{totalPieces} Pcs</td>
+                  <td className={`${cell} text-right`}>{mgToGramsDisplay(totalGrossMg)}</td>
+                  <td className={`${cell} text-right`}>{mgToGramsDisplay(totalNetMg)}</td>
+                  <td className={cell} />
+                  <td className={`${cell} text-right`}>{formatPaise(totalMakingPaise)}</td>
+                  <td className={`${cell} text-right`}>{formatPaise(sale.subtotalPaise)}</td>
                 </tr>
               </tbody>
             </table>
 
-            <div className={`flex items-end justify-between ${template === "half-a4" ? "gap-2 pt-1" : "gap-4 pt-6"}`}>
-              <p className={`italic text-gray-600 ${template === "half-a4" ? "text-[8px]" : "text-xs"}`}>
-                Note: If item was damaged no exchange and replacement
-                allowed. Ensure your item before leaving shop.
-              </p>
-              <p className={`shrink-0 rounded-sm border-b-2 border-[#655c36] bg-white font-extrabold tracking-tight text-[#13253f] ${template === "half-a4" ? "mb-1 px-2 py-1 text-[10px]" : "mb-2 px-4 py-2 text-lg"}`}>
+            {/* Payment / words / note · GST breakup (GST bills only) · totals. CGST/SGST appear only in the GST box. */}
+            <div data-pdf-keep-together className={`grid items-start ${gst ? "grid-cols-[1fr_0.85fr_1.05fr]" : "grid-cols-2"} ${compact ? "gap-1 text-[9px]" : "gap-3"}`}>
+              <div className="rounded-md border border-[#b5c2d6] bg-white">
+                <div className={`border-b border-[#b5c2d6] ${boxPad}`}>
+                  <p className="font-bold">Payment type</p>
+                  <p>{paymentTypeLabel}</p>
+                </div>
+                <div className={`border-b border-[#b5c2d6] ${boxPad}`}>
+                  <p className="font-bold">Amount in words</p>
+                  <p>{amountInWordsFromPaise(grandTotalNetPaise)}</p>
+                </div>
+                <p className={`${boxPad} ${compact ? "text-[8px]" : "text-xs"}`}>
+                  Note: If item was damaged no exchange and replacement allowed. Ensure your item before leaving shop.
+                </p>
+              </div>
+
+              {gst && (
+                <div className="rounded-md border border-[#b5c2d6] bg-white">
+                  <div className={`border-b border-[#b5c2d6] ${boxPad}`}>
+                    <TotalsLine label="Taxable Value" value={formatPaiseExact(sale.subtotalPaise)} />
+                  </div>
+                  <div className={`border-b border-[#b5c2d6] ${boxPad}`}>
+                    {(gst.cgstPaise > 0 || gst.igstPaise === 0) && (
+                      <>
+                        <TotalsLine label={`CGST${rateLabel(gst.rates?.cgstBasisPoints)}`} value={formatPaiseExact(gst.cgstPaise)} />
+                        <TotalsLine label={`SGST${rateLabel(gst.rates?.sgstBasisPoints)}`} value={formatPaiseExact(gst.sgstPaise)} />
+                      </>
+                    )}
+                    {gst.igstPaise > 0 && (
+                      <TotalsLine label={`IGST${rateLabel(gst.rates?.igstBasisPoints)}`} value={formatPaiseExact(gst.igstPaise)} />
+                    )}
+                  </div>
+                  <div className={`bg-[#e6ecf4] ${boxPad}`}>
+                    <TotalsLine label={`Total Tax${totalGstLabel}`} value={formatPaiseExact(sale.taxPaise)} bold />
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-md border border-[#b5c2d6] bg-white">
+                <div className={boxPad}>
+                  <TotalsLine
+                    label={gst ? "Sub Total (Incl. GST)" : "Sub Total"}
+                    value={formatPaiseExact(sale.subtotalPaise + sale.taxPaise)}
+                  />
+                  <TotalsLine label="Less: Discount" value={`-${formatPaiseExact(sale.discountPaise)}`} />
+                  <TotalsLine label={`Less: Old Item Deduction${sale.oldItemDeductionNote ? ` (${sale.oldItemDeductionNote})` : ""}`} value={`-${formatPaiseExact(sale.oldItemDeductionPaise ?? 0)}`} />
+                  {oldGoldExchange && (
+                    <TotalsLine label="Less: Old Gold / Silver Exchange" value={`-${formatPaiseExact(oldGoldExchange.exchangeValuePaise)}`} />
+                  )}
+                </div>
+                <div className={`flex justify-between border-y-2 border-[#5b6f8f] bg-[#e6ecf4] font-extrabold ${compact ? "px-1.5 py-0.5 text-[11px]" : "px-3 py-2 text-xl"}`}>
+                  <span>Grand Total:</span>
+                  <span className="tabular-nums">{formatPaiseExact(grandTotalNetPaise)}</span>
+                </div>
+                <div className={boxPad}>
+                  <TotalsLine label="Amount received" value={formatPaiseExact(cashReceivedPaise)} />
+                  <TotalsLine label="Balance due" value={formatPaiseExact(balanceDuePaise)} bold />
+                </div>
+              </div>
+            </div>
+
+            <div className={`flex justify-end ${compact ? "pt-3" : "mt-auto pt-10"}`}>
+              <p className={`border-t-2 border-[#5b6f8f] text-right font-bold text-[#13253f] ${compact ? "min-w-[55mm] pt-0.5 text-[10px]" : "min-w-[80mm] pt-1 text-lg"}`}>
                 For {organization?.name || BUSINESS_PROFILE_DEFAULTS.name}
               </p>
             </div>
