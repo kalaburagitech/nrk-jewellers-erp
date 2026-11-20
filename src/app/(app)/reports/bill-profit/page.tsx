@@ -2,7 +2,6 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 import { CostWarning, PeriodPicker, ReportHeader, ReportTable, SummaryTiles, fmtDate, usePeriod } from "@/components/report-kit";
 
 function BillProfit() {
@@ -43,8 +42,8 @@ function BillProfit() {
 
 export default function BillProfitPage() {
   return (
-    <PrivacyLockGate>
+    <>
       <BillProfit />
-    </PrivacyLockGate>
+    </>
   );
 }

@@ -13,7 +13,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { boxOptionLabel } from "@/lib/box-label";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 export default function BoxTransfersPage() {
   const boxes = useBoxes();
@@ -66,7 +65,7 @@ export default function BoxTransfersPage() {
   }
 
   return (
-    <BoxScreensGate>
+    <>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Box Transfers</h1>
@@ -136,6 +135,6 @@ export default function BoxTransfersPage() {
           </CardContent>
         </Card>
       </div>
-    </BoxScreensGate>
+    </>
   );
 }

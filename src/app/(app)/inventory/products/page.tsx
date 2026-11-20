@@ -22,7 +22,6 @@ import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { formatPaise } from "@/lib/money";
 import { AdjustStockDialog, ItemFormDialog } from "@/components/item-form-dialog";
 import { DeleteRecordButton } from "@/components/delete-record-button";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const UNITS = [
@@ -255,7 +254,6 @@ function BoxMovementsTable({ boxId }: { boxId: Id<"boxes"> }) {
 
 // Main 2-Pane Items / Products Screen (Page 10 Layout)
 export default function ProductsPage() {
-  const { isLocked } = usePrivacyLock();
   const products = useQuery(api.products.list);
   const purities = useQuery(api.metalPurities.list);
   const boxes = useQuery(api.boxes.list);
@@ -263,11 +261,7 @@ export default function ProductsPage() {
   const recentSales = useQuery(api.sales.list);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("products");
-  const access = useQuery(api.organizations.getMyAccess);
-  const gstCompany = access?.organization?.companyType === "gst_gold" || access?.organization?.companyType === "gst_silver";
-  // GST company boxes are always visible; Daily Sales boxes only when unlocked.
-  const hideBoxes = isLocked && !gstCompany;
-  const tabToUse = hideBoxes && activeTab === "boxes" ? "products" : activeTab;
+  const tabToUse = activeTab;
   const [selectedBoxId, setSelectedBoxId] = useState<Id<"boxes"> | null>(null);
   const [selectedProductId, setSelectedProductId] = useState<Id<"products"> | null>(null);
 
@@ -348,7 +342,6 @@ export default function ProductsPage() {
           >
             Products ({products?.length ?? 0})
           </button>
-          {!hideBoxes && (
             <button
               type="button"
               onClick={() => setActiveTab("boxes")}
@@ -360,7 +353,7 @@ export default function ProductsPage() {
             >
               Boxes & Physical Stock ({boxOverview?.boxes?.length ?? boxes?.length ?? 0})
             </button>
-          )}
+          
           <Link
             href="/inventory/categories"
             className="whitespace-nowrap pb-2 border-b-2 border-transparent text-muted-foreground hover:text-foreground"

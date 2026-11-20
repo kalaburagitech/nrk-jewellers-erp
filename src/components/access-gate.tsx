@@ -11,8 +11,6 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppTopbar } from "@/components/app-topbar";
 import { AppLockGate } from "@/components/app-lock-gate";
-import { PrivacyLockProvider } from "@/components/privacy-lock-context";
-import { DailySalesPrivacyGuard } from "@/components/daily-sales-privacy-guard";
 import { Toaster } from "@/components/toaster";
 
 /** The expanded / collapsed choice the user last made (the sidebar saves it in a cookie); expanded the first time. */
@@ -74,7 +72,6 @@ export function AccessGate({ children }: { children: ReactNode }) {
   return (
     <AccessProvider role={access.membership.role}>
     <AppLockGate userId={access.membership.userId}>
-      <PrivacyLockProvider>
         <SidebarProvider defaultOpen={savedSidebarOpen()} className="erp-shell">
           <AppSidebar role={access.membership.role} />
           {/* min-w-0: let wide tables scroll inside their own box instead of widening the whole page. */}
@@ -101,15 +98,12 @@ export function AccessGate({ children }: { children: ReactNode }) {
                   <Link href="/" className="text-sm font-medium text-primary underline-offset-4 hover:underline">Go to Home</Link>
                 </div>
               ) : (
-                <DailySalesPrivacyGuard activeCompanyType={access.organization?.companyType} companies={access.companies}>
-                  {children}
-                </DailySalesPrivacyGuard>
+                children
               )}
             </main>
             <Toaster />
           </SidebarInset>
         </SidebarProvider>
-      </PrivacyLockProvider>
     </AppLockGate>
     </AccessProvider>
   );

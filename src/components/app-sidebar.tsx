@@ -23,9 +23,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { NAV_SECTIONS } from "@/lib/nav-data";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { isWriteOnlyPath } from "@/components/access-context";
-import { PrivacyUnlockTrigger } from "@/components/privacy-unlock-trigger";
 import { setAmountDecimals } from "@/lib/money";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -53,7 +51,6 @@ const GROUPS = [
 ];
 export function AppSidebar({ role }: { role: string }) {
   const pathname = usePathname();
-  const { isLocked } = usePrivacyLock();
   const { setOpenMobile, state, setOpen } = useSidebar();
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
@@ -67,14 +64,6 @@ export function AppSidebar({ role }: { role: string }) {
       .filter((key) => preferences && !(key === "otherIncome" ? preferences.otherIncome : preferences.documents[key]))
       .flatMap((key) => OPTIONAL_DOCUMENT_PATHS[key]),
   );
-  const access = useQuery(api.organizations.getMyAccess);
-  const companyType = access?.organization?.companyType;
-  // Each company has its own boxes. The GST company's boxes are always shown;
-  // the Daily Sales company (and its boxes) stays hidden while the privacy lock is on.
-  const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
-  const hideBoxes = isLocked && !gstCompany;
-  if (hideBoxes) disabledPaths.add("/reports/boxes");
-  if (isLocked) disabledPaths.add("/reports/profit-loss");
   function navigate() {
     setOpenMobile(false);
   }
@@ -99,7 +88,7 @@ export function AppSidebar({ role }: { role: string }) {
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <p className="text-[15px] font-bold tracking-wide">NRK JEWELLERS</p>
             <p className="mt-1 text-xs text-sidebar-primary">
-              <PrivacyUnlockTrigger enabled={role === "owner"}>The Name of Purity</PrivacyUnlockTrigger>
+              The Name of Purity
             </p>
           </div>
         </Link>
@@ -143,8 +132,7 @@ export function AppSidebar({ role }: { role: string }) {
             .flatMap((path) =>
               NAV_SECTIONS.filter((section) => section.href === path),
             )
-            .filter((section) => section.href !== "/girvi" || (!isLocked && (role === "owner" || role === "admin")))
-            .filter((section) => section.href !== "/boxes" || !hideBoxes)
+            .filter((section) => section.href !== "/girvi" || role === "owner" || role === "admin")
             .filter((section) => !viewOnly || !isWriteOnlyPath(section.href))
             .filter(
               (section) =>

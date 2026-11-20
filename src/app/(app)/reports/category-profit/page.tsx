@@ -2,7 +2,6 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 import { CostWarning, PeriodPicker, ReportHeader, ReportTable, grams, usePeriod } from "@/components/report-kit";
 
 function CategoryProfit() {
@@ -43,8 +42,8 @@ function CategoryProfit() {
 
 export default function CategoryProfitPage() {
   return (
-    <PrivacyLockGate>
+    <>
       <CategoryProfit />
-    </PrivacyLockGate>
+    </>
   );
 }

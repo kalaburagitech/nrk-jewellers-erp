@@ -7,7 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 
 const SOURCE_LABEL: Record<string, string> = {
   box_opening: "Opening stock",
@@ -21,7 +20,7 @@ export default function StockJournalPage() {
   const journal = useQuery(api.reports.getStockJournal);
 
   return (
-    <PrivacyLockGate>
+    <>
       <div className="mx-auto flex max-w-full flex-col gap-6">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock Journal</h1>
@@ -76,6 +75,6 @@ export default function StockJournalPage() {
         </CardContent>
       </Card>
       </div>
-    </PrivacyLockGate>
+    </>
   );
 }

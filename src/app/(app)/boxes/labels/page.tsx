@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { METAL_LABEL } from "@/lib/box-label";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
-import { BoxScreensGate } from "@/components/privacy-lock-gate";
 
 /** QR label for a box: scanning it on New Bill adds a line for this box. */
 function Label({ box }: { box: Doc<"boxes"> }) {
@@ -52,7 +51,7 @@ export default function BarcodeLabelsPage() {
   const selection = useRecordSelection(filtered.map((box) => box._id), search, true);
 
   return (
-    <BoxScreensGate>
+    <>
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <div>
@@ -96,6 +95,6 @@ export default function BarcodeLabelsPage() {
           ))}
         </div>
       </div>
-    </BoxScreensGate>
+    </>
   );
 }

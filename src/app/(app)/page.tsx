@@ -37,13 +37,11 @@ import {
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { DueRemindersCard } from "@/components/due-reminders";
 import { useAccessInfo } from "@/components/access-context";
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export default function DashboardPage() {
-  const { isLocked } = usePrivacyLock();
   const [timeframe, setTimeframe] = useState<"week" | "month" | "quarter" | "half_year" | "year">("week");
   const summary = useQuery(api.dashboard.getSummary, { timeframe });
   const rates = useQuery(api.metalRates.getCurrent);
@@ -486,7 +484,6 @@ export default function DashboardPage() {
       </div>
 
       {/* Serialized Box Inventory System */}
-      {!isLocked && (
         <Card className="gap-4 shadow-sm">
           <CardHeader className="flex items-center justify-between">
             <CardTitle className="text-sm uppercase tracking-wide">Box management system</CardTitle>
@@ -526,7 +523,6 @@ export default function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      )}
 
       {/* Quick Action Shortcuts (F2, F3, F4) */}
       <div className="rounded-xl border bg-card p-4 shadow-sm">
@@ -564,14 +560,12 @@ export default function DashboardPage() {
 
       {/* Bottom Shortcuts: Girvi and Backup */}
       <div className="flex flex-wrap gap-3">
-        {!isLocked && (
           <Button asChild variant="outline">
             <Link href="/girvi">
               <Landmark className="h-4 w-4" />
               Girvi metal loans
             </Link>
           </Button>
-        )}
         {!isViewOnly && <Button asChild variant="outline">
           <Link href="/backup">
             <DatabaseBackup className="h-4 w-4" />

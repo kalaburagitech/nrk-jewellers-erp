@@ -21,7 +21,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import type { Doc, Id } from "../../../../convex/_generated/dataModel";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { METAL_LABEL } from "@/lib/box-label";
-import { BoxScreensGate } from "@/components/privacy-lock-gate";
 import { toast } from "@/components/toaster";
 import { BoxItemsSection, type BoxEntryRow } from "@/components/box-items";
 
@@ -308,7 +307,7 @@ export default function BoxOverviewPage() {
   const selection = useRecordSelection(filtered?.map((box) => box._id) ?? [], `boxes:${search}:${metalFilter}:${categoryFilter}`);
 
   return (
-    <BoxScreensGate>
+    <>
       <div className="erp-fill flex w-full flex-col gap-3">
         <div className="shrink-0">
           <h1 className="text-xl font-bold tracking-tight">Box Overview</h1>
@@ -398,6 +397,6 @@ export default function BoxOverviewPage() {
 
         {selectedBoxRecord && <BoxDetailDialog box={selectedBoxRecord} onClose={() => setSelectedBox(null)} />}
       </div>
-    </BoxScreensGate>
+    </>
   );
 }

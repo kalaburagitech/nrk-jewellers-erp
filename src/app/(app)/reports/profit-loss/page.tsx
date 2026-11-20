@@ -2,7 +2,6 @@
 
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 import { CostWarning, PeriodPicker, ReportHeader, usePeriod } from "@/components/report-kit";
 import { downloadCsv } from "@/lib/csv-export";
 import { formatPaise } from "@/lib/money";
@@ -87,8 +86,8 @@ function ProfitLoss() {
 
 export default function ProfitLossPage() {
   return (
-    <PrivacyLockGate>
+    <>
       <ProfitLoss />
-    </PrivacyLockGate>
+    </>
   );
 }

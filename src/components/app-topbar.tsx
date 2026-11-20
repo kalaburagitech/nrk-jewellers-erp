@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -19,8 +19,6 @@ import { ColorThemePicker } from "@/components/color-theme-picker";
 import { getUserErrorMessage } from "@/lib/user-error";
 import { Button } from "@/components/ui/button";
 import { useAppLock } from "@/components/app-lock-gate";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
-import { companiesVisibleWhileLocked } from "@/components/daily-sales-privacy-guard";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -183,13 +181,6 @@ export function AppTopbar({
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [savingPassword, setSavingPassword] = useState(false);
-  const { isLocked } = usePrivacyLock();
-
-  const visibleCompanies = useMemo(() => {
-    if (!isLocked) return companies;
-    // Privacy lock on: only GST companies are shown; Daily Sales stays private.
-    return companiesVisibleWhileLocked(companies);
-  }, [companies, isLocked]);
   const pathname = usePathname();
   const router = useRouter();
   const page = NAV_SECTIONS.flatMap((section) => [
@@ -217,7 +208,7 @@ export function AppTopbar({
         <GlobalSearch />
       </div>
       <div className="flex items-center gap-1 sm:gap-2">
-        {visibleCompanies.length > 1 && <DropdownMenu>
+        {companies.length > 1 && <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3 max-w-32 sm:max-w-56 text-xs sm:text-sm">
               <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
@@ -226,7 +217,7 @@ export function AppTopbar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
             <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Switch company</p>
-            {visibleCompanies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })} className="items-start py-2">
+            {companies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })} className="items-start py-2">
               <Building2 className="mt-0.5 h-4 w-4" /><span className="min-w-0 flex-1"><span className="block truncate">{company.name}</span><span className="block text-xs capitalize text-muted-foreground">{company.companyType?.replaceAll("_", " ") ?? company.role.replaceAll("_", " ")}</span></span>{company.organizationId === activeOrganizationId && <span className="text-xs text-muted-foreground">Current</span>}
             </DropdownMenuItem>)}
           </DropdownMenuContent>

@@ -22,8 +22,6 @@ import { formatPaise } from "@/lib/money";
 import { rupeesToPaise } from "@/lib/money";
 import { girviInterestPaise } from "@/lib/girvi-interest";
 import { Landmark, Plus, Printer, Search } from "lucide-react";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
-import { PrivacyHiddenNotice } from "@/components/privacy-lock-gate";
 
 function RepayDialog({
   loan,
@@ -161,7 +159,6 @@ function RepayDialog({
   );
 }
 export default function GirviPage() {
-  const { isLocked } = usePrivacyLock();
   const access = useQuery(api.organizations.getMyAccess);
   const allowed = ["owner", "admin"].includes(access?.membership?.role ?? "");
   const accounts = useQuery(api.cashBank.list, allowed ? {} : "skip");
@@ -189,8 +186,6 @@ export default function GirviPage() {
     visibleLoans?.map((row) => row._id) ?? [],
     `girvi:${status}:${search}`,
   );
-
-  if (isLocked) return <PrivacyHiddenNotice />;
 
   if (access && !allowed) return <div className="mx-auto max-w-2xl rounded-xl border p-6"><h1 className="text-xl font-semibold">Girvi is owner-only</h1><p className="mt-2 text-sm text-muted-foreground">Ask the owner to open the Girvi workspace for you.</p></div>;
 

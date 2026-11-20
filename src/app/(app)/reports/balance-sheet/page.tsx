@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 import { ReportHeader } from "@/components/report-kit";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { downloadCsv } from "@/lib/csv-export";
@@ -82,8 +81,8 @@ function BalanceSheet() {
 
 export default function BalanceSheetPage() {
   return (
-    <PrivacyLockGate>
+    <>
       <BalanceSheet />
-    </PrivacyLockGate>
+    </>
   );
 }

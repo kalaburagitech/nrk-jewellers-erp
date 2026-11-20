@@ -5,10 +5,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import { usePrivacyLock } from "@/components/privacy-lock-context";
 import { cn } from "@/lib/utils";
 
-type Entry = { title: string; href: string; private?: boolean };
+type Entry = { title: string; href: string };
 
 const REPORT_MENU: { section: string; items: Entry[] }[] = [
   {
@@ -18,17 +17,17 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
       { title: "Purchase", href: "/reports/purchases" },
       { title: "Day Book", href: "/reports/day-book" },
       { title: "All Transactions", href: "/reports/all-transactions" },
-      { title: "Profit And Loss", href: "/reports/profit-loss", private: true },
-      { title: "Bill Wise Profit", href: "/reports/bill-profit", private: true },
+      { title: "Profit And Loss", href: "/reports/profit-loss" },
+      { title: "Bill Wise Profit", href: "/reports/bill-profit" },
       { title: "Cash Flow", href: "/reports/cash-flow" },
-      { title: "Balance Sheet / Trial Balance", href: "/reports/balance-sheet", private: true },
+      { title: "Balance Sheet / Trial Balance", href: "/reports/balance-sheet" },
     ],
   },
   {
     section: "Party report",
     items: [
       { title: "Party Statement", href: "/reports/party-statement" },
-      { title: "Party wise Profit & Loss", href: "/reports/party-profit", private: true },
+      { title: "Party wise Profit & Loss", href: "/reports/party-profit" },
       { title: "All Parties", href: "/reports/all-parties" },
       { title: "Party Report By Item", href: "/reports/party-by-item" },
       { title: "Sale Purchase By Party", href: "/reports/sale-purchase-by-party" },
@@ -52,12 +51,12 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
     items: [
       { title: "Stock Summary", href: "/reports/item-stock" },
       { title: "Stock By Purity", href: "/reports/stock" },
-      { title: "Item Wise Profit And Loss", href: "/reports/item-profit", private: true },
-      { title: "Item Category Wise Profit And Loss", href: "/reports/category-profit", private: true },
+      { title: "Item Wise Profit And Loss", href: "/reports/item-profit" },
+      { title: "Item Category Wise Profit And Loss", href: "/reports/category-profit" },
       { title: "Low Stock Summary", href: "/reports/low-stock" },
       { title: "Sale/Purchase Report By Item Category", href: "/reports/sale-purchase-by-category" },
       { title: "Stock Summary By Item Category", href: "/reports/stock-by-category" },
-      { title: "Box Reports", href: "/reports/boxes", private: true },
+      { title: "Box Reports", href: "/reports/boxes" },
     ],
   },
   { section: "Business status", items: [{ title: "Bank Statement", href: "/reports/bank-statement" }] },
@@ -67,11 +66,10 @@ const REPORT_MENU: { section: string; items: Entry[] }[] = [
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { isLocked } = usePrivacyLock();
   const companyType = useQuery(api.organizations.getMyAccess)?.organization?.companyType;
   // Same rule as the main sidebar: boxes only exist for the non-GST (daily) company.
   const gstCompany = companyType === "gst_gold" || companyType === "gst_silver";
-  const hidden = (i: Entry) => (i.private && isLocked) || (gstCompany && i.href === "/reports/boxes");
+  const hidden = (i: Entry) => gstCompany && i.href === "/reports/boxes";
   const menu = REPORT_MENU.map((s) => ({ ...s, items: s.items.filter((i) => !hidden(i)) })).filter((s) => s.items.length);
 
   return (

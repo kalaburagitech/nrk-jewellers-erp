@@ -12,7 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { gramsToMg, mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { boxOptionLabel } from "@/lib/box-label";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
-import { PrivacyLockGate } from "@/components/privacy-lock-gate";
 import { GstStockAdjustDialog } from "@/components/gst-stock-adjust-dialog";
 import { useAccessInfo } from "@/components/access-context";
 
@@ -91,7 +90,7 @@ function GstStockAdjustments() {
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <div>
             <CardTitle className="text-base">Loose GST item stock (not in a box)</CardTitle>
-            <p className="text-xs text-muted-foreground">Older GST stock kept item-wise. Put it into boxes under Items → GST Item Stock.</p>
+            <p className="text-xs text-muted-foreground">Older GST stock kept item-wise, not in any box.</p>
           </div>
           {!isViewOnly && (
             <div className="flex gap-2">
@@ -134,9 +133,9 @@ export default function StockAdjustmentsPage() {
   // Both companies adjust box stock the same way; the GST company's boxes aren't private.
   if (companyType === "gst_gold" || companyType === "gst_silver") return <BoxStockAdjustments gst />;
   return (
-    <PrivacyLockGate>
+    <>
       <BoxStockAdjustments />
-    </PrivacyLockGate>
+    </>
   );
 }
 
