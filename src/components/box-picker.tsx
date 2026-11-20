@@ -42,6 +42,7 @@ export function BoxPicker({
   emptyLabel,
   ariaLabel,
   onPick,
+  triggerClassName,
 }: {
   boxes: BoxRow[];
   purities: Doc<"metalPurities">[];
@@ -54,6 +55,8 @@ export function BoxPicker({
   emptyLabel?: string;
   ariaLabel: string;
   onPick: (boxId: string, entry?: BoxEntryRow) => void;
+  /** Width of the button; defaults to a fixed width. */
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -125,7 +128,7 @@ export function BoxPicker({
       }}
     >
       <Popover.Trigger asChild>
-        <button type="button" aria-label={ariaLabel} className="flex h-8 w-36 items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs">
+        <button type="button" aria-label={ariaLabel} className={`flex h-8 items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs ${triggerClassName ?? "w-36"}`}>
           <span className="truncate">
             {current ? `Box ${current.boxNumber}${current.metal ? ` · ${current.metal === "gold" ? "Gold" : "Silver"}` : ""}` : emptyLabel ?? "Select box"}
           </span>

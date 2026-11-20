@@ -158,6 +158,30 @@ function blankLine(taxConfigurationId: string): BillLine {
 
 const cellInput = "h-8 text-xs";
 
+/** Item-grid column widths (as % of the card), so every column fits on screen without sideways scrolling. */
+function billColumnWidths(showCost: boolean, isGst: boolean) {
+  const shares = [
+    3, // SL
+    11, // box no
+    6.5, // category
+    12, // description
+    6.5, // purity
+    4.5, // pcs
+    7, // gross
+    7, // net
+    7.5, // rate / g
+    7.5, // price / pc
+    ...(showCost ? [7] : []), // cost / margin
+    9, // making
+    6, // discount
+    ...(isGst ? [9.5] : []), // tax
+    8, // amount
+    3, // remove
+  ];
+  const total = shares.reduce((sum, n) => sum + n, 0);
+  return shares.map((n) => `${((n / total) * 100).toFixed(2)}%`);
+}
+
 /**
  * Customer name is a type-to-search-or-create field, not a plain dropdown —
  * an operator can pick an existing customer or just type a new one, with the
@@ -1259,25 +1283,28 @@ export default function NewBillPage() {
               {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
             </datalist>
             <div className="erp-scroll overflow-auto lg:max-h-[52svh]">
-              <table className="w-full min-w-[1100px] text-xs">
+              <table className="w-full table-fixed text-xs">
+                <colgroup>
+                  {billColumnWidths(showCost, isGst).map((width, i) => <col key={i} style={{ width }} />)}
+                </colgroup>
                 <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
                   <tr className="border-b bg-muted/30 text-left font-semibold text-muted-foreground">
-                    <th className="py-2.5 px-2 w-8">SL</th>
-                    <th className="py-2.5 px-2">BOX NO</th>
-                    <th className="py-2.5 px-2">CATEGORY</th>
-                    <th className="py-2.5 px-2">DESCRIPTION</th>
-                    <th className="py-2.5 px-2">PURITY</th>
-                    <th className="py-2.5 px-2">PCS</th>
-                    <th className="py-2.5 px-2">GROSS WT (g)</th>
-                    <th className="py-2.5 px-2">NET WT (g)</th>
-                    <th className="py-2.5 px-2">RATE / G (₹)</th>
-                    <th className="py-2.5 px-2">PRICE / PC (₹)</th>
-                    {showCost && <th className="py-2.5 px-2">COST / MARGIN</th>}
-                    <th className="py-2.5 px-2">MAKING</th>
-                    <th className="py-2.5 px-2">DISC. (₹ / %)</th>
-                    {isGst && <th className="py-2.5 px-2">TAX (GST)</th>}
-                    <th className="py-2.5 px-2 text-right">AMOUNT (₹)</th>
-                    <th className="py-2.5 px-2 w-8" />
+                    <th className="py-2 px-1.5">SL</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">BOX NO</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">CATEGORY</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">DESCRIPTION</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">PURITY</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">PCS</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">GROSS WT (g)</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">NET WT (g)</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">RATE / G (₹)</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">PRICE / PC (₹)</th>
+                    {showCost && <th className="py-2 px-1.5 text-[11px] leading-tight">COST / MARGIN</th>}
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">MAKING</th>
+                    <th className="py-2 px-1.5 text-[11px] leading-tight">DISC. (₹ / %)</th>
+                    {isGst && <th className="py-2 px-1.5 text-[11px] leading-tight">TAX (GST)</th>}
+                    <th className="py-2 px-1.5 text-[11px] leading-tight text-right">AMOUNT (₹)</th>
+                    <th className="py-2 px-1.5" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/50">
@@ -1300,9 +1327,9 @@ export default function NewBillPage() {
                           }
                         }}
                       >
-                        <td className="py-2 px-2 pt-3.5 font-mono text-muted-foreground">{String(index + 1).padStart(2, "0")}</td>
+                        <td className="py-2 px-1.5 pt-3.5 font-mono text-muted-foreground">{String(index + 1).padStart(2, "0")}</td>
                         {(
-                          <td className="py-2 px-2">
+                          <td className="py-2 px-1.5">
                             <BoxPicker
                               ariaLabel={`Row ${index + 1} box`}
                               boxes={boxes as BoxRow[]}
@@ -1313,6 +1340,7 @@ export default function NewBillPage() {
                               priceKind="sale"
                               emptyLabel={gstCompany ? "Loose GST stock" : undefined}
                               onPick={(boxId, entry) => pickBoxItem(index, boxId, entry)}
+                              triggerClassName="w-full min-w-0"
                             />
                             {box && available && (
                               <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
@@ -1322,10 +1350,10 @@ export default function NewBillPage() {
                             )}
                           </td>
                         )}
-                        <td className="py-2 px-2">
+                        <td className="py-2 px-1.5">
                           <select
                             aria-label={`Row ${index + 1} category`}
-                            className="h-8 w-20 rounded-md border bg-background px-2 text-xs"
+                            className="h-8 w-full min-w-0 rounded-md border bg-background px-1 text-xs"
                             value={line.metal}
                             onChange={(e) => pickMetal(index, e.target.value as Metal | "")}
                           >
@@ -1334,7 +1362,7 @@ export default function NewBillPage() {
                             <option value="silver">Silver</option>
                           </select>
                         </td>
-                        <td className="py-2 px-2">
+                        <td className="py-2 px-1.5">
                           <Input
                             aria-label={`Row ${index + 1} description`}
                             list="bill-items"
@@ -1342,7 +1370,7 @@ export default function NewBillPage() {
                             value={line.label}
                             maxLength={80}
                             onChange={(e) => typeDescription(index, e.target.value)}
-                            className={`${cellInput} w-40`}
+                            className={`${cellInput} w-full min-w-0`}
                           />
                           {line.label.trim() && !line.productId && !isLoose(line) && (
                             <p className="mt-1 text-[10px] text-muted-foreground">New item — added to Item List on save</p>
@@ -1355,10 +1383,10 @@ export default function NewBillPage() {
                             <p className="mt-1 text-[10px] text-muted-foreground">Code {productById.get(line.productId as Id<"products">)?.sku}</p>
                           )}
                         </td>
-                        <td className="py-2 px-2">
+                        <td className="py-2 px-1.5">
                           <select
                             aria-label={`Row ${index + 1} purity`}
-                            className="h-8 w-24 rounded-md border bg-background px-2 text-xs"
+                            className="h-8 w-full min-w-0 rounded-md border bg-background px-1 text-xs"
                             value={line.metalPurityId}
                             onChange={(e) => pickPurity(index, e.target.value)}
                           >
@@ -1371,19 +1399,19 @@ export default function NewBillPage() {
                             <p className="mt-1 text-[10px] text-muted-foreground">{productById.get(line.productId as Id<"products">)?.purityOther}</p>
                           )}
                         </td>
-                        <td className="py-2 px-2">
-                          <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={`${cellInput} w-14 text-right`} />
+                        <td className="py-2 px-1.5">
+                          <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={`${cellInput} w-full min-w-0 text-right`} />
                         </td>
-                        <td className="py-2 px-2">
-                          <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-20 text-right font-mono`} />
+                        <td className="py-2 px-1.5">
+                          <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
                         </td>
-                        <td className="py-2 px-2">
-                          <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${cellInput} w-20 text-right font-mono text-emerald-600`} />
+                        <td className="py-2 px-1.5">
+                          <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono text-emerald-600`} />
                         </td>
-                        <td className="py-2 px-2">
-                          <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${cellInput} w-24 text-right font-mono`} />
+                        <td className="py-2 px-1.5">
+                          <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
                         </td>
-                        <td className="py-2 px-2">
+                        <td className="py-2 px-1.5">
                           <Input
                             aria-label={`Row ${index + 1} price per piece`}
                             inputMode="decimal"
@@ -1392,14 +1420,14 @@ export default function NewBillPage() {
                             disabled={!canOverride && line.savedPricePaise !== undefined}
                             title={!canOverride && line.savedPricePaise !== undefined ? "Saved selling price — only the Owner or an Admin can change it" : "Leave blank to price by net weight × rate per gram"}
                             onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })}
-                            className={`${cellInput} w-24 text-right font-mono`}
+                            className={`${cellInput} w-full min-w-0 text-right font-mono`}
                           />
                           {line.savedPricePaise !== undefined && (rupeesToPaise(line.unitPriceRupees || "0") ?? 0) !== line.savedPricePaise && (
                             <p className="mt-1 text-[10px] text-amber-600">Saved {formatPaise(line.savedPricePaise)} · override</p>
                           )}
                         </td>
                         {showCost && (
-                          <td className="py-2 px-2 pt-3.5 font-mono text-muted-foreground">
+                          <td className="py-2 px-1.5 pt-3.5 font-mono text-muted-foreground">
                             {line.costPaise !== undefined ? formatPaise(line.costPaise * (piecesOf(line) || 1)) : "—"}
                             {line.costPaise !== undefined && (
                               <p className={`text-[10px] ${computed.taxableValuePaise - line.costPaise * (piecesOf(line) || 1) < 0 ? "text-destructive" : "text-emerald-600"}`}>
@@ -1408,28 +1436,28 @@ export default function NewBillPage() {
                             )}
                           </td>
                         )}
-                        <td className="py-2 px-2">
-                          <div className="flex items-center gap-1">
+                        <td className="py-2 px-1.5">
+                          <div className="flex min-w-0 items-center gap-1">
                             <select
                               aria-label={`Row ${index + 1} making charge type`}
-                              className="h-8 rounded-md border bg-background px-1 text-xs"
+                              className="h-8 shrink-0 rounded-md border bg-background px-0.5 text-xs"
                               value={line.makingMode}
                               onChange={(e) => updateLine(index, { makingMode: e.target.value as MakingMode })}
                             >
                               {MAKING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                             </select>
-                            <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${cellInput} w-16 text-right`} />
+                            <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
                           </div>
                           {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && (
                             <p className="mt-1 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>
                           )}
                         </td>
-                        <td className="py-2 px-2">
-                          <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${cellInput} w-20 text-right`} />
+                        <td className="py-2 px-1.5">
+                          <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
                         </td>
                         {isGst && (
-                          <td className="py-2 px-2">
-                            <div className="flex items-center gap-1.5">
+                          <td className="py-2 px-1.5">
+                            <div className="flex min-w-0 items-center gap-1">
                               <Select
                                 value={line.isManualTax ? "manual" : line.taxConfigurationId || defaultTaxId || "none"}
                                 onValueChange={(val) => {
@@ -1437,7 +1465,7 @@ export default function NewBillPage() {
                                   else updateLine(index, { isManualTax: false, taxConfigurationId: val });
                                 }}
                               >
-                                <SelectTrigger className="h-8 w-28 text-[11px]">
+                                <SelectTrigger className="h-8 w-full min-w-0 px-1.5 text-[11px]">
                                   <SelectValue placeholder="Tax" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -1447,16 +1475,16 @@ export default function NewBillPage() {
                                 </SelectContent>
                               </Select>
                               {line.isManualTax && (
-                                <Input inputMode="decimal" placeholder="3.0" value={line.manualGstPercent || ""} onChange={(e) => updateLine(index, { manualGstPercent: e.target.value })} className="h-8 w-16 text-xs text-right" title="Custom GST %" />
+                                <Input inputMode="decimal" placeholder="3.0" value={line.manualGstPercent || ""} onChange={(e) => updateLine(index, { manualGstPercent: e.target.value })} className="h-8 w-12 shrink-0 px-1 text-xs text-right" title="Custom GST %" />
                               )}
                             </div>
                           </td>
                         )}
-                        <td className="py-2 px-2 pt-3.5 text-right font-bold text-foreground tabular-nums">
+                        <td className="py-2 px-1.5 pt-3.5 text-right font-bold text-foreground tabular-nums">
                           {formatPaise(computed.lineTotalPaise)}
-                          {error && <p className="mt-1 max-w-40 text-left text-[10px] font-medium text-destructive">{error}</p>}
+                          {error && <p className="mt-1 text-left text-[10px] font-medium text-destructive">{error}</p>}
                         </td>
-                        <td className="py-2 px-2">
+                        <td className="py-2 px-1.5">
                           <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove row ${index + 1}`} onClick={() => removeLine(index)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -1469,11 +1497,11 @@ export default function NewBillPage() {
                   <tfoot>
                     <tr className="border-t bg-muted/20 font-semibold">
                       <td colSpan={5} className="py-2 px-2 text-right text-muted-foreground">Total</td>
-                      <td className="py-2 px-2 text-right tabular-nums">{lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0)}</td>
-                      <td className="py-2 px-2 text-right font-mono tabular-nums">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0))}</td>
-                      <td className="py-2 px-2 text-right font-mono tabular-nums text-emerald-600">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.netWeightMg, 0))}</td>
+                      <td className="py-2 px-1.5 text-right tabular-nums">{lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0)}</td>
+                      <td className="py-2 px-1.5 text-right font-mono tabular-nums">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0))}</td>
+                      <td className="py-2 px-1.5 text-right font-mono tabular-nums text-emerald-600">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.netWeightMg, 0))}</td>
                       <td colSpan={4 + (showCost ? 1 : 0) + (isGst ? 1 : 0)} />
-                      <td className="py-2 px-2 text-right tabular-nums">{formatPaise(computedLines.reduce((sum, l) => sum + l.lineTotalPaise, 0))}</td>
+                      <td className="py-2 px-1.5 text-right tabular-nums">{formatPaise(computedLines.reduce((sum, l) => sum + l.lineTotalPaise, 0))}</td>
                       <td />
                     </tr>
                   </tfoot>
