@@ -113,6 +113,8 @@ type BillLine = {
   savedPricePaise?: number;
   /** Purchase price per piece, in paise — only present for roles allowed to see cost. */
   costPaise?: number;
+  /** Weight of one piece of the picked box item (its stock ÷ pieces): gross/net fill as Pcs × this until typed over. */
+  perPiece?: { grossMg: number; netMg: number };
   // Kept from older bills so an edit doesn't drop them (not shown on the grid).
   wastagePercent: string;
   stoneChargeRupees: string;
@@ -490,6 +492,30 @@ export default function NewBillPage() {
     updateLine(index, next);
   }
 
+  /** Gross and net weight from the box item's per-piece weight × Pcs (1 when blank). Weight-only items (no pieces) leave the weights to type. */
+  function weightsForPieces(line: BillLine, entry: BoxEntryRow): Partial<BillLine> {
+    if (!(entry.pieces > 0) || !(entry.weightMg > 0)) return { perPiece: undefined };
+    const perPiece = { grossMg: Math.round(entry.weightMg / entry.pieces), netMg: Math.round(entry.netWeightMg / entry.pieces) };
+    const pieces = Number(line.piecesText) > 0 ? Number(line.piecesText) : 1;
+    return {
+      perPiece,
+      piecesText: String(pieces),
+      grossGrams: ((perPiece.grossMg * pieces) / 1000).toFixed(3),
+      netGrams: ((perPiece.netMg * pieces) / 1000).toFixed(3),
+    };
+  }
+
+  /** Pcs typed: weights filled from the box item follow the new count, unless the operator typed their own. */
+  function typePieces(index: number, piecesText: string) {
+    const line = lines[index];
+    const per = line.perPiece;
+    const oldPieces = Number(line.piecesText) || 0;
+    const auto = per && line.grossGrams === ((per.grossMg * oldPieces) / 1000).toFixed(3) && line.netGrams === ((per.netMg * oldPieces) / 1000).toFixed(3);
+    const pieces = Number(piecesText);
+    if (!per || !auto || !Number.isInteger(pieces) || pieces < 1) return updateLine(index, { piecesText });
+    updateLine(index, { piecesText, grossGrams: ((per.grossMg * pieces) / 1000).toFixed(3), netGrams: ((per.netMg * pieces) / 1000).toFixed(3) });
+  }
+
   /** The item as kept in its box: everything the line needs comes from the box. */
   function entryPatch(line: BillLine, entry: BoxEntryRow): Partial<BillLine> {
     const purity = activePurities.find((p) => p._id === entry.metalPurityId);
@@ -511,6 +537,7 @@ export default function NewBillPage() {
       unitPriceRupees: entry.salePricePaise ? (entry.salePricePaise / 100).toFixed(2) : "",
       savedPricePaise: entry.salePricePaise || undefined,
       costPaise: entry.purchasePricePaise,
+      ...weightsForPieces(line, entry),
     };
   }
 
@@ -521,6 +548,17 @@ export default function NewBillPage() {
     // The box holds this item: its details come from the box.
     const entry = boxById.get(line.boxId)?.entries?.find((e) => e.productId === product._id);
     if (entry) return entryPatch(line, entry);
+    // No box chosen yet: pick the box that holds this item (the one with the most of it) and fill everything from there.
+    if (!line.boxId) {
+      const holder = (boxes ?? [])
+        .filter((b) => b.isActive)
+        .flatMap((b) => ((b as BoxRow).entries ?? []).filter((e) => e.productId === product._id && e.weightMg > 0).map((e) => ({ box: b, entry: e })))
+        .sort((a, b) => b.entry.weightMg - a.entry.weightMg)[0];
+      if (holder) {
+        const withHolder = { ...line, ...withBox(line, holder.box._id) };
+        return { ...withBox(line, holder.box._id), ...entryPatch(withHolder, holder.entry) };
+      }
+    }
     const purity = activePurities.find((p) => p._id === product.metalPurityId);
     const box = boxById.get(line.boxId);
     const metal = purity?.metal ?? box?.metal ?? line.metal;
@@ -1333,7 +1371,7 @@ export default function NewBillPage() {
                           )}
                         </td>
                         <td className="py-2 px-2">
-                          <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => updateLine(index, { piecesText: e.target.value })} className={`${cellInput} w-14 text-right`} />
+                          <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={`${cellInput} w-14 text-right`} />
                         </td>
                         <td className="py-2 px-2">
                           <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-20 text-right font-mono`} />
