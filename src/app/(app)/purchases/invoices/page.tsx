@@ -3,6 +3,7 @@ import { getUserErrorMessage } from "@/lib/user-error";
 
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { HeldBillsCard } from "@/components/held-bills";
 import { Checkbox } from "@/components/ui/checkbox";
 
 import { useMemo, useState } from "react";
@@ -251,6 +252,8 @@ export default function PurchaseInvoicesPage() {
         <span className="text-xl font-semibold text-muted-foreground">=</span>
         <div className="min-w-40 rounded-xl bg-amber-100 p-4 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"><p className="text-sm">Total</p><p className="text-xl font-semibold tabular-nums">{formatPaise(totals?.total ?? 0)}</p></div>
       </div>
+
+      <HeldBillsCard kind="purchase" />
 
       <BulkRecordActions selection={selection} table="purchases" />
 

@@ -173,3 +173,24 @@ describe("held bills", () => {
     expect(await f.owner.query(api.heldBills.list, {})).toHaveLength(0);
   });
 });
+
+describe("held purchases", () => {
+  it("keeps held purchases apart from held sales, and saving the purchase removes it", async () => {
+    const f = await fixture();
+    const saleHeld = await f.owner.mutation(api.heldBills.hold, { customerName: "Asha", itemCount: 1, totalPaise: 100, draft: "{}" });
+    const heldBillId = await f.owner.mutation(api.heldBills.hold, { kind: "purchase", customerName: "Wholesaler", itemCount: 1, totalPaise: 500, draft: '{"lines":[]}' });
+    expect((await f.owner.query(api.heldBills.list, {})).map((h) => h._id)).toEqual([saleHeld]);
+    expect((await f.owner.query(api.heldBills.list, { kind: "purchase" })).map((h) => h._id)).toEqual([heldBillId]);
+    // A held purchase does not open on the sales screen, and the other way round.
+    expect(await f.owner.query(api.heldBills.get, { heldBillId })).toBeNull();
+    expect((await f.owner.query(api.heldBills.get, { heldBillId, kind: "purchase" }))?.draft).toBe('{"lines":[]}');
+    // Nothing goes into the box until the purchase is saved.
+    expect(await f.entry(f.box105, f.necklace)).toMatchObject({ weightMg: 250_000, pieces: 10 });
+
+    const line = { productId: f.necklace, boxId: f.box105, metal: "gold" as const, metalPurityId: f.gold22, pieces: 2, label: "Necklace", grossWeightMg: 50_000, stoneWeightMg: 2_000, ratePerGramPaise: 600_000, makingChargePaise: 0, stoneChargePaise: 0 };
+    await f.owner.mutation(api.purchases.create, { supplierId: f.supplier, items: [line], gstBasisPoints: 0, amountPaidPaise: 0, idempotencyKey: "held-p1", heldBillId });
+    expect(await f.owner.query(api.heldBills.list, { kind: "purchase" })).toHaveLength(0);
+    expect(await f.owner.query(api.heldBills.list, {})).toHaveLength(1);
+    expect(await f.entry(f.box105, f.necklace)).toMatchObject({ weightMg: 300_000, pieces: 12 });
+  });
+});

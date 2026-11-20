@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
-import { Plus, Search, Trash2 } from "lucide-react";
+import { Pause, Plus, Search, Trash2 } from "lucide-react";
+import { HeldBillTabs, HeldDeleteConfirm, LineField } from "@/components/held-bills";
 import { BarcodeScanInput } from "@/components/barcode-scan-input";
 import { BoxPicker } from "@/components/box-picker";
 import type { BoxEntryRow } from "@/components/box-items";
@@ -96,7 +97,7 @@ function blankLine(): PurchaseLine {
   };
 }
 
-const cellInput = "h-8 text-xs";
+const cellInput = "h-9 text-sm";
 
 /** Bill dates are a plain calendar day, stored/compared as UTC midnight — matches the dashboard's "UTC calendar day" convention for daily totals. */
 function todayDateInput(): string {
@@ -214,6 +215,24 @@ function SupplierPicker({
   );
 }
 
+/** Everything on the New Purchase form, saved when a purchase is put on hold. */
+type HeldPurchaseDraft = {
+  supplierId: string;
+  supplierNameInput: string;
+  supplierPhoneInput: string;
+  billDate: string;
+  supplierBillNumber: string;
+  stateOfSupply: string;
+  lines: PurchaseLine[];
+  gstPercent: string;
+  roundOff: boolean;
+  payments: { mode: PaymentModeValue; rupees: string }[];
+  payFull: boolean;
+  notes: string;
+  billImageId?: string;
+  billImageName: string;
+};
+
 export default function NewPurchasePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -236,6 +255,16 @@ export default function NewPurchasePage() {
   const createSupplier = useMutation(api.suppliers.create);
   const createProduct = useMutation(api.products.create);
   const uploadBillUrl = useMutation(api.purchases.generateBillImageUploadUrl);
+  // Held purchases: parked with "Hold" so another supplier's bill can be entered, then finished later.
+  const heldParam = searchParams.get("held") as Id<"heldBills"> | null;
+  const heldBillToOpen = useQuery(api.heldBills.get, heldParam && !editPurchaseId ? { heldBillId: heldParam, kind: "purchase" } : "skip");
+  const holdBillMutation = useMutation(api.heldBills.hold);
+  const removeHeldBill = useMutation(api.heldBills.remove);
+  const [heldBillId, setHeldBillId] = useState<Id<"heldBills"> | null>(null);
+  const [restoredHeldId, setRestoredHeldId] = useState<string | null>(null);
+  const [holdNotice, setHoldNotice] = useState<string | null>(null);
+  const [holding, setHolding] = useState(false);
+  const [confirmDeleteCurrent, setConfirmDeleteCurrent] = useState(false);
 
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [serverError, setServerError] = useState<string | null>(null);
@@ -319,6 +348,42 @@ export default function NewPurchasePage() {
     );
     setPrefilled(true);
   }, [editPurchaseId, existingPurchase, suppliers, prefilled]);
+
+  // Reopening a held purchase (?held=...) puts its saved form back, once per purchase.
+  useEffect(() => {
+    if (!heldParam || editPurchaseId || restoredHeldId === heldParam || heldBillToOpen === undefined) return;
+    setRestoredHeldId(heldParam);
+    if (heldBillToOpen === null) {
+      setServerError("That held purchase was already saved or removed.");
+      return;
+    }
+    let draft: Partial<HeldPurchaseDraft>;
+    try {
+      draft = JSON.parse(heldBillToOpen.draft) as Partial<HeldPurchaseDraft>;
+    } catch {
+      setServerError("Could not open that held purchase.");
+      return;
+    }
+    setHeldBillId(heldBillToOpen._id);
+    setIdempotencyKey(crypto.randomUUID());
+    setSupplierId(draft.supplierId ?? "");
+    setSupplierNameInput(draft.supplierNameInput ?? "");
+    setSupplierPhoneInput(draft.supplierPhoneInput ?? "");
+    setBillDate(draft.billDate || todayDateInput());
+    setSupplierBillNumber(draft.supplierBillNumber ?? "");
+    setStateOfSupply(draft.stateOfSupply ?? "");
+    setLines(draft.lines?.length ? draft.lines : [blankLine()]);
+    setGstPercent(draft.gstPercent ?? "");
+    setRoundOff(draft.roundOff ?? true);
+    setPayments(draft.payments?.length ? draft.payments : [{ mode: "cash", rupees: "" }]);
+    setPayFull(Boolean(draft.payFull));
+    setNotes(draft.notes ?? "");
+    setShowNotes(Boolean(draft.notes));
+    setBillImageId(draft.billImageId ? (draft.billImageId as Id<"_storage">) : undefined);
+    setBillImageName(draft.billImageName ?? "");
+    setServerError(null);
+    setHoldNotice(null);
+  }, [heldParam, editPurchaseId, restoredHeldId, heldBillToOpen]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   const selectedSupplier = suppliers?.find((s) => s._id === supplierId);
@@ -586,6 +651,89 @@ export default function NewPurchasePage() {
     setShowNotes(false);
     setBillImageId(undefined);
     setBillImageName("");
+    setServerError(null);
+    setHeldBillId(null);
+    setConfirmDeleteCurrent(false);
+  }
+
+  const partyName = supplierNameInput.trim() || suppliers?.find((s) => s._id === supplierId)?.name || "Supplier";
+
+  /** True once anything has been entered, so switching purchases never silently drops work. */
+  function billHasContent() {
+    return Boolean(
+      supplierId ||
+        supplierNameInput.trim() ||
+        supplierBillNumber.trim() ||
+        lines.some((l) => l.boxId || l.label.trim() || l.grossGrams || l.netGrams || l.unitPriceRupees),
+    );
+  }
+
+  /** Parks the purchase on screen as a held purchase. Returns false (with a message) if it could not. */
+  async function holdCurrentBill(): Promise<boolean> {
+    if (!billHasContent()) {
+      setServerError("Nothing to hold yet - add a supplier or an item first.");
+      return false;
+    }
+    const draft: HeldPurchaseDraft = {
+      supplierId, supplierNameInput, supplierPhoneInput, billDate, supplierBillNumber, stateOfSupply, lines,
+      gstPercent, roundOff, payments, payFull, notes, billImageId, billImageName,
+    };
+    const name = partyName;
+    setHolding(true);
+    try {
+      await holdBillMutation({
+        heldBillId: heldBillId ?? undefined,
+        kind: "purchase",
+        customerName: name,
+        itemCount: lines.filter((l) => l.boxId || l.label.trim()).length,
+        totalPaise: totals.totalPaise,
+        draft: JSON.stringify(draft),
+      });
+      resetForm();
+      setHoldNotice(`Purchase from ${name} is on hold. Click its yellow tab above to finish it.`);
+      return true;
+    } catch (e) {
+      setServerError(getUserErrorMessage(e, "Could not hold the purchase."));
+      return false;
+    } finally {
+      setHolding(false);
+    }
+  }
+
+  async function holdBill() {
+    if ((await holdCurrentBill()) && heldParam) router.replace("/purchases/new");
+  }
+
+  /** "+": start a blank purchase; the one on screen (if any) is put on hold first. */
+  async function startNewBill() {
+    if (billHasContent()) {
+      await holdBill();
+      return;
+    }
+    resetForm();
+    if (heldParam) router.replace("/purchases/new");
+  }
+
+  /** Opens a held purchase; the one on screen (if any) is put on hold first so nothing is lost. */
+  async function openHeldBill(id: Id<"heldBills">) {
+    if (id === heldBillId) return;
+    if (billHasContent() && !(await holdCurrentBill())) return;
+    setRestoredHeldId(null);
+    router.push(`/purchases/new?held=${id}`);
+  }
+
+  /** Deletes the held purchase on screen (the supplier left) and clears the screen. */
+  async function deleteCurrentHeld() {
+    if (!heldBillId) return;
+    setConfirmDeleteCurrent(false);
+    try {
+      await removeHeldBill({ heldBillId });
+      resetForm();
+      setHoldNotice(`Held purchase from ${partyName} deleted.`);
+      if (heldParam) router.replace("/purchases/new");
+    } catch (e) {
+      setServerError(getUserErrorMessage(e, "Could not delete the held purchase."));
+    }
   }
 
   async function savePurchase(after: "list" | "new") {
@@ -670,9 +818,12 @@ export default function NewPurchasePage() {
         router.push(`/purchases/invoices?updated=${editPurchaseId}`);
         return;
       }
-      const result = await createPurchase({ ...common, idempotencyKey });
-      if (after === "new") resetForm();
-      else router.push(`/purchases/invoices?created=${result.purchaseId}`);
+      const result = await createPurchase({ ...common, idempotencyKey, heldBillId: heldBillId ?? undefined });
+      if (after === "new") {
+        resetForm();
+        setHoldNotice(null);
+        if (heldParam) router.replace("/purchases/new");
+      } else router.push(`/purchases/invoices?created=${result.purchaseId}`);
     } catch (e) {
       setServerError(getUserErrorMessage(e, "Could not save the purchase. You may need Purchase Manager access, or check the item details."));
     } finally {
@@ -690,25 +841,61 @@ export default function NewPurchasePage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{editPurchaseId ? "Edit Purchase" : "New Purchase"}</h1>
-          <Button type="button" variant="outline" size="sm" onClick={() => window.open("/purchases/new", "_blank", "noopener")} title="Open another blank purchase in a new tab; this one stays open">
-            <Plus className="h-4 w-4" />
-            New Bill Tab
-          </Button>
+    <div className="erp-fill flex w-full flex-col">
+    <div className="erp-scroll flex min-h-0 flex-1 flex-col gap-3 pb-3 lg:overflow-y-auto lg:pr-1">
+      <div className="flex shrink-0 flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">{editPurchaseId ? "Edit Purchase" : "New Purchase"}</h1>
+          <p className="text-xs text-muted-foreground">
+            {editPurchaseId
+              ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
+              : "Choose the box, enter gross and net weight — the gross weight and pieces are added to the box."}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {editPurchaseId
-            ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
-            : "Choose the box, enter gross and net weight — the gross weight and pieces are added to the box."}
-        </p>
       </div>
 
       <MetalRateTicker currentRates={currentRates} />
 
-      <Card className="border-border/80 shadow-xs">
+      {/* Purchase tabs: the purchase on screen, then held purchases (yellow). */}
+      {!editPurchaseId && (
+        <div className="flex flex-wrap items-center gap-1.5 border-b pb-2">
+          <div className="flex items-center gap-2 rounded-t-lg border-t border-l border-r bg-card px-3 py-1.5 text-xs font-semibold shadow-xs">
+            <span>{heldBillId ? `Held · ${partyName}` : "Purchase #1"}</span>
+            {heldBillId && confirmDeleteCurrent ? (
+              <HeldDeleteConfirm onYes={() => void deleteCurrentHeld()} onNo={() => setConfirmDeleteCurrent(false)} />
+            ) : (
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => (heldBillId ? setConfirmDeleteCurrent(true) : resetForm())}
+                title={heldBillId ? "Delete this held purchase" : "Reset purchase"}
+                aria-label={heldBillId ? "Delete this held purchase" : "Reset purchase"}
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <HeldBillTabs
+            kind="purchase"
+            currentId={heldBillId}
+            disabled={holding}
+            onOpen={(id) => void openHeldBill(id)}
+            onDeleted={(name) => setHoldNotice(`Held purchase from ${name} deleted.`)}
+            onError={setServerError}
+          />
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded border border-dashed text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => void startNewBill()}
+            title="New purchase (the one on screen is put on hold)"
+            aria-label="New purchase"
+          >
+            +
+          </button>
+        </div>
+      )}
+
+      <Card className="shrink-0 border-border/80 shadow-xs">
         <CardContent className="p-4 sm:p-5">
           <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
             <div className="space-y-2">
@@ -761,11 +948,11 @@ export default function NewPurchasePage() {
 
       {prefs?.items.barcodeScan !== false && <BarcodeScanInput onBox={(box) => addRow(box._id)} />}
 
-      {/* Item grid: one row per item, same as the sales bill. Each row's gross weight and pieces go into its box. */}
-      <Card className="overflow-hidden border-border/80 shadow-xs">
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b bg-muted/20 p-4">
+      {/* Items: one card per item, same as the sales bill. Each item's gross weight and pieces go into its box. */}
+      <Card className="shrink-0 gap-0 overflow-hidden border-border/80 py-0 shadow-xs">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2.5">
           <CardTitle className="text-sm font-bold uppercase tracking-wide">Items in this purchase ({lines.length})</CardTitle>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">
             {gstCompany
               ? "Priced on net weight (or price per piece); the gross weight and pieces go into the selected box — or loose GST item stock when no box is chosen."
               : "Priced on net weight (or price per piece); the gross weight and pieces are added to the selected box."}
@@ -775,148 +962,141 @@ export default function NewPurchasePage() {
           <datalist id="purchase-items">
             {products.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
           </datalist>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-xs">
-              <thead>
-                <tr className="border-b bg-muted/30 text-left font-semibold text-muted-foreground">
-                  <th className="w-8 px-2 py-2.5">SL</th>
-                  <th className="px-2 py-2.5">BOX NO</th>
-                  <th className="px-2 py-2.5">CATEGORY</th>
-                  <th className="px-2 py-2.5">DESCRIPTION</th>
-                  <th className="px-2 py-2.5">PURITY</th>
-                  <th className="px-2 py-2.5">PCS</th>
-                  <th className="px-2 py-2.5">GROSS WT (g)</th>
-                  <th className="px-2 py-2.5">NET WT (g)</th>
-                  <th className="px-2 py-2.5">RATE / G (₹)</th>
-                  <th className="px-2 py-2.5">PRICE / PC (₹)</th>
-                  <th className="px-2 py-2.5">MAKING</th>
-                  <th className="px-2 py-2.5">DISC. (₹ / %)</th>
-                  <th className="px-2 py-2.5 text-right">AMOUNT (₹)</th>
-                  <th className="w-8 px-2 py-2.5" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/50">
-                {lines.map((line, index) => {
-                  const computed = computedLines[index];
-                  const error = lineErrors[index];
-                  const box = boxById.get(line.boxId);
-                  const before = line.boxId ? boxBefore(line.boxId) : null;
-                  const added = addedByBox.get(line.boxId);
-                  return (
-                    <tr
-                      key={line.key}
-                      data-line={line.key}
-                      className="align-top hover:bg-muted/20"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && index === lines.length - 1) {
-                          e.preventDefault();
-                          addRow();
-                        }
-                      }}
-                    >
-                      <td className="px-2 py-2 pt-3.5 font-mono text-muted-foreground">{String(index + 1).padStart(2, "0")}</td>
-                      <td className="px-2 py-2">
-                        <BoxPicker
-                          ariaLabel={`Row ${index + 1} box`}
-                          boxes={boxes as BoxRow[]}
-                          purities={activePurities}
-                          rateByPurity={rateByPurity}
-                          value={line.boxId}
-                          metal={line.metal}
-                          priceKind="purchase"
-                          emptyLabel={gstCompany ? "Loose GST stock" : undefined}
-                          onPick={(boxId, entry) => pickBoxItem(index, boxId, entry)}
-                        />
-                        {box && before && (
-                          <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
-                            Has {mgToGramsDisplay(before.weightMg)} g · {before.pieces} pcs
-                            {added ? ` → ${mgToGramsDisplay(before.weightMg + added.weightMg)} g · ${before.pieces + added.pieces} pcs` : ""}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-2 py-2">
-                        <select aria-label={`Row ${index + 1} category`} className="h-8 w-20 rounded-md border bg-background px-2 text-xs" value={line.metal} onChange={(e) => pickMetal(index, e.target.value as Metal | "")}>
-                          <option value="">—</option>
-                          <option value="gold">Gold</option>
-                          <option value="silver">Silver</option>
+          <div className="erp-scroll divide-y divide-border/60 overflow-auto lg:max-h-[62svh]">
+            {lines.map((line, index) => {
+              const computed = computedLines[index];
+              const error = lineErrors[index];
+              const box = boxById.get(line.boxId);
+              const before = line.boxId ? boxBefore(line.boxId) : null;
+              const added = addedByBox.get(line.boxId);
+              return (
+                <div
+                  key={line.key}
+                  data-line={line.key}
+                  className="space-y-3 px-3 py-3 hover:bg-muted/10"
+                  onKeyDown={(e) => {
+                    // Enter on the last item adds the next one.
+                    if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && index === lines.length - 1) {
+                      e.preventDefault();
+                      addRow();
+                    }
+                  }}
+                >
+                  {/* Item heading: number, line amount, remove */}
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-muted-foreground">
+                      Item {String(index + 1).padStart(2, "0")}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Amount</span>
+                      <span className="text-base font-bold tabular-nums text-foreground">{formatPaise(computed.lineTotalPaise)}</span>
+                      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove item ${index + 1}`} onClick={() => removeLine(index)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Row 1: what the item is */}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 md:grid-cols-4">
+                    <LineField label="Box No">
+                      <BoxPicker
+                        ariaLabel={`Row ${index + 1} box`}
+                        boxes={boxes as BoxRow[]}
+                        purities={activePurities}
+                        rateByPurity={rateByPurity}
+                        value={line.boxId}
+                        metal={line.metal}
+                        priceKind="purchase"
+                        emptyLabel={gstCompany ? "Loose GST stock" : undefined}
+                        onPick={(boxId, entry) => pickBoxItem(index, boxId, entry)}
+                        triggerClassName="w-full min-w-0"
+                      />
+                      {box && before && (
+                        <p className="mt-1 text-[10px] tabular-nums text-muted-foreground">
+                          Has {mgToGramsDisplay(before.weightMg)} g · {before.pieces} pcs
+                          {added ? ` → ${mgToGramsDisplay(before.weightMg + added.weightMg)} g · ${before.pieces + added.pieces} pcs` : ""}
+                        </p>
+                      )}
+                    </LineField>
+                    <LineField label="Category">
+                      <select aria-label={`Row ${index + 1} category`} className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm" value={line.metal} onChange={(e) => pickMetal(index, e.target.value as Metal | "")}>
+                        <option value="">—</option>
+                        <option value="gold">Gold</option>
+                        <option value="silver">Silver</option>
+                      </select>
+                    </LineField>
+                    <LineField label="Description">
+                      <Input aria-label={`Row ${index + 1} description`} list="purchase-items" placeholder="Item name or code" value={line.label} maxLength={80} onChange={(e) => typeDescription(index, e.target.value)} className={`${cellInput} w-full min-w-0`} />
+                      {line.label.trim() && !line.productId && !blockNewItems && <p className="mt-1 text-[10px] text-muted-foreground">New item — added to Item List on save</p>}
+                      {line.productId && productById.get(line.productId)?.sku && <p className="mt-1 text-[10px] text-muted-foreground">Code {productById.get(line.productId)?.sku}</p>}
+                    </LineField>
+                    <LineField label="Purity">
+                      <select aria-label={`Row ${index + 1} purity`} className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm" value={line.metalPurityId} onChange={(e) => pickPurity(index, e.target.value)}>
+                        <option value="">—</option>
+                        {activePurities.filter((p) => !line.metal || p.metal === line.metal).map((p) => <option key={p._id} value={p._id}>{p.label}</option>)}
+                      </select>
+                    </LineField>
+                  </div>
+
+                  {/* Row 2: quantity, weight and price */}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 md:grid-cols-5">
+                    <LineField label="Pcs">
+                      <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => updateLine(index, { piecesText: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
+                    </LineField>
+                    <LineField label="Gross Wt (g)">
+                      <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
+                    </LineField>
+                    <LineField label="Net Wt (g)">
+                      <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono text-emerald-600`} />
+                    </LineField>
+                    <LineField label="Rate / g (₹)">
+                      <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
+                    </LineField>
+                    <LineField label="Price / pc (₹)">
+                      <Input aria-label={`Row ${index + 1} price per piece`} inputMode="decimal" placeholder="by rate/g" title="Purchase price per piece — leave blank to price by net weight × rate per gram" value={line.unitPriceRupees} onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
+                    </LineField>
+                  </div>
+
+                  {/* Row 3: charges and discount */}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 md:grid-cols-4">
+                    <LineField label="Making">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <select aria-label={`Row ${index + 1} making charge type`} className="h-9 shrink-0 rounded-md border bg-background px-1 text-sm" value={line.makingMode} onChange={(e) => updateLine(index, { makingMode: e.target.value as MakingMode })}>
+                          {MAKING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                         </select>
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} description`} list="purchase-items" placeholder="Item name or code" value={line.label} maxLength={80} onChange={(e) => typeDescription(index, e.target.value)} className={`${cellInput} w-40`} />
-                        {line.label.trim() && !line.productId && !blockNewItems && <p className="mt-1 text-[10px] text-muted-foreground">New item — added to Item List on save</p>}
-                        {line.productId && productById.get(line.productId)?.sku && <p className="mt-1 text-[10px] text-muted-foreground">Code {productById.get(line.productId)?.sku}</p>}
-                      </td>
-                      <td className="px-2 py-2">
-                        <select aria-label={`Row ${index + 1} purity`} className="h-8 w-24 rounded-md border bg-background px-2 text-xs" value={line.metalPurityId} onChange={(e) => pickPurity(index, e.target.value)}>
-                          <option value="">—</option>
-                          {activePurities.filter((p) => !line.metal || p.metal === line.metal).map((p) => <option key={p._id} value={p._id}>{p.label}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => updateLine(index, { piecesText: e.target.value })} className={`${cellInput} w-14 text-right`} />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-20 text-right font-mono`} />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${cellInput} w-20 text-right font-mono text-emerald-600`} />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${cellInput} w-24 text-right font-mono`} />
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} price per piece`} inputMode="decimal" placeholder="by rate/g" title="Purchase price per piece — leave blank to price by net weight × rate per gram" value={line.unitPriceRupees} onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })} className={`${cellInput} w-24 text-right font-mono`} />
-                      </td>
-                      <td className="px-2 py-2">
-                        <div className="flex items-center gap-1">
-                          <select aria-label={`Row ${index + 1} making charge type`} className="h-8 rounded-md border bg-background px-1 text-xs" value={line.makingMode} onChange={(e) => updateLine(index, { makingMode: e.target.value as MakingMode })}>
-                            {MAKING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
-                          </select>
-                          <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${cellInput} w-16 text-right`} />
-                        </div>
-                        {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && <p className="mt-1 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>}
-                      </td>
-                      <td className="px-2 py-2">
-                        <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${cellInput} w-20 text-right`} />
-                      </td>
-                      <td className="px-2 py-2 pt-3.5 text-right font-bold tabular-nums text-foreground">
-                        {formatPaise(computed.lineTotalPaise)}
-                        {error && <p className="mt-1 max-w-40 text-left text-[10px] font-medium text-destructive">{error}</p>}
-                      </td>
-                      <td className="px-2 py-2">
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove row ${index + 1}`} onClick={() => removeLine(index)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-              {lines.length > 0 && (
-                <tfoot>
-                  <tr className="border-t bg-muted/20 font-semibold">
-                    <td colSpan={5} className="px-2 py-2 text-right text-muted-foreground">Total</td>
-                    <td className="px-2 py-2 text-right tabular-nums">{lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0)}</td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0))}</td>
-                    <td className="px-2 py-2 text-right font-mono tabular-nums text-emerald-600">{mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.netWeightMg, 0))}</td>
-                    <td colSpan={4} />
-                    <td className="px-2 py-2 text-right tabular-nums">{formatPaise(totals.subtotalPaise)}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              )}
-            </table>
+                        <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
+                      </div>
+                      {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && <p className="mt-1 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>}
+                    </LineField>
+                    <LineField label="Discount (₹ / %)">
+                      <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
+                    </LineField>
+                  </div>
+
+                  {error && <p className="text-xs font-medium text-destructive">{error}</p>}
+                </div>
+              );
+            })}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3">
+          {lines.length > 0 && (
+            <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 border-t bg-muted/20 px-3 py-2 text-sm font-semibold">
+              <span className="text-muted-foreground">Total</span>
+              <span className="tabular-nums">{lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0)} pcs</span>
+              <span className="font-mono tabular-nums">Gross {mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0))} g</span>
+              <span className="font-mono tabular-nums text-emerald-600">Net {mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.netWeightMg, 0))} g</span>
+              <span className="text-base tabular-nums">{formatPaise(totals.subtotalPaise)}</span>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
             <Button type="button" variant="outline" size="sm" onClick={() => addRow()}>
               <Plus className="h-3.5 w-3.5" /> Add Row
             </Button>
-            <p className="text-[11px] text-muted-foreground">Tip: press Enter in the last row to add a new row. Typing an item name or code fills its purity, weights, purchase price and making charge.</p>
+            <p className="text-[11px] text-muted-foreground">Tip: press Enter in the last item to add a new one. Typing an item name or code fills its purity, weights, purchase price and making charge.</p>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
+      <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => setShowNotes((v) => !v)}>
@@ -1027,21 +1207,55 @@ export default function NewPurchasePage() {
               <div className="flex justify-between font-medium"><span>Balance payable to supplier</span><span>{formatPaise(totals.balancePaise)}</span></div>
             </div>
 
-            {serverError && <p className="text-sm text-destructive">{serverError}</p>}
-
-            <div className="flex flex-wrap justify-end gap-2">
-              {!editPurchaseId && (
-                <Button type="button" variant="outline" disabled={submitting} onClick={() => savePurchase("new")}>
-                  Save &amp; New
-                </Button>
-              )}
-              <Button type="button" disabled={submitting} onClick={() => savePurchase("list")}>
-                {submitting ? "Saving…" : editPurchaseId ? "Save Changes" : "Save Purchase"}
-              </Button>
-            </div>
           </CardContent>
         </Card>
       </div>
+    </div>
+
+    {/* Pinned bottom bar: the purchase total and the hold / save actions are always on screen. */}
+    <div className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t bg-card/95 px-3 py-2.5 shadow-[0_-6px_16px_rgb(17_45_78/6%)] backdrop-blur">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+        <span className="text-muted-foreground">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-muted-foreground">Total</span>
+          <span className="font-mono text-lg font-bold tabular-nums text-primary">{formatPaise(totals.totalPaise)}</span>
+        </span>
+        <span className="text-muted-foreground">Paid <span className="font-mono text-foreground">{formatPaise(totals.amountPaidPaise)}</span></span>
+        <span className={totals.balancePaise > 0 ? "font-semibold text-rose-600" : "text-muted-foreground"}>Balance payable <span className="font-mono">{formatPaise(Math.max(0, totals.balancePaise))}</span></span>
+        {serverError && <p className="w-full text-xs font-medium text-destructive">{serverError}</p>}
+        {holdNotice && !serverError && <p className="w-full text-xs font-medium text-amber-700">{holdNotice}</p>}
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {!editPurchaseId && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 border-amber-300 text-amber-800 hover:bg-amber-50"
+            disabled={submitting || holding}
+            onClick={() => void holdBill()}
+            title="Park this purchase and start a new one"
+          >
+            <Pause className="h-3.5 w-3.5 mr-1" />
+            {holding ? "Holding..." : "Hold"}
+          </Button>
+        )}
+        {!editPurchaseId && (
+          <Button type="button" variant="outline" size="sm" className="h-9" disabled={submitting} onClick={() => savePurchase("new")}>
+            Save &amp; New
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 bg-[#1a73e8] font-semibold text-white shadow-xs hover:bg-[#1557b0]"
+          disabled={submitting}
+          onClick={() => savePurchase("list")}
+        >
+          {submitting ? "Saving…" : editPurchaseId ? "Save Changes" : "Save Purchase"}
+        </Button>
+      </div>
+    </div>
     </div>
   );
 }

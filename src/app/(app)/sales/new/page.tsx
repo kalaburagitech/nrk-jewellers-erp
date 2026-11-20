@@ -10,6 +10,7 @@ import { BoxPicker } from "@/components/box-picker";
 import type { BoxEntryRow } from "@/components/box-items";
 import { gstRateBp, isInterState } from "@/lib/gst-rate";
 import { MessageCircle, Minus, Pause, Plus, Printer, Search, Trash2 } from "lucide-react";
+import { HeldBillTabs, HeldDeleteConfirm, LineField } from "@/components/held-bills";
 import { MetalRateTicker } from "@/components/metal-rate-ticker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,16 +159,6 @@ function blankLine(taxConfigurationId: string): BillLine {
 
 const cellInput = "h-9 text-sm";
 
-/** One labelled field of a bill item card. */
-function LineField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
-      {children}
-    </div>
-  );
-}
-
 /**
  * Customer name is a type-to-search-or-create field, not a plain dropdown —
  * an operator can pick an existing customer or just type a new one, with the
@@ -257,17 +248,6 @@ function CustomerPicker({
   );
 }
 
-/** Inline "Delete? Yes / No" so a held bill is never removed by one stray click. */
-function HeldDeleteConfirm({ onYes, onNo }: { onYes: () => void; onNo: () => void }) {
-  return (
-    <span className="flex items-center gap-1 text-[11px] font-semibold">
-      <span className="text-destructive">Delete?</span>
-      <button type="button" className="rounded bg-destructive px-1.5 text-white hover:bg-destructive/90" onClick={onYes}>Yes</button>
-      <button type="button" className="rounded border px-1.5 text-muted-foreground hover:text-foreground" onClick={onNo}>No</button>
-    </span>
-  );
-}
-
 /** Everything on the New Bill form, saved when a bill is put on hold. */
 type HeldDraft = {
   invoiceNumber: string;
@@ -321,7 +301,6 @@ export default function NewBillPage() {
   const createTaxConfig = useMutation(api.taxConfigurations.create);
   // Held bills: a bill parked with "Hold" so the counter can serve another customer, then finish it later.
   const heldParam = searchParams.get("held") as Id<"heldBills"> | null;
-  const heldBills = useQuery(api.heldBills.list);
   const heldBillToOpen = useQuery(api.heldBills.get, heldParam && !editSaleId ? { heldBillId: heldParam } : "skip");
   const holdBillMutation = useMutation(api.heldBills.hold);
   const removeHeldBill = useMutation(api.heldBills.remove);
@@ -999,6 +978,16 @@ export default function NewBillPage() {
     if ((await holdCurrentBill()) && heldParam) router.replace("/sales/new");
   }
 
+  /** "+": start a blank bill; the one on screen (if any) is put on hold first. */
+  async function startNewBill() {
+    if (billHasContent()) {
+      await holdBill();
+      return;
+    }
+    resetForm();
+    if (heldParam) router.replace("/sales/new");
+  }
+
   /** Opens a held bill; the bill on screen (if any) is put on hold first so nothing is lost. */
   async function openHeldBill(id: Id<"heldBills">) {
     if (id === heldBillId) return;
@@ -1259,42 +1248,22 @@ export default function NewBillPage() {
                 </button>
               )}
             </div>
-            {!editSaleId && heldBills?.filter((h) => h._id !== heldBillId).map((h) => (
-              <div
-                key={h._id}
-                className="flex items-center gap-1.5 rounded-t-lg border-t border-l border-r border-amber-300 bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
-              >
-                <button
-                  type="button"
-                  disabled={holding}
-                  onClick={() => void openHeldBill(h._id)}
-                  title={`On hold since ${new Date(h.updatedAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })} - click to open and finish this bill`}
-                  className="flex items-center gap-1.5 hover:underline"
-                >
-                  <Pause className="h-3 w-3" />
-                  <span className="max-w-32 truncate">{h.customerName}</span>
-                  <span className="font-mono tabular-nums">{formatPaise(h.totalPaise)}</span>
-                </button>
-                {confirmDeleteHeldId === h._id ? (
-                  <HeldDeleteConfirm onYes={() => void deleteHeldBill(h._id, h.customerName)} onNo={() => setConfirmDeleteHeldId(null)} />
-                ) : (
-                  <button
-                    type="button"
-                    className="ml-0.5 text-amber-700/70 hover:text-destructive"
-                    onClick={() => setConfirmDeleteHeldId(h._id)}
-                    title="Delete this held bill (the customer left)"
-                    aria-label={`Delete held bill for ${h.customerName}`}
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
+            {!editSaleId && (
+              <HeldBillTabs
+                kind="sale"
+                currentId={heldBillId}
+                disabled={holding}
+                onOpen={(id) => void openHeldBill(id)}
+                onDeleted={(name) => setHoldNotice(`Held bill for ${name} deleted.`)}
+                onError={setServerError}
+              />
+            )}
             <button
               type="button"
               className="h-6 w-6 rounded border border-dashed flex items-center justify-center text-xs text-muted-foreground hover:text-foreground"
-              onClick={resetForm}
-              title="New sale tab"
+              onClick={() => void startNewBill()}
+              title="New sale (the bill on screen is put on hold)"
+              aria-label="New sale"
             >
               +
             </button>

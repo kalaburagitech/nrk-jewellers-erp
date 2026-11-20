@@ -483,6 +483,8 @@ export const create = mutation({
     billImageStorageId: v.optional(v.id("_storage")),
     billDate: v.optional(v.number()),
     idempotencyKey: v.string(),
+    // The held purchase this was finished from; it is removed once the purchase is booked.
+    heldBillId: v.optional(v.id("heldBills")),
   },
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
@@ -529,6 +531,11 @@ export const create = mutation({
       metadata: { invoiceNumber, totalPaise: result.totalPaise, itemCount: result.itemCount },
       createdAt: Date.now(),
     });
+
+    if (args.heldBillId) {
+      const held = await ctx.db.get(args.heldBillId);
+      if (held && held.organizationId === auth.organizationId) await ctx.db.delete(held._id);
+    }
 
     return { purchaseId, duplicate: false };
   },

@@ -16,8 +16,6 @@ import {
   Calendar,
   Building2,
   FileSpreadsheet,
-  Pause,
-  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { periodRange } from "@/components/report-kit";
@@ -37,6 +35,7 @@ import { TransactionReportDialog } from "@/components/transaction-report-dialog"
 import { DeleteDocumentButton } from "@/components/delete-document-button";
 import { useRecordSelection } from "@/hooks/use-record-selection";
 import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { HeldBillsCard } from "@/components/held-bills";
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import { getUserErrorMessage } from "@/lib/user-error";
@@ -151,101 +150,6 @@ const localDay = (ms: number) => {
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-
-/** Bills parked with "Hold" on New Bill: open one to finish and generate the invoice, or drop it. */
-function HeldBillsCard() {
-  const heldBills = useQuery(api.heldBills.list);
-  const members = useQuery(api.memberships.listMembers);
-  const removeHeld = useMutation(api.heldBills.remove);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmId, setConfirmId] = useState<string | null>(null);
-  if (!heldBills || heldBills.length === 0) return null;
-  const memberName = new Map(members?.map((m) => [m.userId as string, m.name]) ?? []);
-  return (
-    <Card className="border-amber-300 bg-amber-50/40 shadow-xs dark:border-amber-800 dark:bg-amber-950/20">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200 px-5 py-3 dark:border-amber-800">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-200">
-          <Pause className="h-4 w-4" /> On hold - waiting to be billed ({heldBills.length})
-        </h3>
-        <span className="text-xs text-muted-foreground">No invoice number, stock or payment is booked until you open the bill and save it.</span>
-      </div>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Customer</TableHead>
-              <TableHead className="text-right">Items</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Held at</TableHead>
-              <TableHead>Held by</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {heldBills.map((h) => (
-              <TableRow key={h._id}>
-                <TableCell className="font-medium">{h.customerName}</TableCell>
-                <TableCell className="text-right tabular-nums">{h.itemCount}</TableCell>
-                <TableCell className="text-right font-semibold tabular-nums">{formatPaise(h.totalPaise)}</TableCell>
-                <TableCell className="text-xs text-muted-foreground">
-                  {new Date(h.updatedAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{memberName.get(h.createdByUserId) ?? "-"}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-1.5">
-                    <Button asChild size="sm" className="h-8 bg-[#1a73e8] text-white hover:bg-[#1557b0]">
-                      <Link href={`/sales/new?held=${h._id}`}>
-                        <Receipt className="h-3.5 w-3.5" /> Open &amp; generate bill
-                      </Link>
-                    </Button>
-                    {confirmId === h._id ? (
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="font-semibold text-destructive">Delete this bill?</span>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="destructive"
-                          className="h-8"
-                          onClick={async () => {
-                            setError(null);
-                            setConfirmId(null);
-                            try {
-                              await removeHeld({ heldBillId: h._id });
-                            } catch (e) {
-                              setError(getUserErrorMessage(e, "Could not delete the held bill."));
-                            }
-                          }}
-                        >
-                          Yes, delete
-                        </Button>
-                        <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => setConfirmId(null)}>
-                          No
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                        aria-label={`Delete held bill for ${h.customerName}`}
-                        title="Delete this held bill (the customer left)"
-                        onClick={() => setConfirmId(h._id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-        {error && <p className="px-5 py-2 text-xs font-medium text-destructive">{error}</p>}
-      </CardContent>
-    </Card>
-  );
-}
 
 // Sale Invoices matching Page 16 of Client PDF
 export default function SalesInvoicesPage() {
@@ -495,7 +399,7 @@ export default function SalesInvoicesPage() {
         </Card>
       </div>
 
-      <HeldBillsCard />
+      <HeldBillsCard kind="sale" />
 
       <BulkRecordActions selection={selection} table="sales" />
 

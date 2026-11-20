@@ -776,7 +776,9 @@ export default defineSchema({
   // moves until it is opened and saved as a real bill, which removes it.
   heldBills: defineTable({
     organizationId: v.id("organizations"),
-    customerName: v.string(),
+    // Which screen it was held from; unset = a sale (bills held before purchases could be held).
+    kind: v.optional(v.union(v.literal("sale"), v.literal("purchase"))),
+    customerName: v.string(), // the customer (sale) or supplier (purchase)
     itemCount: v.number(),
     totalPaise: v.number(),
     draft: v.string(), // the bill form as JSON, restored when the bill is reopened
