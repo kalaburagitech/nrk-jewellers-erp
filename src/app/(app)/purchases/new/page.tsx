@@ -1040,7 +1040,7 @@ export default function NewPurchasePage() {
 
                   {/* Row 2: quantity, weight and price */}
                   <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 md:grid-cols-5">
-                    <LineField label="Pcs">
+                    <LineField label="Pcs (optional)">
                       <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => updateLine(index, { piecesText: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
                     </LineField>
                     <LineField label="Gross Wt (g)">

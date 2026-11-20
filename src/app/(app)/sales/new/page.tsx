@@ -1,7 +1,8 @@
 "use client";
 import { getUserErrorMessage } from "@/lib/user-error";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
@@ -9,15 +10,12 @@ import { BarcodeScanInput } from "@/components/barcode-scan-input";
 import { BoxPicker } from "@/components/box-picker";
 import type { BoxEntryRow } from "@/components/box-items";
 import { gstRateBp, isInterState } from "@/lib/gst-rate";
-import { MessageCircle, Minus, Pause, Plus, Printer, Search, Trash2 } from "lucide-react";
-import { HeldBillTabs, HeldDeleteConfirm, LineField } from "@/components/held-bills";
-import { MetalRateTicker } from "@/components/metal-rate-ticker";
+import { Calculator, Coins, FileText, Gem, MessageCircle, Minus, Pause, Plus, Printer, Receipt, Save, Scale, Search, ShoppingCart, Trash2, Wallet } from "lucide-react";
+import { HeldBillTabs, HeldDeleteConfirm } from "@/components/held-bills";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
@@ -157,7 +155,16 @@ function blankLine(taxConfigurationId: string): BillLine {
   };
 }
 
-const cellInput = "h-9 text-sm";
+/** New Bill gold layout: panels, headings and the item table. */
+const goldPanel = "overflow-hidden rounded-xl border border-amber-300/80 bg-gradient-to-b from-amber-50/90 to-card shadow-sm dark:border-amber-500/30 dark:from-amber-950/30";
+const goldHead = "flex items-center gap-2 border-b border-amber-200/80 bg-gradient-to-r from-amber-100 via-amber-50/60 to-transparent px-3 py-2 font-serif text-[15px] font-bold text-amber-950 dark:border-amber-500/20 dark:from-amber-900/40 dark:via-amber-950/10 dark:text-amber-100";
+const goldIcon = "h-4 w-4 text-amber-600 dark:text-amber-400";
+const formRow = "grid grid-cols-[84px_1fr] items-center gap-2";
+const formLabel = "text-xs font-medium text-muted-foreground";
+const thCls = "border-r border-amber-600/40 px-1.5 py-2 text-center text-[11px] font-semibold leading-tight text-amber-50 last:border-r-0";
+const tdCls = "border-r border-amber-200/70 px-1 py-1 align-top last:border-r-0 dark:border-amber-500/15";
+const tblInput = "h-8 px-1.5 text-sm";
+const pillBtn = "h-9 rounded-full border-amber-300 bg-card px-4 text-amber-900 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-100 dark:hover:bg-amber-950/40";
 
 /**
  * Customer name is a type-to-search-or-create field, not a plain dropdown —
@@ -1209,288 +1216,333 @@ export default function NewBillPage() {
     );
   }
 
+  // Account balance panel: the picked customer's running balance (positive = they owe the shop).
+  const selectedCustomer = customerId ? customers.find((c) => c._id === customerId) : undefined;
+  const customerDuesPaise = selectedCustomer ? (selectedCustomer.currentBalancePaise ?? selectedCustomer.openingBalancePaise ?? 0) : 0;
+  const ratesWithLatest = (currentRates ?? []).filter((r) => r.latest);
+  const ratesAsOf = ratesWithLatest.length > 0 ? Math.max(...ratesWithLatest.map((r) => r.latest!.effectiveAt)) : null;
+  const sumPieces = lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0);
+  const sumGrossMg = computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0);
+  const sumNetMg = computedLines.reduce((sum, l) => sum + l.netWeightMg, 0);
+  const sumStoneMg = Math.max(0, sumGrossMg - sumNetMg);
+  const sumMakingPaise = computedLines.reduce((sum, l) => sum + l.makingChargePaise, 0);
+  const sumLineDiscountPaise = computedLines.reduce((sum, l) => sum + (l.lineDiscountPaise ?? 0), 0);
+  const columnCount = 15 + (isGst ? 1 : 0) + (showCost ? 1 : 0);
+
   return (
     <div className="erp-fill flex w-full flex-col">
     <div className="erp-scroll flex min-h-0 flex-1 flex-col gap-3 pb-3 lg:overflow-y-auto lg:pr-1">
-      <div className="flex shrink-0 flex-wrap items-end justify-between gap-x-4 gap-y-1">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
-          <p className="text-xs text-muted-foreground">
-            {editSaleId
-              ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
-              : "Choose the box, enter gross and net weight, see every charge live, and save the bill."}
-          </p>
+      {/* Title banner */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/80 bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 px-4 py-2.5 shadow-sm dark:border-amber-500/30 dark:from-amber-950/50 dark:via-amber-900/30 dark:to-amber-950/50">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-b from-amber-400 to-amber-600 text-white shadow">
+            <ShoppingCart className="h-5 w-5" />
+          </span>
+          <div>
+            <h1 className="font-serif text-2xl font-bold tracking-tight text-amber-950 dark:text-amber-100">
+              {editSaleId ? "Edit Bill" : "Sales Billing"}
+            </h1>
+            <p className="text-xs text-amber-900/70 dark:text-amber-200/70">
+              {editSaleId
+                ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
+                : "Choose the box, enter gross and net weight, see every charge live, and save the bill."}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Credit / Cash */}
+          <div className="flex items-center gap-2 rounded-full border border-amber-300/80 bg-card/80 px-3 py-1 text-xs">
+            <span className={`font-semibold ${isCredit ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Credit</span>
+            <Switch checked={!isCredit} onCheckedChange={(checked) => setIsCredit(!checked)} />
+            <span className={`font-semibold ${!isCredit ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Cash</span>
+          </div>
+          {/* Daily Sales vs GST */}
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                isGst
+                  ? "border border-primary/20 bg-primary/10 text-primary"
+                  : "border border-emerald-500/20 bg-emerald-500/10 text-emerald-600"
+              }`}
+            >
+              {isGst ? "GST Tax Invoice" : "Daily Sales · Counter"}
+            </span>
+            {!gstCompany && (
+              <Button type="button" variant="ghost" size="sm" className="h-7 text-[11px] text-muted-foreground underline" onClick={() => setIsGst(!isGst)}>
+                Switch to {isGst ? "Daily Sales" : "GST Invoice"}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
 
-      <MetalRateTicker currentRates={currentRates} />
-
-      <>
-        {/* Vyapar Sale Header Tabs matching Page 17 */}
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
-          <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-2 rounded-t-lg border-t border-l border-r bg-card px-3 py-1.5 text-xs font-semibold shadow-xs">
-              <span>{heldBillId ? `Held · ${customerNameInput.trim() || "Walk-in customer"}` : "Sale #1"}</span>
-              {heldBillId && confirmDeleteHeldId === heldBillId ? (
-                <HeldDeleteConfirm
-                  onYes={() => void deleteHeldBill(heldBillId, customerNameInput.trim() || "Walk-in customer")}
-                  onNo={() => setConfirmDeleteHeldId(null)}
-                />
-              ) : (
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-destructive"
-                  onClick={() => (heldBillId ? setConfirmDeleteHeldId(heldBillId) : resetForm())}
-                  title={heldBillId ? "Delete this held bill (the customer left)" : "Reset bill"}
-                  aria-label={heldBillId ? "Delete this held bill" : "Reset bill"}
-                >
-                  ×
-                </button>
-              )}
-            </div>
-            {!editSaleId && (
-              <HeldBillTabs
-                kind="sale"
-                currentId={heldBillId}
-                disabled={holding}
-                onOpen={(id) => void openHeldBill(id)}
-                onDeleted={(name) => setHoldNotice(`Held bill for ${name} deleted.`)}
-                onError={setServerError}
-              />
-            )}
+      {/* Bill tabs: this bill, held bills, + new */}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300/80 bg-card px-3 py-1.5 text-xs font-semibold shadow-xs">
+          <span>{heldBillId ? `Held · ${customerNameInput.trim() || "Walk-in customer"}` : "Sale #1"}</span>
+          {heldBillId && confirmDeleteHeldId === heldBillId ? (
+            <HeldDeleteConfirm
+              onYes={() => void deleteHeldBill(heldBillId, customerNameInput.trim() || "Walk-in customer")}
+              onNo={() => setConfirmDeleteHeldId(null)}
+            />
+          ) : (
             <button
               type="button"
-              className="h-6 w-6 rounded border border-dashed flex items-center justify-center text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => void startNewBill()}
-              title="New sale (the bill on screen is put on hold)"
-              aria-label="New sale"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => (heldBillId ? setConfirmDeleteHeldId(heldBillId) : resetForm())}
+              title={heldBillId ? "Delete this held bill (the customer left)" : "Reset bill"}
+              aria-label={heldBillId ? "Delete this held bill" : "Reset bill"}
             >
-              +
+              ×
             </button>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Credit / Cash Toggle matching Page 17 */}
-            <div className="flex items-center gap-2 rounded-lg border bg-muted/20 px-2.5 py-1 text-xs">
-              <span className={`font-semibold ${isCredit ? "text-primary" : "text-muted-foreground"}`}>
-                Credit
-              </span>
-              <Switch
-                checked={!isCredit}
-                onCheckedChange={(checked) => setIsCredit(!checked)}
-              />
-              <span className={`font-semibold ${!isCredit ? "text-primary" : "text-muted-foreground"}`}>
-                Cash
-              </span>
-            </div>
-
-            {/* Daily Sales vs GST Toggle */}
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                  isGst
-                    ? "bg-primary/10 text-primary border border-primary/20"
-                    : "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                }`}
-              >
-                {isGst ? "GST Tax Invoice" : "Daily Sales · Counter"}
-              </span>
-              {!gstCompany && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-[11px] text-muted-foreground underline"
-                  onClick={() => setIsGst(!isGst)}
-                >
-                  Switch to {isGst ? "Daily Sales" : "GST Invoice"}
-                </Button>
-              )}
-            </div>
-          </div>
+          )}
         </div>
+        {!editSaleId && (
+          <HeldBillTabs
+            kind="sale"
+            currentId={heldBillId}
+            disabled={holding}
+            onOpen={(id) => void openHeldBill(id)}
+            onDeleted={(name) => setHoldNotice(`Held bill for ${name} deleted.`)}
+            onError={setServerError}
+          />
+        )}
+        <button
+          type="button"
+          className="flex h-6 w-6 items-center justify-center rounded border border-dashed text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => void startNewBill()}
+          title="New sale (the bill on screen is put on hold)"
+          aria-label="New sale"
+        >
+          +
+        </button>
+      </div>
 
-        {/* Vyapar Customer & Invoice Metadata Card (Page 17) */}
-        <Card size="sm" className="shrink-0 overflow-visible border-border/80 shadow-xs">
-          <CardContent>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.15fr_1fr]">
-              {/* Left Column: Party Details */}
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold text-muted-foreground">
-                    Billing Name (Optional)
-                  </Label>
-                  <Button
-                    type="button"
-                    variant="link"
-                    size="sm"
-                    className="h-auto p-0 text-xs font-bold text-primary"
-                    onClick={() => setPartiesDialogOpen(true)}
-                  >
-                    SHOW PARTIES
-                  </Button>
-                </div>
-                <CustomerPicker
-                  customers={customers ?? []}
-                  customerId={customerId}
-                  nameInput={customerNameInput}
-                  phoneInput={customerPhoneInput}
-                  onSelectExisting={selectExistingCustomer}
-                  onNameChange={handleCustomerNameChange}
-                  onPhoneChange={handleCustomerPhoneChange}
-                />
-              </div>
-
-              {/* Right Column: Invoice Number, Date, State */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold text-muted-foreground">
-                    Invoice Number
-                  </Label>
-                  <Input
-                    aria-label="Invoice serial number"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    maxLength={18}
-                    value={invoiceNumber}
-                    onChange={(e) => setInvoiceNumber(e.target.value.replace(/\D/g, ""))}
-                    placeholder="Auto or #5"
-                    className="h-9 text-xs font-mono font-bold"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold text-muted-foreground">
-                    Invoice Date
-                  </Label>
-                  <Input
-                    type="date"
-                    className="h-9 text-xs"
-                    value={billDate}
-                    max={todayDateInput()}
-                    onChange={(e) => setBillDate(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold text-muted-foreground">
-                    State of Supply
-                  </Label>
-                  <Select value={stateOfSupply} onValueChange={setStateOfSupply}>
-                    <SelectTrigger className="h-9 text-xs font-medium">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Karnataka">Karnataka (29)</SelectItem>
-                      <SelectItem value="Maharashtra">Maharashtra (27)</SelectItem>
-                      <SelectItem value="Telangana">Telangana (36)</SelectItem>
-                      <SelectItem value="Andhra Pradesh">Andhra Pradesh (37)</SelectItem>
-                      <SelectItem value="Goa">Goa (30)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Dialog for SHOW PARTIES */}
-        <Dialog open={partiesDialogOpen} onOpenChange={setPartiesDialogOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle className="text-base font-bold">Select Party</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
+      {/* Top panels: Bill Details · Metal Details · Account Balance */}
+      <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-3">
+        <section className={`${goldPanel} overflow-visible`}>
+          <h2 className={goldHead}>
+            <FileText className={goldIcon} /> Bill Details
+          </h2>
+          <div className="space-y-2 p-3">
+            <div className={formRow}>
+              <Label className={formLabel}>Bill No.</Label>
               <Input
-                placeholder="Search party by name or phone..."
-                value={partySearch}
-                onChange={(e) => setPartySearch(e.target.value)}
-                className="h-9 text-xs"
+                aria-label="Invoice serial number"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={18}
+                value={invoiceNumber}
+                onChange={(e) => setInvoiceNumber(e.target.value.replace(/\D/g, ""))}
+                placeholder="Auto or #5"
+                className="h-8 font-mono text-sm font-bold"
               />
-              <div className="max-h-72 overflow-y-auto divide-y divide-border/60">
-                {customers
-                  ?.filter(
-                    (c) =>
-                      c.name.toLowerCase().includes(partySearch.toLowerCase()) ||
-                      c.phone?.includes(partySearch),
-                  )
-                  .map((c) => (
-                    <button
-                      key={c._id}
-                      type="button"
-                      onClick={() => {
-                        selectExistingCustomer(c);
-                        setPartiesDialogOpen(false);
-                      }}
-                      className="w-full p-2.5 text-left hover:bg-muted/40 transition flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <p className="font-semibold text-foreground">{c.name}</p>
-                        <p className="text-muted-foreground">{c.phone || "No phone"}</p>
-                      </div>
-                      <span className="font-semibold text-primary tabular-nums">
-                        {formatPaise(c.currentBalancePaise ?? c.openingBalancePaise ?? 0)}
-                      </span>
-                    </button>
-                  ))}
-              </div>
             </div>
-          </DialogContent>
-        </Dialog>
+            <div className={formRow}>
+              <Label className={formLabel}>Date</Label>
+              <Input type="date" className="h-8 text-sm" value={billDate} max={todayDateInput()} onChange={(e) => setBillDate(e.target.value)} />
+            </div>
+            <div className={`${formRow} items-start`}>
+              <div className="pt-2">
+                <Label className={formLabel}>Customer</Label>
+                <button type="button" className="mt-1 block text-[10px] font-bold text-amber-700 hover:underline dark:text-amber-300" onClick={() => setPartiesDialogOpen(true)}>
+                  SHOW PARTIES
+                </button>
+              </div>
+              <CustomerPicker
+                customers={customers ?? []}
+                customerId={customerId}
+                nameInput={customerNameInput}
+                phoneInput={customerPhoneInput}
+                onSelectExisting={selectExistingCustomer}
+                onNameChange={handleCustomerNameChange}
+                onPhoneChange={handleCustomerPhoneChange}
+              />
+            </div>
+            <div className={formRow}>
+              <Label className={formLabel}>State</Label>
+              <Select value={stateOfSupply} onValueChange={setStateOfSupply}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Karnataka">Karnataka (29)</SelectItem>
+                  <SelectItem value="Maharashtra">Maharashtra (27)</SelectItem>
+                  <SelectItem value="Telangana">Telangana (36)</SelectItem>
+                  <SelectItem value="Andhra Pradesh">Andhra Pradesh (37)</SelectItem>
+                  <SelectItem value="Goa">Goa (30)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </section>
 
-        {prefs?.items.barcodeScan !== false && <BarcodeScanInput onBox={(box) => addRow(box._id)} />}
+        <section className={goldPanel}>
+          <h2 className={goldHead}>
+            <Coins className={goldIcon} /> Metal Details
+            <span className="ml-auto flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> LIVE
+            </span>
+          </h2>
+          <div className="space-y-1.5 p-3 text-sm">
+            {!currentRates ? (
+              <p className="text-xs text-muted-foreground">Loading daily metal rates…</p>
+            ) : ratesWithLatest.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Daily metal rates have not been set.{" "}
+                <Link href="/metal-rates" className="font-semibold text-amber-700 underline">Set gold & silver rates →</Link>
+              </p>
+            ) : (
+              ratesWithLatest.map(({ purity, latest }) => (
+                <div key={purity._id} className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">
+                    {purity.metal === "gold" ? "Gold" : "Silver"} <span className="font-medium text-foreground">{purity.label}</span>
+                  </span>
+                  <span className="font-mono font-semibold tabular-nums">{formatPaise(latest!.ratePerGramPaise)}/g</span>
+                </div>
+              ))
+            )}
+            {ratesAsOf && (
+              <div className="flex items-center justify-between border-t border-amber-200/70 pt-1.5 text-[11px] text-muted-foreground dark:border-amber-500/20">
+                <span>Rate as of {new Date(ratesAsOf).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
+                <Link href="/metal-rates" className="font-semibold text-amber-700 hover:underline dark:text-amber-300">Update rates</Link>
+              </div>
+            )}
+            {(metalTotals.gold.netMg > 0 || metalTotals.silver.netMg > 0) && (
+              <div className="space-y-0.5 border-t border-amber-200/70 pt-1.5 text-xs dark:border-amber-500/20">
+                {(["gold", "silver"] as const).filter((metal) => metalTotals[metal].netMg > 0).map((metal) => (
+                  <div key={metal} className="flex justify-between">
+                    <span className="text-muted-foreground">{metal === "gold" ? "Gold" : "Silver"} in this bill</span>
+                    <span className="font-mono tabular-nums">{mgToGramsDisplay(metalTotals[metal].netMg)} g net</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
 
-        {/* Item grid: one editable row per item. Daily Sales rows take their gross weight out of the chosen box. */}
-        <Card className="shrink-0 gap-0 py-0 border-border/80 shadow-xs overflow-hidden">
-          <CardHeader className="px-3 py-2.5 border-b bg-muted/20 flex flex-row flex-wrap items-center justify-between gap-2">
-            <CardTitle className="text-sm font-bold uppercase tracking-wide">
-              Items in this bill ({lines.length})
-            </CardTitle>
-            <p className="text-[11px] text-muted-foreground">
-              {gstCompany
-                ? "Bill is priced on net weight (or price per piece); the gross weight and pieces leave the selected box — or loose GST item stock when no box is chosen."
-                : "Bill is priced on net weight (or price per piece); the gross weight and pieces are deducted from the selected box."}
-            </p>
-          </CardHeader>
-          <CardContent className="p-0">
-            <datalist id="bill-items">
-              {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
-            </datalist>
-            <div className="erp-scroll overflow-auto lg:max-h-[62svh] divide-y divide-border/60">
+        <section className={goldPanel}>
+          <h2 className={goldHead}>
+            <Scale className={goldIcon} /> Account Balance
+          </h2>
+          <div className="space-y-2.5 p-3 text-sm">
+            {selectedCustomer ? (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground">{customerDuesPaise >= 0 ? "Customer Dues" : "Advance Paid"}</span>
+                  <span className={`font-mono text-lg font-bold tabular-nums ${customerDuesPaise > 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                    {formatPaise(Math.abs(customerDuesPaise))}
+                  </span>
+                </div>
+                {!editSaleId && (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-muted-foreground">This bill balance</span>
+                      <span className="font-mono tabular-nums">{formatPaise(totals.balancePaise)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 rounded-lg bg-gradient-to-r from-amber-200/80 to-amber-100/60 px-3 py-2 dark:from-amber-800/40 dark:to-amber-900/20">
+                      <span className="font-bold">Balance</span>
+                      <span className="font-mono text-lg font-bold tabular-nums">{formatPaise(customerDuesPaise + totals.balancePaise)}</span>
+                    </div>
+                  </>
+                )}
+                {editSaleId && <p className="text-[11px] text-muted-foreground">Dues already include this bill as it was saved.</p>}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {customerNameInput.trim() ? "New customer — no previous balance." : "Walk-in customer. Pick a customer to see their dues."}
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      {/* Dialog for SHOW PARTIES */}
+      <Dialog open={partiesDialogOpen} onOpenChange={setPartiesDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold">Select Party</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Input placeholder="Search party by name or phone..." value={partySearch} onChange={(e) => setPartySearch(e.target.value)} className="h-9 text-xs" />
+            <div className="max-h-72 divide-y divide-border/60 overflow-y-auto">
+              {customers
+                ?.filter((c) => c.name.toLowerCase().includes(partySearch.toLowerCase()) || c.phone?.includes(partySearch))
+                .map((c) => (
+                  <button
+                    key={c._id}
+                    type="button"
+                    onClick={() => {
+                      selectExistingCustomer(c);
+                      setPartiesDialogOpen(false);
+                    }}
+                    className="flex w-full items-center justify-between p-2.5 text-left text-xs transition hover:bg-muted/40"
+                  >
+                    <div>
+                      <p className="font-semibold text-foreground">{c.name}</p>
+                      <p className="text-muted-foreground">{c.phone || "No phone"}</p>
+                    </div>
+                    <span className="font-semibold tabular-nums text-primary">{formatPaise(c.currentBalancePaise ?? c.openingBalancePaise ?? 0)}</span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {prefs?.items.barcodeScan !== false && <BarcodeScanInput onBox={(box) => addRow(box._id)} />}
+
+      {/* Item table: one row per item. Daily Sales rows take their gross weight out of the chosen box. */}
+      <section className={`${goldPanel} shrink-0`}>
+        <datalist id="bill-items">
+          {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
+        </datalist>
+        <div className="erp-scroll overflow-auto lg:max-h-[56svh]">
+          <table className="w-full min-w-[1280px] border-collapse text-sm">
+            <thead className="sticky top-0 z-10 bg-gradient-to-b from-amber-700 to-amber-800 dark:from-amber-800 dark:to-amber-900">
+              <tr>
+                <th className={`${thCls} w-10`}>Sl. No.</th>
+                <th className={`${thCls} w-36`}>Box No.</th>
+                <th className={`${thCls} w-20`}>Category</th>
+                <th className={`${thCls} min-w-40`}>Description</th>
+                <th className={`${thCls} w-20`}>Purity</th>
+                <th className={`${thCls} w-14`}>Pcs<br /><span className="font-normal opacity-80">(optional)</span></th>
+                <th className={`${thCls} w-20`}>Gross Wt<br />(g)</th>
+                <th className={`${thCls} w-16`}>Stone Wt<br />(g)</th>
+                <th className={`${thCls} w-20`}>Net Wt<br />(g)</th>
+                <th className={`${thCls} w-20`}>Rate<br />(₹/g)</th>
+                <th className={`${thCls} w-20`}>Price / pc<br />(₹)</th>
+                <th className={`${thCls} w-32`}>Making</th>
+                <th className={`${thCls} w-20`}>Discount<br />(₹ / %)</th>
+                {isGst && <th className={`${thCls} w-28`}>GST</th>}
+                {showCost && <th className={`${thCls} w-24`}>Cost /<br />Margin</th>}
+                <th className={`${thCls} w-24`}>Total (₹)</th>
+                <th className={`${thCls} w-9`}><span className="sr-only">Remove</span></th>
+              </tr>
+            </thead>
+            <tbody>
               {lines.map((line, index) => {
                 const computed = computedLines[index];
                 const error = lineErrors[index];
                 const box = boxById.get(line.boxId);
                 const available = line.boxId ? boxAvailable(line.boxId) : null;
                 const taken = takenByBox.get(line.boxId);
+                const product = line.productId ? productById.get(line.productId as Id<"products">) : undefined;
                 return (
-                  <div
-                    key={line.key}
-                    data-line={line.key}
-                    className="space-y-3 px-3 py-3 hover:bg-muted/10"
-                    onKeyDown={(e) => {
-                      // Enter on the last item adds the next one (keyboard billing).
-                      if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && index === lines.length - 1) {
-                        e.preventDefault();
-                        addRow();
-                      }
-                    }}
-                  >
-                    {/* Item heading: number, line amount, remove */}
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold text-muted-foreground">
-                        Item {String(index + 1).padStart(2, "0")}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">Amount</span>
-                        <span className="text-base font-bold tabular-nums text-foreground">{formatPaise(computed.lineTotalPaise)}</span>
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove item ${index + 1}`} onClick={() => removeLine(index)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Row 1: what the item is */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 md:grid-cols-4">
-                      <LineField label="Box No">
+                  <Fragment key={line.key}>
+                    <tr
+                      data-line={line.key}
+                      className={`border-b border-amber-200/70 dark:border-amber-500/15 ${index % 2 ? "bg-amber-50/50 dark:bg-amber-950/10" : "bg-card"} hover:bg-amber-100/40 dark:hover:bg-amber-900/20`}
+                      onKeyDown={(e) => {
+                        // Enter on the last item adds the next one (keyboard billing).
+                        if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && index === lines.length - 1) {
+                          e.preventDefault();
+                          addRow();
+                        }
+                      }}
+                    >
+                      <td className={`${tdCls} pt-2.5 text-center font-semibold text-amber-900 dark:text-amber-200`}>{index + 1}</td>
+                      <td className={tdCls}>
                         <BoxPicker
                           ariaLabel={`Row ${index + 1} box`}
                           boxes={boxes as BoxRow[]}
@@ -1504,16 +1556,16 @@ export default function NewBillPage() {
                           triggerClassName="w-full min-w-0"
                         />
                         {box && available && (
-                          <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
+                          <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
                             Has {mgToGramsDisplay(available.weightMg)} g · {available.pieces} pcs
                             {taken ? ` → ${mgToGramsDisplay(available.weightMg - taken.weightMg)} g` : ""}
                           </p>
                         )}
-                      </LineField>
-                      <LineField label="Category">
+                      </td>
+                      <td className={tdCls}>
                         <select
                           aria-label={`Row ${index + 1} category`}
-                          className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
+                          className="h-8 w-full min-w-0 rounded-md border bg-background px-1 text-sm"
                           value={line.metal}
                           onChange={(e) => pickMetal(index, e.target.value as Metal | "")}
                         >
@@ -1521,8 +1573,8 @@ export default function NewBillPage() {
                           <option value="gold">Gold</option>
                           <option value="silver">Silver</option>
                         </select>
-                      </LineField>
-                      <LineField label="Description">
+                      </td>
+                      <td className={tdCls}>
                         <Input
                           aria-label={`Row ${index + 1} description`}
                           list="bill-items"
@@ -1530,23 +1582,21 @@ export default function NewBillPage() {
                           value={line.label}
                           maxLength={80}
                           onChange={(e) => typeDescription(index, e.target.value)}
-                          className={`${cellInput} w-full min-w-0`}
+                          className={`${tblInput} w-full min-w-0`}
                         />
                         {line.label.trim() && !line.productId && !isLoose(line) && (
-                          <p className="mt-1 text-[10px] text-muted-foreground">New item — added to Item List on save</p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">New item — added to Item List on save</p>
                         )}
                         {isLoose(line) && line.productId && (() => {
                           const stock = gstStock?.find((row) => row.productId === line.productId);
-                          return <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">Loose GST stock: {mgToGramsDisplay(stock?.looseWeightMg ?? 0)} g · {stock?.loosePieces ?? 0} pcs</p>;
+                          return <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">Loose GST stock: {mgToGramsDisplay(stock?.looseWeightMg ?? 0)} g · {stock?.loosePieces ?? 0} pcs</p>;
                         })()}
-                        {line.productId && productById.get(line.productId as Id<"products">)?.sku && (
-                          <p className="mt-1 text-[10px] text-muted-foreground">Code {productById.get(line.productId as Id<"products">)?.sku}</p>
-                        )}
-                      </LineField>
-                      <LineField label="Purity">
+                        {product?.sku && <p className="mt-0.5 text-[10px] text-muted-foreground">Code {product.sku}</p>}
+                      </td>
+                      <td className={tdCls}>
                         <select
                           aria-label={`Row ${index + 1} purity`}
-                          className="h-9 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
+                          className="h-8 w-full min-w-0 rounded-md border bg-background px-1 text-sm"
                           value={line.metalPurityId}
                           onChange={(e) => pickPurity(index, e.target.value)}
                         >
@@ -1555,27 +1605,24 @@ export default function NewBillPage() {
                             <option key={p._id} value={p._id}>{p.label}</option>
                           ))}
                         </select>
-                        {!line.metalPurityId && line.productId && productById.get(line.productId as Id<"products">)?.purityOther && (
-                          <p className="mt-1 text-[10px] text-muted-foreground">{productById.get(line.productId as Id<"products">)?.purityOther}</p>
-                        )}
-                      </LineField>
-                    </div>
-
-                    {/* Row 2: quantity, weight and price */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-3 md:grid-cols-5">
-                      <LineField label="Pcs">
-                        <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={`${cellInput} w-full min-w-0 text-right`} />
-                      </LineField>
-                      <LineField label="Gross Wt (g)">
-                        <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
-                      </LineField>
-                      <LineField label="Net Wt (g)">
-                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono text-emerald-600`} />
-                      </LineField>
-                      <LineField label="Rate / g (₹)">
-                        <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${cellInput} w-full min-w-0 text-right font-mono`} />
-                      </LineField>
-                      <LineField label="Price / pc (₹)">
+                        {!line.metalPurityId && product?.purityOther && <p className="mt-0.5 text-[10px] text-muted-foreground">{product.purityOther}</p>}
+                      </td>
+                      <td className={tdCls}>
+                        <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right`} />
+                      </td>
+                      <td className={tdCls}>
+                        <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                      </td>
+                      <td className={`${tdCls} pt-2.5 text-right font-mono text-xs text-muted-foreground tabular-nums`}>
+                        {computed.stoneWeightMg > 0 ? mgToGramsDisplay(computed.stoneWeightMg) : "—"}
+                      </td>
+                      <td className={tdCls}>
+                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono text-emerald-600`} />
+                      </td>
+                      <td className={tdCls}>
+                        <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                      </td>
+                      <td className={tdCls}>
                         <Input
                           aria-label={`Row ${index + 1} price per piece`}
                           inputMode="decimal"
@@ -1584,37 +1631,33 @@ export default function NewBillPage() {
                           disabled={!canOverride && line.savedPricePaise !== undefined}
                           title={!canOverride && line.savedPricePaise !== undefined ? "Saved selling price — only the Owner or an Admin can change it" : "Leave blank to price by net weight × rate per gram"}
                           onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })}
-                          className={`${cellInput} w-full min-w-0 text-right font-mono`}
+                          className={`${tblInput} w-full min-w-0 text-right font-mono`}
                         />
                         {line.savedPricePaise !== undefined && (rupeesToPaise(line.unitPriceRupees || "0") ?? 0) !== line.savedPricePaise && (
-                          <p className="mt-1 text-[10px] text-amber-600">Saved {formatPaise(line.savedPricePaise)} · override</p>
+                          <p className="mt-0.5 text-[10px] text-amber-600">Saved {formatPaise(line.savedPricePaise)} · override</p>
                         )}
-                      </LineField>
-                    </div>
-
-                    {/* Row 3: charges, discount and tax */}
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 md:grid-cols-4">
-                      <LineField label="Making">
+                      </td>
+                      <td className={tdCls}>
                         <div className="flex min-w-0 items-center gap-1">
                           <select
                             aria-label={`Row ${index + 1} making charge type`}
-                            className="h-9 shrink-0 rounded-md border bg-background px-1 text-sm"
+                            className="h-8 shrink-0 rounded-md border bg-background px-0.5 text-xs"
                             value={line.makingMode}
                             onChange={(e) => updateLine(index, { makingMode: e.target.value as MakingMode })}
                           >
                             {MAKING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                           </select>
-                          <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
+                          <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${tblInput} w-full min-w-0 text-right`} />
                         </div>
                         {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && (
-                          <p className="mt-1 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>
+                          <p className="mt-0.5 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>
                         )}
-                      </LineField>
-                      <LineField label="Discount (₹ / %)">
-                        <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${cellInput} w-full min-w-0 text-right`} />
-                      </LineField>
+                      </td>
+                      <td className={tdCls}>
+                        <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${tblInput} w-full min-w-0 text-right`} />
+                      </td>
                       {isGst && (
-                        <LineField label="Tax (GST)">
+                        <td className={tdCls}>
                           <div className="flex min-w-0 items-center gap-1">
                             <Select
                               value={line.isManualTax ? "manual" : line.taxConfigurationId || defaultTaxId || "none"}
@@ -1623,7 +1666,7 @@ export default function NewBillPage() {
                                 else updateLine(index, { isManualTax: false, taxConfigurationId: val });
                               }}
                             >
-                              <SelectTrigger className="h-9 w-full min-w-0 text-sm">
+                              <SelectTrigger className="h-8 w-full min-w-0 text-xs">
                                 <SelectValue placeholder="Tax" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1633,430 +1676,327 @@ export default function NewBillPage() {
                               </SelectContent>
                             </Select>
                             {line.isManualTax && (
-                              <Input inputMode="decimal" placeholder="3.0" value={line.manualGstPercent || ""} onChange={(e) => updateLine(index, { manualGstPercent: e.target.value })} className="h-9 w-16 shrink-0 text-sm text-right" title="Custom GST %" />
+                              <Input inputMode="decimal" placeholder="3.0" value={line.manualGstPercent || ""} onChange={(e) => updateLine(index, { manualGstPercent: e.target.value })} className="h-8 w-12 shrink-0 px-1 text-right text-xs" title="Custom GST %" />
                             )}
                           </div>
-                        </LineField>
+                          {computed.lineTaxPaise > 0 && <p className="mt-0.5 text-[10px] text-muted-foreground">= {formatPaise(computed.lineTaxPaise)}</p>}
+                        </td>
                       )}
                       {showCost && (
-                        <LineField label="Cost / Margin">
-                          <p className="pt-1.5 font-mono text-sm text-muted-foreground">
+                        <td className={`${tdCls} pt-1.5 text-right`}>
+                          <p className="font-mono text-xs text-muted-foreground">
                             {line.costPaise !== undefined ? formatPaise(line.costPaise * (piecesOf(line) || 1)) : "—"}
                           </p>
                           {line.costPaise !== undefined && (
-                            <p className={`text-[11px] font-mono ${computed.taxableValuePaise - line.costPaise * (piecesOf(line) || 1) < 0 ? "text-destructive" : "text-emerald-600"}`}>
-                              Margin {formatPaise(computed.taxableValuePaise - line.costPaise * (piecesOf(line) || 1))}
+                            <p className={`font-mono text-[10px] ${computed.taxableValuePaise - line.costPaise * (piecesOf(line) || 1) < 0 ? "text-destructive" : "text-emerald-600"}`}>
+                              {formatPaise(computed.taxableValuePaise - line.costPaise * (piecesOf(line) || 1))}
                             </p>
                           )}
-                        </LineField>
+                        </td>
                       )}
-                    </div>
-
-                    {error && <p className="text-xs font-medium text-destructive">{error}</p>}
-                  </div>
+                      <td className={`${tdCls} pt-2 text-right font-mono font-bold tabular-nums`}>{formatPaise(computed.lineTotalPaise)}</td>
+                      <td className={`${tdCls} text-center`}>
+                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove item ${index + 1}`} onClick={() => removeLine(index)}>
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                    {error && (
+                      <tr className="bg-destructive/5">
+                        <td colSpan={columnCount} className="px-3 py-1 text-xs font-medium text-destructive">Row {index + 1}: {error}</td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
-            </div>
-            {lines.length > 0 && (
-              <div className="flex flex-wrap items-center justify-end gap-x-6 gap-y-1 border-t bg-muted/20 px-3 py-2 text-sm font-semibold">
-                <span className="text-muted-foreground">Total</span>
-                <span className="tabular-nums">{lines.reduce((sum, l) => sum + (piecesOf(l) || 0), 0)} pcs</span>
-                <span className="font-mono tabular-nums">Gross {mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.grossWeightMg, 0))} g</span>
-                <span className="font-mono tabular-nums text-emerald-600">Net {mgToGramsDisplay(computedLines.reduce((sum, l) => sum + l.netWeightMg, 0))} g</span>
-                <span className="text-base tabular-nums">{formatPaise(computedLines.reduce((sum, l) => sum + l.lineTotalPaise, 0))}</span>
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/80 bg-amber-50/60 px-3 py-2 dark:border-amber-500/20 dark:bg-amber-950/20">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" variant="outline" size="sm" className="h-8 border-amber-300 text-xs" onClick={() => addRow()}>
+              <Plus className="h-3.5 w-3.5" /> Add Row
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs font-medium" onClick={() => setShowNotes(!showNotes)}>
+              + Add Description
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs font-medium" onClick={() => setShowTerms(!showTerms)}>
+              + Add Terms & Conditions
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs font-medium text-amber-600 dark:text-amber-400" onClick={() => setOldGoldEnabled(!oldGoldEnabled)}>
+              {oldGoldEnabled ? "✓ Old Gold Added" : "+ Old Gold Exchange"}
+            </Button>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs font-medium text-amber-600 dark:text-amber-400" onClick={() => setOldItemEnabled(!oldItemEnabled)}>
+              {oldItemEnabled ? "✓ Old Item Deduction Added" : "+ Old Item Deduction"}
+            </Button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">Tip: press Enter in the last row to add a new row. Typing an item name or code fills its purity, price and making charge.</p>
+        </div>
+      </section>
+
+      {(showNotes || showTerms) && (
+        <div className="grid shrink-0 grid-cols-1 gap-2 md:grid-cols-2">
+          {showNotes && <Input placeholder="Enter notes / description for invoice..." value={notes} onChange={(e) => setNotes(e.target.value)} className="h-9 text-xs" />}
+          {showTerms && <Input placeholder="Terms and conditions..." value={terms} onChange={(e) => setTerms(e.target.value)} className="h-9 text-xs" />}
+        </div>
+      )}
+
+      {(oldGoldEnabled || oldItemEnabled) && (
+        <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-2">
+          {/* Old Gold Exchange */}
+          {oldGoldEnabled && (
+            <section className={goldPanel}>
+              <h2 className={goldHead}>
+                <Gem className={goldIcon} /> Old Gold / Silver Exchange
+                <Button type="button" variant="ghost" size="sm" className="ml-auto h-6 text-xs text-muted-foreground" onClick={() => setOldGoldEnabled(false)}>
+                  ×
+                </Button>
+              </h2>
+              <div className="grid grid-cols-2 gap-2 p-3 sm:grid-cols-4">
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Purity</Label>
+                  <Select value={oldGoldPurityId} onValueChange={handleOldGoldPurityChange}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Purity" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {purities.map((p) => (
+                        <SelectItem key={p._id} value={p._id}>
+                          {p.label} ({p.metal})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Gross wt (g)</Label>
+                  <Input inputMode="decimal" placeholder="0.000" value={oldGoldGrossGrams} onChange={(e) => setOldGoldGrossGrams(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Melting %</Label>
+                  <Input inputMode="decimal" placeholder="0" value={oldGoldMeltingPercent} onChange={(e) => setOldGoldMeltingPercent(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Rate / g (₹)</Label>
+                  <Input inputMode="decimal" placeholder="0.00" value={oldGoldRateRupees} onChange={(e) => setOldGoldRateRupees(e.target.value)} className="h-8 text-xs" />
+                </div>
+                {oldGoldComputed && (
+                  <p className="col-span-2 mt-1 text-[11px] font-medium text-amber-700 sm:col-span-4 dark:text-amber-300">
+                    Value: {formatPaise(oldGoldComputed.exchangeValuePaise)} credited against bill
+                  </p>
+                )}
               </div>
-            )}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => addRow()}>
-                <Plus className="h-3.5 w-3.5" /> Add Row
-              </Button>
-              <p className="text-[11px] text-muted-foreground">Tip: press Enter in the last row to add a new row. Typing an item name or code fills its purity, price and making charge.</p>
-            </div>
-          </CardContent>
-        </Card>
+            </section>
+          )}
 
-        {/* Bottom Actions & Summary matching Page 17 */}
-        <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_minmax(360px,440px)]">
-          {/* Left Column: Extra Options (Notes, Terms, Old Gold) */}
-          <div className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs font-medium"
-                onClick={() => setShowNotes(!showNotes)}
-              >
-                + Add Description
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs font-medium"
-                onClick={() => setShowTerms(!showTerms)}
-              >
-                + Add Terms & Conditions
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs font-medium text-amber-600 dark:text-amber-400"
-                onClick={() => setOldGoldEnabled(!oldGoldEnabled)}
-              >
-                {oldGoldEnabled ? "✓ Old Gold Added" : "+ Old Gold Exchange"}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs font-medium text-amber-600 dark:text-amber-400"
-                onClick={() => setOldItemEnabled(!oldItemEnabled)}
-              >
-                {oldItemEnabled ? "✓ Old Item Deduction Added" : "+ Old Item Deduction"}
-              </Button>
-            </div>
-
-            {showNotes && (
-              <Input
-                placeholder="Enter notes / description for invoice..."
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="h-9 text-xs"
-              />
-            )}
-            {showTerms && (
-              <Input
-                placeholder="Terms and conditions..."
-                value={terms}
-                onChange={(e) => setTerms(e.target.value)}
-                className="h-9 text-xs"
-              />
-            )}
-
-            {/* Old Gold Exchange Drawer */}
-            {oldGoldEnabled && (
-              <Card className="border-amber-500/30 bg-amber-500/5">
-                <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                    Old Gold / Silver Exchange
-                  </CardTitle>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs text-muted-foreground"
-                    onClick={() => setOldGoldEnabled(false)}
-                  >
-                    ×
-                  </Button>
-                </CardHeader>
-                <CardContent className="p-3 pt-0 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Purity</Label>
-                    <Select value={oldGoldPurityId} onValueChange={handleOldGoldPurityChange}>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Purity" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {purities.map((p) => (
-                          <SelectItem key={p._id} value={p._id}>
-                            {p.label} ({p.metal})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Gross wt (g)</Label>
-                    <Input
-                      inputMode="decimal"
-                      placeholder="0.000"
-                      value={oldGoldGrossGrams}
-                      onChange={(e) => setOldGoldGrossGrams(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Melting %</Label>
-                    <Input
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={oldGoldMeltingPercent}
-                      onChange={(e) => setOldGoldMeltingPercent(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                  <div>
-                    <Label className="text-[10px] text-muted-foreground">Rate / g (₹)</Label>
-                    <Input
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={oldGoldRateRupees}
-                      onChange={(e) => setOldGoldRateRupees(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                  {oldGoldComputed && (
-                    <p className="col-span-2 sm:col-span-4 text-[11px] text-amber-700 dark:text-amber-300 font-medium mt-1">
-                      Value: {formatPaise(oldGoldComputed.exchangeValuePaise)} credited against bill
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Old Item Deduction Drawer: amount only (no weight/purity/rate), with what it was for. */}
-            {oldItemEnabled && (
-              <Card className="border-amber-500/30 bg-amber-500/5">
-                <CardHeader className="p-3 pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
-                    Old Item Deduction
-                  </CardTitle>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs text-muted-foreground"
-                    aria-label="Remove old item deduction"
-                    onClick={() => {
-                      setOldItemEnabled(false);
-                      setOldItemDeductionRupees("0");
-                      setOldItemDeductionNote("");
-                    }}
-                  >
-                    ×
-                  </Button>
-                </CardHeader>
-                <CardContent className="p-3 pt-0 grid grid-cols-1 sm:grid-cols-[1fr_2fr] gap-2">
-                  <div>
-                    <Label htmlFor="old-item-deduction" className="text-[10px] text-muted-foreground">Amount (₹)</Label>
-                    <Input
-                      id="old-item-deduction"
-                      inputMode="decimal"
-                      placeholder="0.00"
-                      value={oldItemDeductionRupees === "0" ? "" : oldItemDeductionRupees}
-                      onChange={(e) => setOldItemDeductionRupees(e.target.value)}
-                      aria-invalid={Boolean(oldItemDeductionError)}
-                      className="h-8 text-right font-mono text-xs"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="old-item-note" className="text-[10px] text-muted-foreground">Description (printed on bill)</Label>
-                    <Input
-                      id="old-item-note"
-                      placeholder="e.g. Old ring"
-                      maxLength={80}
-                      value={oldItemDeductionNote}
-                      onChange={(e) => setOldItemDeductionNote(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                  </div>
-                  {oldItemDeductionError && (
-                    <p className="sm:col-span-2 text-[11px] font-medium text-destructive">{oldItemDeductionError}</p>
-                  )}
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Payment Splits */}
-            <Card size="sm" className="border-border/80 shadow-xs">
-              <CardHeader className="p-3 pb-2">
-                <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Payment Mode
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 pt-0 space-y-2">
-                <label className="flex items-center gap-2 text-xs font-medium">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 accent-primary"
-                    checked={payFull}
-                    onChange={(e) => setPayFull(e.target.checked)}
-                  />
-                  Received full amount ({formatPaise(totals.fullFirstPaymentPaise)})
-                  <span className="font-normal text-muted-foreground">— untick to type the amount</span>
-                </label>
-                {payments.map((p, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <Select
-                      value={p.mode}
-                      onValueChange={(val) =>
-                        setPayments((prev) =>
-                          prev.map((pm, i) => (i === idx ? { ...pm, mode: val as PaymentMode } : pm)),
-                        )
-                      }
-                    >
-                      <SelectTrigger className="h-8 w-36 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {PAYMENT_MODES.map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      inputMode="decimal"
-                      placeholder="Amount ₹"
-                      aria-label={`Payment ${idx + 1} amount`}
-                      readOnly={payFull && idx === 0}
-                      value={payFull && idx === 0 ? (totals.fullFirstPaymentPaise / 100).toFixed(2) : p.amountRupees}
-                      onChange={(e) =>
-                        setPayments((prev) =>
-                          prev.map((pm, i) => (i === idx ? { ...pm, amountRupees: e.target.value } : pm)),
-                        )
-                      }
-                      className="h-8 text-xs font-mono"
-                    />
-                    {payments.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground"
-                        onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}
-                      >
-                        <Minus className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </div>
-                ))}
+          {/* Old Item Deduction: amount only (no weight/purity/rate), with what it was for. */}
+          {oldItemEnabled && (
+            <section className={goldPanel}>
+              <h2 className={goldHead}>
+                <Receipt className={goldIcon} /> Old Item Deduction
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="h-7 text-xs font-medium"
-                  onClick={() => setPayments((prev) => [...prev, { mode: "cash", amountRupees: "" }])}
+                  className="ml-auto h-6 text-xs text-muted-foreground"
+                  aria-label="Remove old item deduction"
+                  onClick={() => {
+                    setOldItemEnabled(false);
+                    setOldItemDeductionRupees("0");
+                    setOldItemDeductionNote("");
+                  }}
                 >
-                  <Plus className="h-3 w-3 mr-1" /> Add Payment Split
+                  ×
                 </Button>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Right Column: Totals & Finalize Buttons (Page 17) */}
-          <Card size="sm" className="border-border/80 shadow-xs bg-muted/10">
-            <CardContent className="space-y-2.5">
-              {(["gold", "silver"] as const).filter((metal) => metalTotals[metal].paise > 0).map((metal) => (
-                <div key={metal} className="flex justify-between text-xs text-muted-foreground">
-                  <span>{metal === "gold" ? "Gold" : "Silver"} items ({mgToGramsDisplay(metalTotals[metal].netMg)} g net)</span>
-                  <span className="font-mono">{formatPaise(metalTotals[metal].paise)}</span>
-                </div>
-              ))}
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Subtotal (taxable value)</span>
-                <span className="font-mono">{formatPaise(totals.subtotalPaise)}</span>
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <label htmlFor="bill-discount" className="text-muted-foreground">Discount</label>
-                <div className="flex items-center gap-1.5">
-                  <select
-                    aria-label="Discount type"
-                    className="h-8 rounded-md border border-input bg-background px-2 text-xs"
-                    value={discountMode}
-                    onChange={(e) => {
-                      setDiscountMode(e.target.value as typeof discountMode);
-                      if (e.target.value === "none") setDiscountValue("");
-                    }}
-                  >
-                    <option value="none">None</option>
-                    <option value="percent">%</option>
-                    <option value="fixed">₹</option>
-                  </select>
+              </h2>
+              <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-[1fr_2fr]">
+                <div>
+                  <Label htmlFor="old-item-deduction" className="text-[10px] text-muted-foreground">Amount (₹)</Label>
                   <Input
-                    id="bill-discount"
+                    id="old-item-deduction"
                     inputMode="decimal"
-                    placeholder={discountMode === "percent" ? "0 %" : "0.00"}
-                    disabled={discountMode === "none"}
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(e.target.value)}
-                    aria-invalid={Boolean(discountError)}
-                    className="h-8 w-24 text-right font-mono text-xs"
-                  />
-                  <span className="w-24 text-right font-mono text-emerald-600">
-                    {totals.discountPaise > 0 ? `-${formatPaise(totals.discountPaise)}` : ""}
-                  </span>
-                </div>
-                {discountError && <p className="w-full text-right text-[11px] font-medium text-destructive">{discountError}</p>}
-              </div>
-
-              {isGst && (
-                <div className="flex justify-between text-xs text-muted-foreground">
-                  <span>Tax (GST)</span>
-                  <span className="font-mono">{formatPaise(totals.taxPaise)}</span>
-                </div>
-              )}
-
-              {totals.oldItemDeductionPaise > 0 && (
-                <div className="flex justify-between text-xs text-amber-600">
-                  <span>Old item deduction{oldItemDeductionNote.trim() ? ` (${oldItemDeductionNote.trim()})` : ""}</span>
-                  <span className="font-mono">-{formatPaise(totals.oldItemDeductionPaise)}</span>
-                </div>
-              )}
-
-              {totals.oldGoldValuePaise > 0 && (
-                <div className="flex justify-between text-xs text-amber-600">
-                  <span>Old gold / silver deduction</span>
-                  <span className="font-mono">-{formatPaise(totals.oldGoldValuePaise)}</span>
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <span className="text-base font-bold">Total Amount</span>
-                <span className="text-xl font-bold text-primary font-mono tabular-nums">
-                  {formatPaise(totals.totalPaise)}
-                </span>
-              </div>
-
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Paid</span>
-                <span className="font-mono">{formatPaise(totals.amountPaidPaise)}</span>
-              </div>
-
-              <div className={`flex items-center justify-between text-xs font-semibold ${totals.balancePaise > 0 ? "text-rose-600" : "text-muted-foreground"}`}>
-                <span className="flex items-center gap-2">
-                  Balance Amount
-                  <Badge variant="outline" className="text-[10px] font-semibold">
-                    {totals.totalPaise > 0 && totals.balancePaise <= 0 ? "Paid" : totals.amountPaidPaise > 0 ? "Partial" : "Unpaid"}
-                  </Badge>
-                </span>
-                <span className="font-mono">{formatPaise(Math.max(0, totals.balancePaise))}</span>
-              </div>
-
-              {totals.balancePaise > 0 && (
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <label htmlFor="bill-due-date" className="text-muted-foreground">Balance due by (reminder date)</label>
-                  <Input
-                    id="bill-due-date"
-                    type="date"
-                    value={dueDate}
-                    min={todayDateInput()}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="h-8 w-40 text-xs"
+                    placeholder="0.00"
+                    value={oldItemDeductionRupees === "0" ? "" : oldItemDeductionRupees}
+                    onChange={(e) => setOldItemDeductionRupees(e.target.value)}
+                    aria-invalid={Boolean(oldItemDeductionError)}
+                    className="h-8 text-right font-mono text-xs"
                   />
                 </div>
-              )}
-
-            </CardContent>
-          </Card>
+                <div>
+                  <Label htmlFor="old-item-note" className="text-[10px] text-muted-foreground">Description (printed on bill)</Label>
+                  <Input id="old-item-note" placeholder="e.g. Old ring" maxLength={80} value={oldItemDeductionNote} onChange={(e) => setOldItemDeductionNote(e.target.value)} className="h-8 text-xs" />
+                </div>
+                {oldItemDeductionError && <p className="text-[11px] font-medium text-destructive sm:col-span-2">{oldItemDeductionError}</p>}
+              </div>
+            </section>
+          )}
         </div>
-      </>
+      )}
+
+      {/* Bottom panels: Bill Summary · Payment Mode · Totals */}
+      <div className="grid shrink-0 grid-cols-1 items-stretch gap-3 lg:grid-cols-3">
+        <section className={`${goldPanel} flex flex-col`}>
+          <h2 className={goldHead}>
+            <Calculator className={goldIcon} /> Bill Summary
+          </h2>
+          <div className="flex-1 space-y-1 p-3 text-sm">
+            <SummaryRow label="Total Pieces" value={String(sumPieces)} />
+            <SummaryRow label="Total Gross Wt." value={`${mgToGramsDisplay(sumGrossMg)} g`} mono />
+            {sumStoneMg > 0 && <SummaryRow label="Total Stone Wt." value={`${mgToGramsDisplay(sumStoneMg)} g`} mono />}
+            <SummaryRow label="Total Net Wt." value={`${mgToGramsDisplay(sumNetMg)} g`} mono valueClassName="text-emerald-600" />
+            <SummaryRow label="Total Making" value={formatPaise(sumMakingPaise)} mono />
+            {sumLineDiscountPaise > 0 && <SummaryRow label="Item Discount" value={`-${formatPaise(sumLineDiscountPaise)}`} mono valueClassName="text-emerald-600" />}
+            {totals.oldItemDeductionPaise > 0 && <SummaryRow label="Old Item Deduction" value={`-${formatPaise(totals.oldItemDeductionPaise)}`} mono valueClassName="text-amber-600" />}
+            {totals.oldGoldValuePaise > 0 && <SummaryRow label="Old Gold / Silver" value={`-${formatPaise(totals.oldGoldValuePaise)}`} mono valueClassName="text-amber-600" />}
+          </div>
+          <div className="mx-3 mb-3 flex items-center justify-between rounded-lg bg-gradient-to-r from-amber-300 via-amber-200 to-amber-100 px-3 py-2 text-amber-950 dark:from-amber-700/60 dark:via-amber-800/40 dark:to-amber-900/30 dark:text-amber-50">
+            <span className="flex items-center gap-2 font-serif text-lg font-bold"><Gem className="h-4 w-4" /> Grand Total</span>
+            <span className="font-mono text-xl font-bold tabular-nums">{formatPaise(totals.totalPaise)}</span>
+          </div>
+        </section>
+
+        <section className={goldPanel}>
+          <h2 className={goldHead}>
+            <Wallet className={goldIcon} /> Payment Mode
+          </h2>
+          <div className="space-y-2 p-3">
+            <label className="flex items-center gap-2 text-xs font-medium">
+              <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={payFull} onChange={(e) => setPayFull(e.target.checked)} />
+              Received full amount ({formatPaise(totals.fullFirstPaymentPaise)})
+              <span className="font-normal text-muted-foreground">— untick to type the amount</span>
+            </label>
+            {payments.map((p, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <Select
+                  value={p.mode}
+                  onValueChange={(val) => setPayments((prev) => prev.map((pm, i) => (i === idx ? { ...pm, mode: val as PaymentMode } : pm)))}
+                >
+                  <SelectTrigger className="h-8 w-36 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_MODES.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  inputMode="decimal"
+                  placeholder="Amount ₹"
+                  aria-label={`Payment ${idx + 1} amount`}
+                  readOnly={payFull && idx === 0}
+                  value={payFull && idx === 0 ? (totals.fullFirstPaymentPaise / 100).toFixed(2) : p.amountRupees}
+                  onChange={(e) => setPayments((prev) => prev.map((pm, i) => (i === idx ? { ...pm, amountRupees: e.target.value } : pm)))}
+                  className="h-8 font-mono text-xs"
+                />
+                {payments.length > 1 && (
+                  <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => setPayments((prev) => prev.filter((_, i) => i !== idx))}>
+                    <Minus className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" className="h-7 border-amber-300 text-xs font-medium" onClick={() => setPayments((prev) => [...prev, { mode: "cash", amountRupees: "" }])}>
+              <Plus className="mr-1 h-3 w-3" /> Add Payment Split
+            </Button>
+          </div>
+        </section>
+
+        <section className={goldPanel}>
+          <div className="space-y-2 p-3">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Sub Total (taxable value)</span>
+              <span className="font-mono">{formatPaise(totals.subtotalPaise)}</span>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <label htmlFor="bill-discount" className="text-muted-foreground">Discount</label>
+              <div className="flex items-center gap-1.5">
+                <select
+                  aria-label="Discount type"
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  value={discountMode}
+                  onChange={(e) => {
+                    setDiscountMode(e.target.value as typeof discountMode);
+                    if (e.target.value === "none") setDiscountValue("");
+                  }}
+                >
+                  <option value="none">None</option>
+                  <option value="percent">%</option>
+                  <option value="fixed">₹</option>
+                </select>
+                <Input
+                  id="bill-discount"
+                  inputMode="decimal"
+                  placeholder={discountMode === "percent" ? "0 %" : "0.00"}
+                  disabled={discountMode === "none"}
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                  aria-invalid={Boolean(discountError)}
+                  className="h-8 w-20 text-right font-mono text-xs"
+                />
+                <span className="w-20 text-right font-mono text-emerald-600">{totals.discountPaise > 0 ? `-${formatPaise(totals.discountPaise)}` : ""}</span>
+              </div>
+              {discountError && <p className="w-full text-right text-[11px] font-medium text-destructive">{discountError}</p>}
+            </div>
+
+            {isGst && (
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>Tax (GST)</span>
+                <span className="font-mono">{formatPaise(totals.taxPaise)}</span>
+              </div>
+            )}
+            {totals.oldItemDeductionPaise > 0 && (
+              <div className="flex justify-between text-xs text-amber-600">
+                <span>Old item deduction{oldItemDeductionNote.trim() ? ` (${oldItemDeductionNote.trim()})` : ""}</span>
+                <span className="font-mono">-{formatPaise(totals.oldItemDeductionPaise)}</span>
+              </div>
+            )}
+            {totals.oldGoldValuePaise > 0 && (
+              <div className="flex justify-between text-xs text-amber-600">
+                <span>Old gold / silver deduction</span>
+                <span className="font-mono">-{formatPaise(totals.oldGoldValuePaise)}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between rounded-lg bg-gradient-to-r from-amber-300 via-amber-200 to-amber-100 px-3 py-2 text-amber-950 dark:from-amber-700/60 dark:via-amber-800/40 dark:to-amber-900/30 dark:text-amber-50">
+              <span className="text-base font-bold">Total Amount</span>
+              <span className="font-mono text-xl font-bold tabular-nums">{formatPaise(totals.totalPaise)}</span>
+            </div>
+
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Paid</span>
+              <span className="font-mono">{formatPaise(totals.amountPaidPaise)}</span>
+            </div>
+            <div className={`flex items-center justify-between text-xs font-semibold ${totals.balancePaise > 0 ? "text-rose-600" : "text-muted-foreground"}`}>
+              <span className="flex items-center gap-2">
+                Balance Amount
+                <Badge variant="outline" className="text-[10px] font-semibold">
+                  {totals.totalPaise > 0 && totals.balancePaise <= 0 ? "Paid" : totals.amountPaidPaise > 0 ? "Partial" : "Unpaid"}
+                </Badge>
+              </span>
+              <span className="font-mono">{formatPaise(Math.max(0, totals.balancePaise))}</span>
+            </div>
+            {totals.balancePaise > 0 && (
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <label htmlFor="bill-due-date" className="text-muted-foreground">Balance due by (reminder date)</label>
+                <Input id="bill-due-date" type="date" value={dueDate} min={todayDateInput()} onChange={(e) => setDueDate(e.target.value)} className="h-8 w-40 text-xs" />
+              </div>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
 
     {/* Pinned bottom bar: the bill total and the save / print / share actions are always on screen. */}
-    <div className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t bg-card/95 px-3 py-2.5 shadow-[0_-6px_16px_rgb(17_45_78/6%)] backdrop-blur">
+    <div className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-amber-300/80 bg-gradient-to-r from-amber-50 via-card to-amber-50 px-3 py-2.5 shadow-[0_-6px_16px_rgb(120_80_10/8%)] backdrop-blur dark:border-amber-500/30 dark:from-amber-950/40 dark:via-card dark:to-amber-950/40">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
         <span className="text-muted-foreground">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
         <span className="flex items-baseline gap-1.5">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-mono text-lg font-bold tabular-nums text-primary">{formatPaise(totals.totalPaise)}</span>
+          <span className="font-mono text-lg font-bold tabular-nums text-amber-800 dark:text-amber-300">{formatPaise(totals.totalPaise)}</span>
         </span>
         <span className="text-muted-foreground">Paid <span className="font-mono text-foreground">{formatPaise(totals.amountPaidPaise)}</span></span>
         <span className={totals.balancePaise > 0 ? "font-semibold text-rose-600" : "text-muted-foreground"}>Balance <span className="font-mono">{formatPaise(Math.max(0, totals.balancePaise))}</span></span>
@@ -2064,53 +2004,53 @@ export default function NewBillPage() {
         {holdNotice && !serverError && <p className="w-full text-xs font-medium text-amber-700">{holdNotice}</p>}
       </div>
       <div className="flex flex-wrap items-center justify-end gap-2">
-                {!editSaleId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-9 border-amber-300 text-amber-800 hover:bg-amber-50"
-                    disabled={submitting || holding}
-                    onClick={() => void holdBill()}
-                    title="Park this bill and start a new one for the next customer"
-                  >
-                    <Pause className="h-3.5 w-3.5 mr-1" />
-                    {holding ? "Holding..." : "Hold"}
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9"
-                  disabled={submitting}
-                  onClick={() => finalizeSale("printShare")}
-                >
-                  <MessageCircle className="h-3.5 w-3.5 mr-1" />
-                  Share [F4]
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-9"
-                  disabled={submitting}
-                  onClick={() => finalizeSale("print")}
-                >
-                  <Printer className="h-3.5 w-3.5 mr-1" />
-                  Print A5 [F2]
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-9 bg-[#1a73e8] hover:bg-[#1557b0] text-white font-semibold shadow-xs"
-                  disabled={submitting}
-                  onClick={() => finalizeSale("new")}
-                >
-                  {submitting ? "Saving…" : "Save Bill [F3]"}
-                </Button>
+        <Button type="button" variant="outline" size="sm" className={pillBtn} onClick={() => addRow()}>
+          <Plus className="mr-1 h-3.5 w-3.5" /> Add Item
+        </Button>
+        {!editSaleId && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className={pillBtn}
+            disabled={submitting || holding}
+            onClick={() => void holdBill()}
+            title="Park this bill and start a new one for the next customer"
+          >
+            <Pause className="mr-1 h-3.5 w-3.5" />
+            {holding ? "Holding..." : "Hold"}
+          </Button>
+        )}
+        <Button type="button" variant="outline" size="sm" className={pillBtn} disabled={submitting} onClick={() => finalizeSale("printShare")}>
+          <MessageCircle className="mr-1 h-3.5 w-3.5" />
+          Share [F4]
+        </Button>
+        <Button type="button" variant="outline" size="sm" className={pillBtn} disabled={submitting} onClick={() => finalizeSale("print")}>
+          <Printer className="mr-1 h-3.5 w-3.5" />
+          Print A5 [F2]
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className="h-9 rounded-full bg-gradient-to-b from-amber-500 to-amber-700 px-5 font-semibold text-white shadow hover:from-amber-600 hover:to-amber-800"
+          disabled={submitting}
+          onClick={() => finalizeSale("new")}
+        >
+          <Save className="mr-1 h-3.5 w-3.5" />
+          {submitting ? "Saving…" : "Save Bill [F3]"}
+        </Button>
       </div>
     </div>
+    </div>
+  );
+}
+
+/** One label · value line in the Bill Summary panel. */
+function SummaryRow({ label, value, mono, valueClassName }: { label: string; value: string; mono?: boolean; valueClassName?: string }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={`${mono ? "font-mono" : "font-semibold"} tabular-nums ${valueClassName ?? ""}`}>{value}</span>
     </div>
   );
 }
