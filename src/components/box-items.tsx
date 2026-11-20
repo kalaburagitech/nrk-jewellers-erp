@@ -165,8 +165,8 @@ export function BoxEntryForm({ box, entry, onDone }: { box: BoxRow; entry?: BoxE
   }
 
   return (
-    <form className="grid gap-3 rounded-lg border bg-muted/30 p-3 sm:grid-cols-3" onSubmit={(e) => { e.preventDefault(); void save(); }}>
-      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:col-span-3">
+    <form className="grid gap-x-3 gap-y-2.5 rounded-lg border bg-muted/30 p-3 sm:grid-cols-3 lg:grid-cols-4" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:col-span-3 lg:col-span-4">
         {isEdit ? `Edit ${entry.productName} in Box ${box.boxNumber}` : `Add item to Box ${box.boxNumber}`}
       </p>
       <Field label="Item *" className="sm:col-span-2">
@@ -235,12 +235,12 @@ export function BoxEntryForm({ box, entry, onDone }: { box: BoxRow; entry?: BoxE
           {taxes?.map((t) => <option key={t._id} value={t._id}>{t.name}</option>)}
         </select>
       </Field>
-      <Field label="Description" className="sm:col-span-3">
+      <Field label="Description" className="sm:col-span-3 lg:col-span-4">
         <Input aria-label="Description" maxLength={300} placeholder="Design, stones, notes…" value={f.description} onChange={(e) => set("description", e.target.value)} />
       </Field>
-      {!isEdit && <p className="text-xs text-muted-foreground sm:col-span-3">Gross weight, net weight and pieces are the opening stock of this item in the box. Later changes come from purchases, sales, adjustments and transfers.</p>}
-      {error && <p role="alert" className="text-sm text-destructive sm:col-span-3">{error}</p>}
-      <div className="flex justify-end gap-2 sm:col-span-3">
+      {!isEdit && <p className="text-xs text-muted-foreground sm:col-span-3 lg:col-span-4">Gross weight, net weight and pieces are the opening stock of this item in the box. Later changes come from purchases, sales, adjustments and transfers.</p>}
+      {error && <p role="alert" className="text-sm text-destructive sm:col-span-3 lg:col-span-4">{error}</p>}
+      <div className="flex justify-end gap-2 sm:col-span-3 lg:col-span-4">
         <Button type="button" variant="ghost" onClick={onDone}>Cancel</Button>
         <Button type="submit" disabled={busy}>{busy ? "Saving…" : isEdit ? "Save" : "Add to box"}</Button>
       </div>
@@ -280,7 +280,7 @@ export function BoxItemsSection({ box, entries }: { box: BoxRow; entries: BoxEnt
       </div>
       {entries.length > 0 && (
         <div className="overflow-x-auto rounded-md border">
-          <table className="w-full min-w-[640px] text-xs">
+          <table className="w-full min-w-[640px] text-xs [&_tbody_tr:hover]:bg-muted/30">
             <thead className="bg-muted/40 text-left text-[11px] font-semibold text-muted-foreground">
               <tr>
                 <th className="px-2 py-1.5">ITEM</th>

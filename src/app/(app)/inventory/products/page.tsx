@@ -85,8 +85,8 @@ function ImportProductsDialog({
 
 function StatCard({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
-    <Card className="border-border/80 shadow-xs">
-      <CardContent className="p-4">
+    <Card className="gap-0 border-border/80 py-0 shadow-xs">
+      <CardContent className="p-3.5">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
         <p className={`mt-1 text-base font-bold ${tone ?? "text-foreground"}`}>{value}</p>
         {note && <p className="mt-0.5 text-xs text-muted-foreground">{note}</p>}
@@ -117,9 +117,9 @@ function ProductDetailView({
   const box = product.defaultBoxId ? boxes?.find((b) => b._id === product.defaultBoxId) : undefined;
   const g = (mg?: number) => (mg === undefined ? "—" : `${(mg / 1000).toFixed(3)} g`);
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {/* Item Header & Controls (Page 10) */}
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 shadow-xs">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-xl font-bold uppercase tracking-tight text-foreground">
@@ -166,7 +166,7 @@ function ProductDetailView({
       </div>
 
       {/* Summary cards: real prices and live stock */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard label="Sale Price" value={product.salePricePaise !== undefined ? `${formatPaise(product.salePricePaise)} ${product.salePriceIncludesTax ? "(incl. tax)" : "(excl. tax)"}` : "Billed at today's rate"} />
         {pricing?.canViewCost && (
           <StatCard
@@ -319,11 +319,11 @@ export default function ProductsPage() {
   }, [filtered, selectedProductId]);
 
   return (
-    <div className="mx-auto flex max-w-7xl flex-col gap-5">
+    <div className="erp-fill flex w-full flex-col gap-3">
       {/* Top Header & Import / Add Buttons */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Items / Products</h1>
+          <h1 className="text-xl font-bold tracking-tight">Items / Products</h1>
           <p className="text-xs text-muted-foreground">
             Manage jewellery stock, physical boxes, purities, barcodes, and stock adjustments.
           </p>
@@ -335,12 +335,12 @@ export default function ProductsPage() {
       </div>
 
       {/* Top Navigation Tabs matching Page 10 */}
-      <div className="border-b">
-        <div className="flex gap-4 text-xs font-semibold uppercase tracking-wider">
+      <div className="shrink-0 border-b">
+        <div className="flex gap-5 overflow-x-auto text-xs font-semibold uppercase tracking-wider">
           <button
             type="button"
             onClick={() => setActiveTab("products")}
-            className={`pb-2.5 border-b-2 transition ${
+            className={`whitespace-nowrap pb-2 border-b-2 transition ${
               activeTab === "products"
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
@@ -352,7 +352,7 @@ export default function ProductsPage() {
             <button
               type="button"
               onClick={() => setActiveTab("boxes")}
-              className={`pb-2.5 border-b-2 transition ${
+              className={`whitespace-nowrap pb-2 border-b-2 transition ${
                 activeTab === "boxes"
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -363,13 +363,13 @@ export default function ProductsPage() {
           )}
           <Link
             href="/inventory/categories"
-            className="pb-2.5 border-b-2 border-transparent text-muted-foreground hover:text-foreground"
+            className="whitespace-nowrap pb-2 border-b-2 border-transparent text-muted-foreground hover:text-foreground"
           >
             Categories
           </Link>
           <Link
             href="/inventory/groups"
-            className="pb-2.5 border-b-2 border-transparent text-muted-foreground hover:text-foreground"
+            className="whitespace-nowrap pb-2 border-b-2 border-transparent text-muted-foreground hover:text-foreground"
           >
             Stock Groups
           </Link>
@@ -377,10 +377,10 @@ export default function ProductsPage() {
       </div>
 
       {/* 2-Pane Split Master-Detail Layout (Page 10) */}
-      <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[380px_1fr] gap-5 items-start">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr]">
         {/* Left Pane: Items / Boxes List with Quantity (Page 10) */}
-        <div className="rounded-xl border bg-card shadow-xs overflow-hidden">
-          <div className="p-3 border-b bg-muted/20">
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-xs">
+          <div className="shrink-0 p-3 border-b bg-muted/20">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -397,7 +397,7 @@ export default function ProductsPage() {
             </div>
           </div>
 
-          <div className="max-h-[650px] overflow-y-auto divide-y divide-border/60">
+          <div className="erp-scroll max-h-[60vh] flex-1 overflow-y-auto divide-y divide-border/60 lg:max-h-none">
             {tabToUse === "boxes" ? (
               filteredBoxes === undefined ? (
                 <p className="p-5 text-xs text-muted-foreground text-center">Loading boxes…</p>
@@ -417,7 +417,7 @@ export default function ProductsPage() {
                       key={b.box._id}
                       type="button"
                       onClick={() => setSelectedBoxId(b.box._id)}
-                      className={`w-full p-3 text-left transition-colors flex items-center justify-between gap-3 ${
+                      className={`w-full px-3 py-2.5 text-left transition-colors flex items-center justify-between gap-3 ${
                         isSelected
                           ? "bg-primary/10 border-l-4 border-l-primary"
                           : "hover:bg-muted/40"
@@ -460,7 +460,7 @@ export default function ProductsPage() {
                     key={p._id}
                     type="button"
                     onClick={() => setSelectedProductId(p._id)}
-                    className={`w-full p-3 text-left transition-colors flex items-center justify-between gap-3 ${
+                    className={`w-full px-3 py-2.5 text-left transition-colors flex items-center justify-between gap-3 ${
                       isSelected
                         ? "bg-primary/10 border-l-4 border-l-primary"
                         : "hover:bg-muted/40"
@@ -486,11 +486,11 @@ export default function ProductsPage() {
         </div>
 
         {/* Right Pane: Selected Item / Box Details & Transactions (Page 10) */}
-        <div className="min-w-0 space-y-5">
+        <div className="erp-scroll min-h-0 min-w-0 space-y-3 overflow-y-auto">
           {tabToUse === "boxes" && activeBox ? (
-            <div className="space-y-5">
+            <div className="space-y-3">
               {/* Box Header & Controls matching Page 10 */}
-              <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+              <div className="flex flex-wrap items-start justify-between gap-3 rounded-xl border bg-card p-4 shadow-xs">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-xl font-bold uppercase tracking-tight text-foreground">
@@ -529,7 +529,7 @@ export default function ProductsPage() {
               </div>
 
               {/* Box Transactions Table matching Page 10 */}
-              <div className="rounded-xl border bg-card p-4 sm:p-5 shadow-xs">
+              <div className="rounded-xl border bg-card p-4 shadow-xs">
                 <div className="flex items-center justify-between mb-3 border-b pb-2">
                   <h3 className="font-bold text-sm uppercase tracking-wide">
                     Transactions

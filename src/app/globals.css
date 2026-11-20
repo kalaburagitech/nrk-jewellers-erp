@@ -237,3 +237,10 @@ html[data-reading-size="large"] :is(.erp-shell, [data-slot="dialog-content"], [d
 
 .premium-sidebar[data-mobile="true"] { background: linear-gradient(165deg, color-mix(in srgb, var(--sidebar) 82%, white), var(--sidebar) 48%, color-mix(in srgb, var(--sidebar) 82%, black)); }
 html[data-reading-size="large"] .premium-sidebar[data-mobile="true"] { --navigation-size: 17px; --subnavigation-size: 16px; --text-sm: 1.0625rem; --text-xs: 0.9375rem; }
+
+/* Work screens (items, boxes) fill the window on desktop: lists scroll inside their panel, not the whole page.
+   100svh − topbar (4rem) − main padding (2 × 1.25rem). */
+@media (min-width: 1024px) {
+  .erp-fill { height: calc(100svh - 6.5rem); min-height: 32rem; }
+}
+.erp-scroll { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted-foreground) 35%, transparent) transparent; }

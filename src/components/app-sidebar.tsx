@@ -3,10 +3,11 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Image from "next/image";
-import { ChevronDown, Plus, Search } from "lucide-react";
+import { ChevronDown, PanelLeftClose, PanelLeftOpen, Plus, Search } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -79,7 +80,7 @@ export function AppSidebar({ role }: { role: string }) {
   }
   return (
     <Sidebar collapsible="icon" className="premium-sidebar print:hidden">
-      <SidebarHeader className="gap-4 border-b border-sidebar-border/70 px-4 py-5 group-data-[collapsible=icon]:px-2">
+      <SidebarHeader className="gap-3 border-b border-sidebar-border/70 px-4 py-4 group-data-[collapsible=icon]:px-2">
         <Link
           href="/"
           onClick={navigate}
@@ -105,7 +106,7 @@ export function AppSidebar({ role }: { role: string }) {
         {!viewOnly && <Link
           href="/sales/new"
           onClick={navigate}
-          className="flex h-11 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-sidebar-ring group-data-[collapsible=icon]:hidden"
+          className="flex h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 text-sm font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-sidebar-ring group-data-[collapsible=icon]:hidden"
         >
           <Plus className="h-4 w-4" />
           New Sale
@@ -113,6 +114,18 @@ export function AppSidebar({ role }: { role: string }) {
             F2
           </span>
         </Link>}
+        {/* Collapsed: the same New Sale action as an icon. */}
+        {!viewOnly && (
+          <SidebarMenu className="hidden group-data-[collapsible=icon]:flex">
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="New Sale (F2)" className="justify-center bg-white/10 text-white hover:bg-white/20 hover:text-white">
+                <Link href="/sales/new" onClick={navigate} aria-label="New Sale">
+                  <Plus className="size-[19px]!" />
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        )}
         <label className="relative block group-data-[collapsible=icon]:hidden">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-sidebar-foreground/60" />
           <input
@@ -174,7 +187,7 @@ export function AppSidebar({ role }: { role: string }) {
                           asChild
                           isActive={active}
                           tooltip={section.title}
-                          className="h-11 rounded-xl px-3 text-[15px] font-medium data-active:font-semibold"
+                          className="h-10 rounded-xl px-3 text-[15px] font-medium data-active:font-semibold"
                         >
                           <Link
                             href={section.href}
@@ -255,6 +268,22 @@ export function AppSidebar({ role }: { role: string }) {
             </p>
           )}
       </SidebarContent>
+      {/* Stays as the user leaves it: only this button (or the topbar one) expands or collapses the menu. */}
+      <SidebarFooter className="hidden border-t border-sidebar-border/70 p-2 md:flex">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              tooltip={state === "collapsed" ? "Expand menu" : "Collapse menu"}
+              onClick={() => setOpen(state === "collapsed")}
+              aria-label={state === "collapsed" ? "Expand menu" : "Collapse menu"}
+              className="h-10 rounded-xl px-3 text-sidebar-foreground/75 hover:text-white"
+            >
+              {state === "collapsed" ? <PanelLeftOpen className="size-[19px]!" /> : <PanelLeftClose className="size-[19px]!" />}
+              <span>Collapse menu</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

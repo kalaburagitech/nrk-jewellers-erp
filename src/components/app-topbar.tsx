@@ -199,7 +199,7 @@ export function AppTopbar({
   const pageTitle = page?.title ?? "Workspace";
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 sm:h-20 shrink-0 items-center justify-between gap-1.5 sm:gap-5 border-b border-border/70 bg-card/95 px-2.5 sm:px-4 backdrop-blur-xl lg:px-8 print:hidden">
+    <header className="sticky top-0 z-30 flex h-14 sm:h-16 shrink-0 items-center justify-between gap-1.5 sm:gap-5 border-b border-border/70 bg-card/95 px-2.5 sm:px-4 backdrop-blur-xl lg:px-8 print:hidden">
       <div className="flex min-w-0 items-center gap-1 sm:gap-2">
         <SidebarTrigger aria-label="Expand or collapse navigation" title="Expand or collapse navigation" />
         {pathname !== "/" && <Button variant="ghost" size="icon" aria-label="Go back" title="Go back" className="h-8 w-8 sm:h-9 sm:w-9" onClick={() => window.history.length > 1 ? router.back() : router.push("/")}><ArrowLeft className="h-4 w-4" /></Button>}

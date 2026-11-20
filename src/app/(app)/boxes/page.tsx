@@ -69,11 +69,11 @@ function MetalSelect({ id, value, onChange }: { id: string; value: Metal | ""; o
   );
 }
 
-function StatTile({ label, value, unit }: { label: string; value: string; unit?: string }) {
+function StatTile({ label, value, unit, tone }: { label: string; value: string; unit?: string; tone?: string }) {
   return (
-    <div className="rounded-lg border bg-muted/30 p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}{unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}</p>
+    <div className="rounded-lg border bg-card px-3 py-2.5 shadow-xs">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={`mt-0.5 text-lg font-bold tabular-nums ${tone ?? ""}`}>{value}{unit && <span className="ml-1 text-xs font-normal text-muted-foreground">{unit}</span>}</p>
     </div>
   );
 }
@@ -121,20 +121,20 @@ function CreateBoxForm({ onCreated }: { onCreated: (boxId: Id<"boxes">) => void 
   }
 
   return (
-    <Card>
-      <CardHeader><CardTitle className="text-base">Create new box</CardTitle></CardHeader>
+    <Card size="sm" className="shadow-xs">
+      <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-sm font-bold uppercase tracking-wide"><Plus className="h-4 w-4 text-primary" />Create new box</CardTitle></CardHeader>
       <CardContent>
-        <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4" onSubmit={(e) => { e.preventDefault(); void handleCreate(); }}>
+        <form className="grid gap-x-3 gap-y-2.5 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); void handleCreate(); }}>
           <div className="grid gap-1"><Label htmlFor="new-box-number">Box serial number *</Label><Input id="new-box-number" type="number" min="1" step="1" placeholder="101" value={boxNumber} onChange={(e) => setBoxNumber(e.target.value)} /></div>
           <div className="grid gap-1"><Label htmlFor="new-box-metal">Metal *</Label><MetalSelect id="new-box-metal" value={metal} onChange={setMetal} /></div>
           <div className="grid gap-1"><Label htmlFor="new-box-label">Box name</Label><Input id="new-box-label" maxLength={60} placeholder="e.g. Silver Chains" value={label} onChange={(e) => setLabel(e.target.value)} /></div>
           <CategoryTypeFields idPrefix="new-box" category={category} boxType={boxType} onCategory={setCategory} onBoxType={setBoxType} />
           <div className="grid gap-1"><Label htmlFor="new-box-location">Godown / location</Label><Input id="new-box-location" maxLength={60} placeholder="Main Shop" value={location} onChange={(e) => setLocation(e.target.value)} /></div>
           <div className="grid gap-1 sm:col-span-2"><Label htmlFor="new-box-description">Box description</Label><Input id="new-box-description" maxLength={200} placeholder="Optional" value={description} onChange={(e) => setDescription(e.target.value)} /></div>
-          <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-3">Each box number is unique. After creating the box, add the items inside it — each item with its HSN, purity, gross and net weight, pieces, wastage, making, prices, discount and tax. One box can hold several items (e.g. necklaces and a few small rings).</p>
-          <Button type="submit" disabled={creating}><Plus className="h-4 w-4" />{creating ? "Creating…" : "Create Box"}</Button>
-          {error && <p role="alert" className="text-sm text-destructive sm:col-span-2 lg:col-span-4">{error}</p>}
-          {done && <p role="status" className="text-sm text-success sm:col-span-2 lg:col-span-4">{done}</p>}
+          <p className="text-xs text-muted-foreground sm:col-span-2">Each box number is unique. After creating the box, add the items inside it — each item with its HSN, purity, gross and net weight, pieces, wastage, making, prices, discount and tax. One box can hold several items (e.g. necklaces and a few small rings).</p>
+          <Button type="submit" disabled={creating} className="sm:col-span-2"><Plus className="h-4 w-4" />{creating ? "Creating…" : "Create Box"}</Button>
+          {error && <p role="alert" className="text-sm text-destructive sm:col-span-2">{error}</p>}
+          {done && <p role="status" className="text-sm text-success sm:col-span-2">{done}</p>}
         </form>
       </CardContent>
     </Card>
@@ -194,19 +194,20 @@ function BoxDetailDialog({ box, onClose }: { box: BoxRow; onClose: () => void })
   const movements = useQuery(api.boxes.movements, { boxId: box._id });
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
+      <DialogContent className="erp-scroll max-h-[92svh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}</DialogTitle>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
           <StatTile label="Available weight" value={mgToGramsDisplay(box.weightMg)} unit="g" />
           <StatTile label="Pieces" value={String(box.pieces)} />
+          <div className="flex flex-wrap gap-2 sm:flex-col">
+            <Button asChild variant="outline" size="sm"><Link href="/inventory/adjustments">Add / deduct stock</Link></Button>
+            <Button asChild variant="outline" size="sm"><Link href="/boxes/transfers">Transfer to another box</Link></Button>
+          </div>
         </div>
         <BoxItemsSection box={box} entries={box.entries} />
-        <div className="flex flex-wrap gap-2">
-          <Button asChild variant="outline" size="sm"><Link href="/inventory/adjustments">Add / deduct stock</Link></Button>
-          <Button asChild variant="outline" size="sm"><Link href="/boxes/transfers">Transfer to another box</Link></Button>
-        </div>
+        <div className="grid items-start gap-3 lg:grid-cols-2">
         <BoxEditForm key={`${box._id}-${box.boxNumber}-${box.metal ?? ""}`} box={box} />
         <div className="flex flex-col gap-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent stock movements</p>
@@ -215,7 +216,7 @@ function BoxDetailDialog({ box, onClose }: { box: BoxRow; onClose: () => void })
           ) : movements.length === 0 ? (
             <p className="text-sm text-muted-foreground">No stock movements yet.</p>
           ) : (
-            <ul className="flex flex-col divide-y rounded-md border text-sm">
+            <ul className="erp-scroll flex max-h-80 flex-col divide-y overflow-y-auto rounded-md border text-sm">
               {movements.map((m) => (
                 <li key={m._id} className="flex items-center justify-between gap-3 px-3 py-2">
                   <div className="min-w-0">
@@ -229,6 +230,7 @@ function BoxDetailDialog({ box, onClose }: { box: BoxRow; onClose: () => void })
               ))}
             </ul>
           )}
+        </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -259,8 +261,8 @@ function SetupFromItemList() {
     }
   }
   return (
-    <Card className="border-amber-500/40 bg-amber-500/5">
-      <CardContent className="flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
+    <Card size="sm" className="shrink-0 border-amber-500/40 bg-amber-500/5">
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
         <p>{pending} item{pending === 1 ? " has" : "s have"} a box set in the Item List but {pending === 1 ? "is" : "are"} not listed inside that box yet. Copy their HSN, purity, prices and charges into their boxes?</p>
         <Button type="button" size="sm" disabled={busy} onClick={run}>{busy ? "Setting up…" : "Add items to their boxes"}</Button>
       </CardContent>
@@ -307,36 +309,38 @@ export default function BoxOverviewPage() {
 
   return (
     <BoxScreensGate>
-      <div className="mx-auto flex max-w-6xl flex-col gap-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Box Overview</h1>
-          <p className="text-sm text-muted-foreground">Box-wise stock and weight. Sales deduct the gross weight from the selected box; purchases add to it.</p>
+      <div className="erp-fill flex w-full flex-col gap-3">
+        <div className="shrink-0">
+          <h1 className="text-xl font-bold tracking-tight">Box Overview</h1>
+          <p className="text-xs text-muted-foreground">Box-wise stock and weight. Sales deduct the gross weight from the selected box; purchases add to it.</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* Totals and metal-wise stock in one row */}
+        <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
           <StatTile label="Total boxes" value={boxes ? String(stats.totalBoxes) : "—"} />
           <StatTile label="Total stock weight" value={boxes ? mgToGramsDisplay(stats.weightMg) : "—"} unit="g" />
           <StatTile label="Total pieces" value={boxes ? String(stats.pieces) : "—"} />
           <StatTile label="Active items" value={products ? String(products.filter((p) => p.isActive).length) : "—"} />
+          <StatTile label="Gold" value={mgToGramsDisplay(stats.goldMg)} unit="g" tone="text-amber-600 dark:text-amber-400" />
+          <StatTile label="Silver" value={mgToGramsDisplay(stats.silverMg)} unit="g" tone="text-slate-500 dark:text-slate-300" />
         </div>
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-base">Metal-wise stock</CardTitle></CardHeader>
-          <CardContent className="grid gap-2 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Gold</span><span className="font-semibold tabular-nums">{mgToGramsDisplay(stats.goldMg)} g</span></div>
-            <div className="flex justify-between"><span className="text-muted-foreground">Silver</span><span className="font-semibold tabular-nums">{mgToGramsDisplay(stats.silverMg)} g</span></div>
-            {stats.unsetCount > 0 && (
-              <p className="text-xs text-amber-600">{stats.unsetCount} box{stats.unsetCount === 1 ? " has" : "es have"} no metal set — open the box and choose Gold or Silver so it is counted here and billing can check it.</p>
-            )}
-          </CardContent>
-        </Card>
+        {stats.unsetCount > 0 && (
+          <p className="shrink-0 text-xs text-amber-600">{stats.unsetCount} box{stats.unsetCount === 1 ? " has" : "es have"} no metal set — open the box and choose Gold or Silver so it is counted here and billing can check it.</p>
+        )}
 
         <SetupFromItemList />
-        <CreateBoxForm onCreated={setSelectedBox} />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative max-w-sm flex-1">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(320px,380px)_1fr]">
+          <div className="erp-scroll min-h-0 lg:overflow-y-auto">
+            <CreateBoxForm onCreated={setSelectedBox} />
+          </div>
+
+          {/* Box list: search and filters on top, list scrolls inside */}
+          <div className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card shadow-xs">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 p-3">
+          <div className="relative min-w-48 flex-1">
             <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input className="pl-9" placeholder="Search box number, name or location" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <Input className="h-9 pl-9" placeholder="Search box number, name or location" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <select aria-label="Filter by metal" className="h-9 rounded-md border bg-background px-3 text-sm" value={metalFilter} onChange={(e) => setMetalFilter(e.target.value as Metal | "")}>
             <option value="">All metals</option>
@@ -350,16 +354,15 @@ export default function BoxOverviewPage() {
         </div>
 
         <BulkRecordActions selection={selection} table="boxes" />
+        <div className="erp-scroll max-h-[70vh] min-h-0 flex-1 overflow-y-auto lg:max-h-none">
         {filtered === undefined ? (
-          <p className="text-sm text-muted-foreground">Loading…</p>
+          <p className="p-4 text-sm text-muted-foreground">Loading…</p>
         ) : filtered.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">{boxes?.length ? "No boxes match your search." : "No boxes yet. Create your first box above."}</p>
+          <p className="py-12 text-center text-sm text-muted-foreground">{boxes?.length ? "No boxes match your search." : "No boxes yet. Create your first box on the left."}</p>
         ) : (
-          <Card className="py-0">
-            <CardContent className="p-0">
               <ul className="divide-y">
                 {filtered.map((box) => (
-                  <li key={box._id} className={`flex items-center gap-3 px-4 py-3 ${selection.has(box._id) ? "bg-primary/5" : ""} ${box.isActive ? "" : "opacity-60"}`}>
+                  <li key={box._id} className={`flex items-center gap-3 px-4 py-2.5 transition-colors hover:bg-muted/30 ${selection.has(box._id) ? "bg-primary/5" : ""} ${box.isActive ? "" : "opacity-60"}`}>
                     <Checkbox aria-label={`Select Box ${box.boxNumber}`} checked={selection.has(box._id)} onCheckedChange={() => selection.toggle(box._id)} />
                     <button type="button" onClick={() => setSelectedBox(box._id)} className="flex min-w-0 flex-1 items-center justify-between gap-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`View Box ${box.boxNumber}`}>
                       <span className="flex min-w-0 items-center gap-3">
@@ -388,9 +391,10 @@ export default function BoxOverviewPage() {
                   </li>
                 ))}
               </ul>
-            </CardContent>
-          </Card>
         )}
+        </div>
+          </div>
+        </div>
 
         {selectedBoxRecord && <BoxDetailDialog box={selectedBoxRecord} onClose={() => setSelectedBox(null)} />}
       </div>

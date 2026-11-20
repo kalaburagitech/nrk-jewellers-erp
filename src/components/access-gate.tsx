@@ -15,6 +15,12 @@ import { PrivacyLockProvider } from "@/components/privacy-lock-context";
 import { DailySalesPrivacyGuard } from "@/components/daily-sales-privacy-guard";
 import { Toaster } from "@/components/toaster";
 
+/** The expanded / collapsed choice the user last made (the sidebar saves it in a cookie); expanded the first time. */
+function savedSidebarOpen() {
+  if (typeof document === "undefined") return true;
+  return !/(?:^|;\s*)sidebar_state=false(?:;|$)/.test(document.cookie);
+}
+
 function CenteredState({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background p-6 text-center">
@@ -69,7 +75,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
     <AccessProvider role={access.membership.role}>
     <AppLockGate userId={access.membership.userId}>
       <PrivacyLockProvider>
-        <SidebarProvider defaultOpen={true} className="erp-shell">
+        <SidebarProvider defaultOpen={savedSidebarOpen()} className="erp-shell">
           <AppSidebar role={access.membership.role} />
           {/* min-w-0: let wide tables scroll inside their own box instead of widening the whole page. */}
           <SidebarInset className="min-w-0">
@@ -86,7 +92,7 @@ export function AccessGate({ children }: { children: ReactNode }) {
                 <span><strong>View only.</strong> You can see records but cannot add, edit or delete. Ask the Owner for changes.</span>
               </div>
             )}
-            <main className="erp-main flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 print:overflow-visible print:p-0">
+            <main className="erp-main flex-1 overflow-y-auto p-3 sm:p-4 lg:p-5 print:overflow-visible print:p-0">
               {blocked ? (
                 <div className="mx-auto flex max-w-md flex-col items-center gap-3 py-16 text-center">
                   <Lock className="h-8 w-8 text-muted-foreground" />

@@ -1033,23 +1033,24 @@ export default function NewBillPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6">
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
+    <div className="erp-fill flex w-full flex-col">
+    <div className="erp-scroll flex min-h-0 flex-1 flex-col gap-3 pb-3 lg:overflow-y-auto lg:pr-1">
+      <div className="flex shrink-0 flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight">{editSaleId ? "Edit Bill" : "New Bill"}</h1>
+          <p className="text-xs text-muted-foreground">
+            {editSaleId
+              ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
+              : "Choose the box, enter gross and net weight, see every charge live, and save the bill."}
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground">
-          {editSaleId
-            ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
-            : "Choose the box, enter gross and net weight, see every charge live, and save the bill."}
-        </p>
       </div>
 
       <MetalRateTicker currentRates={currentRates} />
 
       <>
         {/* Vyapar Sale Header Tabs matching Page 17 */}
-        <div className="flex items-center justify-between border-b pb-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
           <div className="flex items-center gap-1.5">
             <div className="flex items-center gap-2 rounded-t-lg border-t border-l border-r bg-card px-3 py-1.5 text-xs font-semibold shadow-xs">
               <span>Sale #1</span>
@@ -1114,11 +1115,11 @@ export default function NewBillPage() {
         </div>
 
         {/* Vyapar Customer & Invoice Metadata Card (Page 17) */}
-        <Card className="border-border/80 shadow-xs">
-          <CardContent className="p-4 sm:p-5">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <Card size="sm" className="shrink-0 overflow-visible border-border/80 shadow-xs">
+          <CardContent>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.15fr_1fr]">
               {/* Left Column: Party Details */}
-              <div className="space-y-3">
+              <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-semibold text-muted-foreground">
                     Billing Name (Optional)
@@ -1242,12 +1243,12 @@ export default function NewBillPage() {
         {prefs?.items.barcodeScan !== false && <BarcodeScanInput onBox={(box) => addRow(box._id)} />}
 
         {/* Item grid: one editable row per item. Daily Sales rows take their gross weight out of the chosen box. */}
-        <Card className="border-border/80 shadow-xs overflow-hidden">
-          <CardHeader className="p-4 border-b bg-muted/20 flex flex-row flex-wrap items-center justify-between gap-2">
+        <Card className="shrink-0 gap-0 py-0 border-border/80 shadow-xs overflow-hidden">
+          <CardHeader className="px-3 py-2.5 border-b bg-muted/20 flex flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle className="text-sm font-bold uppercase tracking-wide">
               Items in this bill ({lines.length})
             </CardTitle>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-[11px] text-muted-foreground">
               {gstCompany
                 ? "Bill is priced on net weight (or price per piece); the gross weight and pieces leave the selected box — or loose GST item stock when no box is chosen."
                 : "Bill is priced on net weight (or price per piece); the gross weight and pieces are deducted from the selected box."}
@@ -1257,9 +1258,9 @@ export default function NewBillPage() {
             <datalist id="bill-items">
               {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
             </datalist>
-            <div className="overflow-x-auto">
+            <div className="erp-scroll overflow-auto lg:max-h-[52svh]">
               <table className="w-full min-w-[1100px] text-xs">
-                <thead>
+                <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:bg-muted [&_th]:shadow-[inset_0_-1px_0_var(--border)]">
                   <tr className="border-b bg-muted/30 text-left font-semibold text-muted-foreground">
                     <th className="py-2.5 px-2 w-8">SL</th>
                     <th className="py-2.5 px-2">BOX NO</th>
@@ -1479,7 +1480,7 @@ export default function NewBillPage() {
                 )}
               </table>
             </div>
-            <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
               <Button type="button" variant="outline" size="sm" onClick={() => addRow()}>
                 <Plus className="h-3.5 w-3.5" /> Add Row
               </Button>
@@ -1489,7 +1490,7 @@ export default function NewBillPage() {
         </Card>
 
         {/* Bottom Actions & Summary matching Page 17 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+        <div className="grid shrink-0 grid-cols-1 items-start gap-4 lg:grid-cols-[1fr_minmax(360px,440px)]">
           {/* Left Column: Extra Options (Notes, Terms, Old Gold) */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -1674,7 +1675,7 @@ export default function NewBillPage() {
             )}
 
             {/* Payment Splits */}
-            <Card className="border-border/80 shadow-xs">
+            <Card size="sm" className="border-border/80 shadow-xs">
               <CardHeader className="p-3 pb-2">
                 <CardTitle className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Payment Mode
@@ -1752,8 +1753,8 @@ export default function NewBillPage() {
           </div>
 
           {/* Right Column: Totals & Finalize Buttons (Page 17) */}
-          <Card className="border-border/80 shadow-xs bg-muted/10">
-            <CardContent className="p-4 sm:p-5 space-y-3">
+          <Card size="sm" className="border-border/80 shadow-xs bg-muted/10">
+            <CardContent className="space-y-2.5">
               {(["gold", "silver"] as const).filter((metal) => metalTotals[metal].paise > 0).map((metal) => (
                 <div key={metal} className="flex justify-between text-xs text-muted-foreground">
                   <span>{metal === "gold" ? "Gold" : "Silver"} items ({mgToGramsDisplay(metalTotals[metal].netMg)} g net)</span>
@@ -1857,10 +1858,25 @@ export default function NewBillPage() {
                 </div>
               )}
 
-              {serverError && <p className="text-xs text-destructive font-medium">{serverError}</p>}
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    </div>
 
-              {/* Action Buttons matching Page 17 */}
-              <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
+    {/* Pinned bottom bar: the bill total and the save / print / share actions are always on screen. */}
+    <div className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t bg-card/95 px-3 py-2.5 shadow-[0_-6px_16px_rgb(17_45_78/6%)] backdrop-blur">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+        <span className="text-muted-foreground">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-muted-foreground">Total</span>
+          <span className="font-mono text-lg font-bold tabular-nums text-primary">{formatPaise(totals.totalPaise)}</span>
+        </span>
+        <span className="text-muted-foreground">Paid <span className="font-mono text-foreground">{formatPaise(totals.amountPaidPaise)}</span></span>
+        <span className={totals.balancePaise > 0 ? "font-semibold text-rose-600" : "text-muted-foreground"}>Balance <span className="font-mono">{formatPaise(Math.max(0, totals.balancePaise))}</span></span>
+        {serverError && <p className="w-full text-xs font-medium text-destructive">{serverError}</p>}
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -1892,11 +1908,8 @@ export default function NewBillPage() {
                 >
                   {submitting ? "Saving…" : "Save Bill [F3]"}
                 </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </>
+      </div>
+    </div>
     </div>
   );
 }
