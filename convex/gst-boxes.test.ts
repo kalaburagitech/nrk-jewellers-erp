@@ -86,15 +86,15 @@ describe("GST company box management (same as Daily Sales)", () => {
     expect(boxes.map((b) => b.label)).toEqual(["GST rings"]);
   });
 
-  it("puts loose GST stock into a box without changing the total, and bills a box piece and a loose line together", async () => {
+  it("bills a box piece and a loose line together", async () => {
     const f = await fixture();
-    await f.owner.mutation(api.itemStock.adjust, { productId: f.ring, direction: "in", weightMg: 20000, pieces: 2, reason: "Old GST stock" });
-    await f.owner.mutation(api.itemStock.moveToBox, { productId: f.ring, boxId: f.gstBox, label: "Ring A", grossWeightMg: 10000, stoneWeightMg: 500 });
+    await f.owner.mutation(api.itemStock.adjust, { productId: f.ring, direction: "in", weightMg: 10000, pieces: 1, reason: "Old GST stock" });
+    await f.owner.mutation(api.stockAdjustments.adjustBox, {
+      boxId: f.gstBox, addWeightMg: 10000, deductWeightMg: 0, addPieces: 1, deductPieces: 0, reason: "Ring A", productId: f.ring,
+    });
     expect((await f.owner.query(api.itemStock.list, {})).find((r) => r.productId === f.ring)).toMatchObject({
       weightMg: 20000, pieces: 2, looseWeightMg: 10000, loosePieces: 1, boxPieces: 1,
     });
-    // Can't move more than the loose stock.
-    await expect(f.owner.mutation(api.itemStock.moveToBox, { productId: f.ring, boxId: f.gstBox, label: "Too big", grossWeightMg: 15000, stoneWeightMg: 0 })).rejects.toThrow(/Not enough GST stock/);
 
     expect(await boxBalance(f, f.gstBox)).toEqual({ weightMg: 10000, pieces: 1 });
     await f.owner.mutation(api.sales.create, {

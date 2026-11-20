@@ -123,14 +123,6 @@ describe("GST item stock", () => {
     expect((await f.owner.query(api.itemStock.list, {}))[0]).toMatchObject({ weightMg: 10000, pieces: 2 });
   });
 
-  it("shows both companies on the stock overview", async () => {
-    const f = await fixture("gst");
-    await f.owner.mutation(api.itemStock.adjust, { productId: f.product, direction: "in", weightMg: 3000, pieces: 1, reason: "Opening" });
-    const overview = await f.owner.query(api.itemStock.overview, {});
-    expect(overview.daily).toHaveLength(1);
-    expect(overview.daily[0].boxes[0]).toMatchObject({ boxNumber: 101, pieces: 1, netWeightMg: 2000 });
-    expect(overview.gst[0].items[0]).toMatchObject({ name: "Gold chain", weightMg: 3000 });
-  });
 });
 
 describe("old item deduction description", () => {

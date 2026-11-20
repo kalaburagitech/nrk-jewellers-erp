@@ -40,7 +40,6 @@ export const NAV_SECTIONS: NavSection[] = [
   ] },
   { title: "Items", icon: PackageSearch, href: "/inventory/products", items: [
     { title: "Item List", href: "/inventory/products" },
-    { title: "GST Item Stock", href: "/inventory/stock" },
     { title: "Stock Groups", href: "/inventory/groups" },
     { title: "Stock Categories", href: "/inventory/categories" },
   ] },
@@ -109,7 +108,6 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { title: "GST Dashboard & Reports", href: "/gst" },
       { title: "GSTR 1 / 3B", href: "/reports/gstr-1" },
-      { title: "GST Item Stock", href: "/inventory/stock" },
       { title: "GST Rates", href: "/settings/gst" },
     ],
   },
