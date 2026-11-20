@@ -1,5 +1,6 @@
 import { v } from "convex/values";
-import { internalMutation, mutation, query } from "./_generated/server";
+import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { requireAuthContext, requireRole } from "./lib/auth";
 import { internal } from "./_generated/api";
@@ -204,6 +205,18 @@ export const updateProfile = mutation({
   },
 });
 
+/** Every active company this user belongs to (always includes the current one). */
+async function myCompanyIds(ctx: MutationCtx, userId: Id<"users">, current: Id<"organizations">): Promise<Id<"organizations">[]> {
+  const memberships = await ctx.db.query("memberships").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+  const ids = new Set<Id<"organizations">>([current]);
+  for (const m of memberships) {
+    if (m.status !== "active" || m.deletedAt) continue;
+    const org = await ctx.db.get(m.organizationId);
+    if (org && !org.deletedAt) ids.add(m.organizationId);
+  }
+  return [...ids];
+}
+
 export const generateLoginImageUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
@@ -218,11 +231,11 @@ export const setLoginImage = mutation({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
-    const org = await ctx.db.get(auth.organizationId);
-    const previous = org?.loginImageStorageId;
-    await ctx.db.patch(auth.organizationId, { loginImageStorageId: args.storageId });
-    // Retain previous uploaded assets so historical backups can still reference them.
-    void previous;
+    // Shown on the sign-in page before anyone picks a company, so every company of this user gets it.
+    for (const organizationId of await myCompanyIds(ctx, auth.userId, auth.organizationId)) {
+      await ctx.db.patch(organizationId, { loginImageStorageId: args.storageId });
+    }
+    // Earlier uploads are kept in storage so historical backups can still reference them.
   },
 });
 
@@ -255,11 +268,11 @@ export const setAppIcon = mutation({
   handler: async (ctx, args) => {
     const auth = await requireAuthContext(ctx);
     requireRole(auth, []);
-    const org = await ctx.db.get(auth.organizationId);
-    const previous = org?.appIconStorageId;
-    await ctx.db.patch(auth.organizationId, { appIconStorageId: args.storageId });
-    // Retain previous uploaded assets so historical backups can still reference them.
-    void previous;
+    // The installed-app icon is read before anyone picks a company, so every company of this user gets it.
+    for (const organizationId of await myCompanyIds(ctx, auth.userId, auth.organizationId)) {
+      await ctx.db.patch(organizationId, { appIconStorageId: args.storageId });
+    }
+    // Earlier uploads are kept in storage so historical backups can still reference them.
   },
 });
 

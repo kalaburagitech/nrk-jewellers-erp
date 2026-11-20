@@ -7,6 +7,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { RecordSelection } from "@/hooks/use-record-selection";
 import { RecordSelectionToolbar } from "@/components/record-selection-toolbar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { RotateCcw, Trash2 } from "lucide-react";
 export function BulkRecordActions({
   selection,
@@ -26,18 +27,16 @@ export function BulkRecordActions({
   const cancelPurchase = useMutation(api.purchases.cancel);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  // Delete asks once, on the page: Yes / No, with an optional reason (no browser pop-ups).
+  const [confirming, setConfirming] = useState(false);
+  const [reasonText, setReasonText] = useState("");
   const allowed = ["owner", "admin"].includes(access?.membership?.role ?? "");
   async function run() {
     const ids = [...selection.ids];
     if (!ids.length) return;
-    const reason = restore
-      ? undefined
-      : window.prompt(
-          `Soft delete ${ids.length} selected records? Linked records may be protected. Enter a reason:`,
-        );
-    if (!restore && !reason?.trim()) return;
-    if (restore && !window.confirm(`Restore ${ids.length} selected records?`))
-      return;
+    const reason = restore ? undefined : reasonText.trim() || "Deleted from list";
+    setConfirming(false);
+    setReasonText("");
     setBusy(true);
     setMessage("");
     const failed: string[] = [];
@@ -86,13 +85,35 @@ export function BulkRecordActions({
             size="sm"
             variant={restore ? "outline" : "destructive"}
             disabled={busy || selection.count === 0}
-            onClick={run}
+            onClick={() => setConfirming(true)}
           >
             {restore ? <RotateCcw /> : <Trash2 />}
             {busy ? "Working…" : `${restore ? "Restore" : "Delete"} selected`}
           </Button>
         )}
       </RecordSelectionToolbar>
+      {confirming && selection.count > 0 && (
+        <div role="alertdialog" aria-label="Confirm" className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+          <span className="font-medium">
+            {restore ? `Restore ${selection.count} selected?` : `Delete ${selection.count} selected? Records linked to other entries are kept.`}
+          </span>
+          {!restore && (
+            <Input
+              aria-label="Reason (optional)"
+              placeholder="Reason (optional)"
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              className="h-8 w-56 text-xs"
+            />
+          )}
+          <Button size="sm" variant={restore ? "default" : "destructive"} disabled={busy} onClick={() => void run()}>
+            Yes, {restore ? "restore" : "delete"}
+          </Button>
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => setConfirming(false)}>
+            No
+          </Button>
+        </div>
+      )}
       {message && (
         <p role="status" className="rounded-lg border bg-card p-3 text-sm">
           {message}

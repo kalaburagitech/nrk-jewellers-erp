@@ -24,7 +24,8 @@ export type NavSection = {
   items?: NavItem[];
 };
 
-// Mirrors the Phase 1 navigation from the SRS (section 5). Sub-items route to
+// Mirrors the Phase 1 navigation from the SRS (section 5). Each screen appears once:
+// GSTR 1 / 3B and GST rates live under GST only. Sub-items route to
 // not-yet-built screens as placeholders until their milestone lands.
 export const NAV_SECTIONS: NavSection[] = [
   { title: "Home", icon: LayoutDashboard, href: "/" },
@@ -126,7 +127,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Stock Summary", href: "/reports/item-stock" },
       { title: "Cash Flow", href: "/reports/cash-flow" },
       { title: "Box Reports", href: "/reports/boxes" },
-      { title: "GSTR 1 / 3B", href: "/reports/gstr-1" },
     ],
   },
   {
@@ -137,7 +137,6 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Business Profile", href: "/settings/business" },
       { title: "Companies", href: "/settings/companies" },
       { title: "Booking Years", href: "/settings/accounting-years" },
-      { title: "GST Configuration", href: "/settings/gst" },
       { title: "Invoice Templates", href: "/settings/invoice-templates" },
       { title: "Metal Purity Configuration", href: "/settings/purity" },
       { title: "Users and Roles", href: "/settings/users" },

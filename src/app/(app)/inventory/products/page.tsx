@@ -22,6 +22,9 @@ import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { formatPaise } from "@/lib/money";
 import { AdjustStockDialog, ItemFormDialog } from "@/components/item-form-dialog";
 import { DeleteRecordButton } from "@/components/delete-record-button";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 const UNITS = [
@@ -282,6 +285,8 @@ export default function ProductsPage() {
         (p.description && p.description.toLowerCase().includes(q)),
     );
   }, [products, search]);
+  // Tick several items and delete them together.
+  const selection = useRecordSelection(filtered?.map((p) => p._id) ?? [], `products:${search}`);
 
   const filteredBoxes = useMemo(() => {
     if (!boxOverview?.boxes) return undefined;
@@ -369,6 +374,12 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {tabToUse === "products" && (
+        <div className="shrink-0">
+          <BulkRecordActions selection={selection} table="products" />
+        </div>
+      )}
+
       {/* 2-Pane Split Master-Detail Layout (Page 10) */}
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 md:grid-cols-[300px_1fr] xl:grid-cols-[340px_1fr]">
         {/* Left Pane: Items / Boxes List with Quantity (Page 10) */}
@@ -449,11 +460,12 @@ export default function ProductsPage() {
                 const isSelected = activeProduct?._id === p._id;
                 const purity = (p.metalPurityId ? purityMap.get(p.metalPurityId) : null) ?? p.purityOther;
                 return (
+                  <div key={p._id} className="flex items-center gap-1 pl-3" data-state={selection.has(p._id) ? "selected" : undefined}>
+                  <Checkbox aria-label={`Select ${p.name}`} checked={selection.has(p._id)} onCheckedChange={() => selection.toggle(p._id)} />
                   <button
-                    key={p._id}
                     type="button"
                     onClick={() => setSelectedProductId(p._id)}
-                    className={`w-full px-3 py-2.5 text-left transition-colors flex items-center justify-between gap-3 ${
+                    className={`min-w-0 flex-1 px-3 py-2.5 text-left transition-colors flex items-center justify-between gap-3 ${
                       isSelected
                         ? "bg-primary/10 border-l-4 border-l-primary"
                         : "hover:bg-muted/40"
@@ -472,6 +484,7 @@ export default function ProductsPage() {
                       </span>
                     </div>
                   </button>
+                  </div>
                 );
               })
             )}

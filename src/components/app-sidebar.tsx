@@ -57,6 +57,8 @@ export function AppSidebar({ role }: { role: string }) {
   const term = search.trim().toLowerCase();
   const viewOnly = role === "staff";
   const preferences = useQuery(api.appPreferences.get);
+  // The logo uploaded in Settings → Business (invoice logo); the bundled NRK logo until one is uploaded.
+  const uploadedLogoUrl = useQuery(api.organizations.getInvoiceLogoUrl);
   // Sidebar renders before page content, so every amount on screen picks this up.
   if (preferences) setAmountDecimals(preferences.amountDecimals);
   const disabledPaths = new Set<string>(
@@ -76,14 +78,19 @@ export function AppSidebar({ role }: { role: string }) {
           className="flex items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
         >
           <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-xl bg-white p-1.5 shadow-sm group-data-[collapsible=icon]:h-9 group-data-[collapsible=icon]:w-9">
-            <Image
-              src="/nrk-logo-gold.png"
-              alt="NRK Jewellers"
-              width={72}
-              height={44}
-              className="h-full w-full object-contain"
-              priority
-            />
+            {uploadedLogoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={uploadedLogoUrl} alt="Shop logo" className="h-full w-full object-contain" />
+            ) : (
+              <Image
+                src="/nrk-logo-gold.png"
+                alt="NRK Jewellers"
+                width={72}
+                height={44}
+                className="h-full w-full object-contain"
+                priority
+              />
+            )}
           </div>
           <div className="min-w-0 group-data-[collapsible=icon]:hidden">
             <p className="text-[15px] font-bold tracking-wide">NRK JEWELLERS</p>

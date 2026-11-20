@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { ArrowLeft, Building2, KeyRound, LockKeyhole, LogOut, Search } from "lucide-react";
+import { ArrowLeft, Building2, KeyRound, LockKeyhole, LogOut, Plus, Search } from "lucide-react";
 import { api } from "../../convex/_generated/api";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -208,7 +208,7 @@ export function AppTopbar({
         <GlobalSearch />
       </div>
       <div className="flex items-center gap-1 sm:gap-2">
-        {companies.length > 1 && <DropdownMenu>
+        {companies.length > 0 && <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-8 sm:h-9 px-2 sm:px-3 max-w-32 sm:max-w-56 text-xs sm:text-sm">
               <Building2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
@@ -220,6 +220,10 @@ export function AppTopbar({
             {companies.map((company) => <DropdownMenuItem key={company.organizationId} disabled={company.organizationId === activeOrganizationId} onSelect={() => void selectCompany({ organizationId: company.organizationId as never })} className="items-start py-2">
               <Building2 className="mt-0.5 h-4 w-4" /><span className="min-w-0 flex-1"><span className="block truncate">{company.name}</span><span className="block text-xs capitalize text-muted-foreground">{company.companyType?.replaceAll("_", " ") ?? company.role.replaceAll("_", " ")}</span></span>{company.organizationId === activeOrganizationId && <span className="text-xs text-muted-foreground">Current</span>}
             </DropdownMenuItem>)}
+            {/* Owners create more firms (Daily Sales / GST Gold / GST Silver) in Settings → Companies. */}
+            <DropdownMenuItem onSelect={() => router.push("/settings/companies")} className="border-t py-2 font-medium">
+              <Plus className="h-4 w-4" /> Add / manage companies
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>}
         {role && (

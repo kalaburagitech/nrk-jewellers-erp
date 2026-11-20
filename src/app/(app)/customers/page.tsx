@@ -54,6 +54,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImportCsvDialog } from "@/components/import-csv-dialog";
 import { DeleteRecordButton } from "@/components/delete-record-button";
+import { useRecordSelection } from "@/hooks/use-record-selection";
+import { BulkRecordActions } from "@/components/bulk-record-actions";
 import { customerFormSchema, GST_TYPE_OPTIONS, type CustomerFormValues } from "@/lib/schemas/party";
 import { rupeesToPaise, paiseToRupeesInput, formatPaise } from "@/lib/money";
 import { CustomFieldInputs, CustomFieldSummary } from "@/components/custom-field-inputs";
@@ -653,6 +655,8 @@ export default function CustomersPage() {
         (c.phone && c.phone.toLowerCase().includes(q)),
     );
   }, [customers, search]);
+  // Tick several customers and delete them together.
+  const selection = useRecordSelection(filtered?.map((c) => c._id) ?? [], `customers:${search}`);
 
   // Set default selected customer if none selected
   const activeCustomer = useMemo(() => {
@@ -679,6 +683,8 @@ export default function CustomersPage() {
           <CustomerFormDialog />
         </div>
       </div>
+
+      <BulkRecordActions selection={selection} table="customers" />
 
       {/* 2-Pane Master-Detail Split Layout (Page 8) */}
       <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] lg:grid-cols-[380px_1fr] gap-5 items-start">
@@ -719,11 +725,12 @@ export default function CustomersPage() {
                   .join("")
                   .toUpperCase();
                 return (
+                  <div key={c._id} className="flex items-center gap-1 pl-3" data-state={selection.has(c._id) ? "selected" : undefined}>
+                  <Checkbox aria-label={`Select ${c.name}`} checked={selection.has(c._id)} onCheckedChange={() => selection.toggle(c._id)} />
                   <button
-                    key={c._id}
                     type="button"
                     onClick={() => setSelectedCustomerId(c._id)}
-                    className={`w-full p-3 text-left transition-colors flex items-center justify-between gap-3 ${
+                    className={`min-w-0 flex-1 p-3 text-left transition-colors flex items-center justify-between gap-3 ${
                       isSelected
                         ? "bg-primary/10 border-l-4 border-l-primary"
                         : "hover:bg-muted/40"
@@ -746,6 +753,7 @@ export default function CustomersPage() {
                       </span>
                     </div>
                   </button>
+                  </div>
                 );
               })
             )}

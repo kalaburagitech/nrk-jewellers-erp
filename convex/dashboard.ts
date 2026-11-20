@@ -222,3 +222,80 @@ export const getSummary = query({
     };
   },
 });
+
+const IST_OFFSET_MS = 19_800_000;
+
+/** Start of today / this week (Monday) / this month / this year, India time, as UTC milliseconds. */
+function istPeriodStarts(now: number) {
+  const ist = new Date(now + IST_OFFSET_MS);
+  const y = ist.getUTCFullYear();
+  const m = ist.getUTCMonth();
+  const d = ist.getUTCDate();
+  const dayMs = 86_400_000;
+  const today = Date.UTC(y, m, d) - IST_OFFSET_MS;
+  const daysSinceMonday = (ist.getUTCDay() + 6) % 7;
+  return {
+    today,
+    week: today - daysSinceMonday * dayMs,
+    month: Date.UTC(y, m, 1) - IST_OFFSET_MS,
+    year: Date.UTC(y, 0, 1) - IST_OFFSET_MS,
+  };
+}
+
+/**
+ * Dashboard "Sold" tiles: sales bills for today, this week (from Monday), this
+ * month and this calendar year — amount and bill count for each, plus gold and
+ * silver net weight sold for today, the week and the month.
+ */
+export const getSoldPeriods = query({
+  args: {},
+  handler: async (ctx) => {
+    const auth = await requireAuthContext(ctx);
+    const orgId = auth.organizationId;
+    const starts = istPeriodStarts(Date.now());
+    const sales = (
+      await ctx.db
+        .query("sales")
+        .withIndex("by_org_and_time", (q) => q.eq("organizationId", orgId).gte("createdAt", starts.year))
+        .filter((q) => q.eq(q.field("deletedAt"), undefined))
+        .collect()
+    ).filter((s) => s.status === "finalized" && s.documentType === "sales_invoice");
+
+    // Net weight by metal, only for this month's and this week's bills (the year would read too many item rows).
+    const weightsFrom = Math.min(starts.month, starts.week);
+    const weightBySale = new Map<string, { gold: number; silver: number }>();
+    for (const sale of sales) {
+      if (sale.createdAt < weightsFrom) continue;
+      const items = await ctx.db.query("saleItems").withIndex("by_sale", (q) => q.eq("saleId", sale._id)).collect();
+      const w = { gold: 0, silver: 0 };
+      for (const item of items) if (item.metal) w[item.metal] += item.netWeightMg;
+      weightBySale.set(sale._id, w);
+    }
+
+    function period(from: number, withWeights: boolean) {
+      const inPeriod = sales.filter((s) => s.createdAt >= from);
+      const result = { amountPaise: 0, bills: inPeriod.length, goldNetMg: null as number | null, silverNetMg: null as number | null };
+      for (const s of inPeriod) result.amountPaise += s.totalPaise;
+      if (withWeights) {
+        result.goldNetMg = 0;
+        result.silverNetMg = 0;
+        for (const s of inPeriod) {
+          const w = weightBySale.get(s._id);
+          if (w) {
+            result.goldNetMg += w.gold;
+            result.silverNetMg += w.silver;
+          }
+        }
+      }
+      return result;
+    }
+
+    return {
+      today: period(starts.today, true),
+      week: period(starts.week, true),
+      month: period(starts.month, true),
+      year: period(starts.year, false),
+      yearLabel: String(new Date(Date.now() + IST_OFFSET_MS).getUTCFullYear()),
+    };
+  },
+});

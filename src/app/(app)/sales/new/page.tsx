@@ -10,9 +10,10 @@ import { BarcodeScanInput } from "@/components/barcode-scan-input";
 import { BoxPicker } from "@/components/box-picker";
 import type { BoxEntryRow } from "@/components/box-items";
 import { gstRateBp, isInterState } from "@/lib/gst-rate";
-import { Calculator, Coins, FileText, Gem, MessageCircle, Minus, Pause, Plus, Printer, Receipt, Save, Scale, Search, ShoppingCart, Trash2, Wallet } from "lucide-react";
+import { MessageCircle, Minus, Pause, Plus, Printer, Search, Trash2 } from "lucide-react";
 import { HeldBillTabs, HeldDeleteConfirm } from "@/components/held-bills";
 import { Button } from "@/components/ui/button";
+import { formLabel, formRow, panel, panelHead, tblInput, tdCls, thCls } from "@/lib/bill-styles";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -155,16 +156,7 @@ function blankLine(taxConfigurationId: string): BillLine {
   };
 }
 
-/** New Bill gold layout: panels, headings and the item table. */
-const goldPanel = "overflow-hidden rounded-xl border border-amber-300/80 bg-gradient-to-b from-amber-50/90 to-card shadow-sm dark:border-amber-500/30 dark:from-amber-950/30";
-const goldHead = "flex items-center gap-2 border-b border-amber-200/80 bg-gradient-to-r from-amber-100 via-amber-50/60 to-transparent px-3 py-2 font-serif text-[15px] font-bold text-amber-950 dark:border-amber-500/20 dark:from-amber-900/40 dark:via-amber-950/10 dark:text-amber-100";
-const goldIcon = "h-4 w-4 text-amber-600 dark:text-amber-400";
-const formRow = "grid grid-cols-[84px_1fr] items-center gap-2";
-const formLabel = "text-xs font-medium text-muted-foreground";
-const thCls = "border-r border-amber-600/40 px-1.5 py-2 text-center text-[11px] font-semibold leading-tight text-amber-50 last:border-r-0";
-const tdCls = "border-r border-amber-200/70 px-1 py-1 align-top last:border-r-0 dark:border-amber-500/15";
-const tblInput = "h-8 px-1.5 text-sm";
-const pillBtn = "h-9 rounded-full border-amber-300 bg-card px-4 text-amber-900 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-100 dark:hover:bg-amber-950/40";
+const pillBtn = "h-9";
 
 /**
  * Customer name is a type-to-search-or-create field, not a plain dropdown —
@@ -1227,22 +1219,19 @@ export default function NewBillPage() {
   const sumStoneMg = Math.max(0, sumGrossMg - sumNetMg);
   const sumMakingPaise = computedLines.reduce((sum, l) => sum + l.makingChargePaise, 0);
   const sumLineDiscountPaise = computedLines.reduce((sum, l) => sum + (l.lineDiscountPaise ?? 0), 0);
-  const columnCount = 15 + (isGst ? 1 : 0) + (showCost ? 1 : 0);
+  const columnCount = 14 + (isGst ? 1 : 0) + (showCost ? 1 : 0);
 
   return (
     <div className="erp-fill flex w-full flex-col">
     <div className="erp-scroll flex min-h-0 flex-1 flex-col gap-3 pb-3 lg:overflow-y-auto lg:pr-1">
       {/* Title banner */}
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/80 bg-gradient-to-r from-amber-100 via-amber-50 to-amber-100 px-4 py-2.5 shadow-sm dark:border-amber-500/30 dark:from-amber-950/50 dark:via-amber-900/30 dark:to-amber-950/50">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-input px-1 pb-2">
         <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-b from-amber-400 to-amber-600 text-white shadow">
-            <ShoppingCart className="h-5 w-5" />
-          </span>
           <div>
-            <h1 className="font-serif text-2xl font-bold tracking-tight text-amber-950 dark:text-amber-100">
+            <h1 className="text-xl font-semibold tracking-wide text-foreground">
               {editSaleId ? "Edit Bill" : "Sales Billing"}
             </h1>
-            <p className="text-xs text-amber-900/70 dark:text-amber-200/70">
+            <p className="text-xs text-muted-foreground">
               {editSaleId
                 ? "Editing reverses the original stock and ledger effects, then reapplies the corrected ones."
                 : "Choose the box, enter gross and net weight, see every charge live, and save the bill."}
@@ -1251,10 +1240,10 @@ export default function NewBillPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {/* Credit / Cash */}
-          <div className="flex items-center gap-2 rounded-full border border-amber-300/80 bg-card/80 px-3 py-1 text-xs">
-            <span className={`font-semibold ${isCredit ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Credit</span>
+          <div className="flex items-center gap-2 rounded-md border border-input bg-card px-3 py-1 text-xs">
+            <span className={`font-semibold ${isCredit ? "text-primary" : "text-muted-foreground"}`}>Credit</span>
             <Switch checked={!isCredit} onCheckedChange={(checked) => setIsCredit(!checked)} />
-            <span className={`font-semibold ${!isCredit ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>Cash</span>
+            <span className={`font-semibold ${!isCredit ? "text-primary" : "text-muted-foreground"}`}>Cash</span>
           </div>
           {/* Daily Sales vs GST */}
           <div className="flex items-center gap-1.5">
@@ -1278,7 +1267,7 @@ export default function NewBillPage() {
 
       {/* Bill tabs: this bill, held bills, + new */}
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
-        <div className="flex items-center gap-2 rounded-lg border border-amber-300/80 bg-card px-3 py-1.5 text-xs font-semibold shadow-xs">
+        <div className="flex items-center gap-2 rounded-md border border-input bg-card px-3 py-1.5 text-xs font-semibold">
           <span>{heldBillId ? `Held · ${customerNameInput.trim() || "Walk-in customer"}` : "Sale #1"}</span>
           {heldBillId && confirmDeleteHeldId === heldBillId ? (
             <HeldDeleteConfirm
@@ -1320,9 +1309,9 @@ export default function NewBillPage() {
 
       {/* Top panels: Bill Details · Metal Details · Account Balance */}
       <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-3">
-        <section className={`${goldPanel} overflow-visible`}>
-          <h2 className={goldHead}>
-            <FileText className={goldIcon} /> Bill Details
+        <section className={`${panel} overflow-visible`}>
+          <h2 className={panelHead}>
+            Bill Details
           </h2>
           <div className="space-y-2 p-3">
             <div className={formRow}>
@@ -1345,7 +1334,7 @@ export default function NewBillPage() {
             <div className={`${formRow} items-start`}>
               <div className="pt-2">
                 <Label className={formLabel}>Customer</Label>
-                <button type="button" className="mt-1 block text-[10px] font-bold text-amber-700 hover:underline dark:text-amber-300" onClick={() => setPartiesDialogOpen(true)}>
+                <button type="button" className="mt-1 block text-[10px] font-bold text-primary hover:underline" onClick={() => setPartiesDialogOpen(true)}>
                   SHOW PARTIES
                 </button>
               </div>
@@ -1377,9 +1366,9 @@ export default function NewBillPage() {
           </div>
         </section>
 
-        <section className={goldPanel}>
-          <h2 className={goldHead}>
-            <Coins className={goldIcon} /> Metal Details
+        <section className={panel}>
+          <h2 className={panelHead}>
+            Metal Details
             <span className="ml-auto flex items-center gap-1 text-[10px] font-semibold text-emerald-600">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> LIVE
             </span>
@@ -1390,7 +1379,7 @@ export default function NewBillPage() {
             ) : ratesWithLatest.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 Daily metal rates have not been set.{" "}
-                <Link href="/metal-rates" className="font-semibold text-amber-700 underline">Set gold & silver rates →</Link>
+                <Link href="/metal-rates" className="font-semibold text-primary underline">Set gold & silver rates →</Link>
               </p>
             ) : (
               ratesWithLatest.map(({ purity, latest }) => (
@@ -1403,13 +1392,13 @@ export default function NewBillPage() {
               ))
             )}
             {ratesAsOf && (
-              <div className="flex items-center justify-between border-t border-amber-200/70 pt-1.5 text-[11px] text-muted-foreground dark:border-amber-500/20">
+              <div className="flex items-center justify-between border-t pt-1.5 text-[11px] text-muted-foreground">
                 <span>Rate as of {new Date(ratesAsOf).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</span>
-                <Link href="/metal-rates" className="font-semibold text-amber-700 hover:underline dark:text-amber-300">Update rates</Link>
+                <Link href="/metal-rates" className="font-semibold text-primary hover:underline">Update rates</Link>
               </div>
             )}
             {(metalTotals.gold.netMg > 0 || metalTotals.silver.netMg > 0) && (
-              <div className="space-y-0.5 border-t border-amber-200/70 pt-1.5 text-xs dark:border-amber-500/20">
+              <div className="space-y-0.5 border-t pt-1.5 text-xs">
                 {(["gold", "silver"] as const).filter((metal) => metalTotals[metal].netMg > 0).map((metal) => (
                   <div key={metal} className="flex justify-between">
                     <span className="text-muted-foreground">{metal === "gold" ? "Gold" : "Silver"} in this bill</span>
@@ -1421,9 +1410,9 @@ export default function NewBillPage() {
           </div>
         </section>
 
-        <section className={goldPanel}>
-          <h2 className={goldHead}>
-            <Scale className={goldIcon} /> Account Balance
+        <section className={panel}>
+          <h2 className={panelHead}>
+            Account Balance
           </h2>
           <div className="space-y-2.5 p-3 text-sm">
             {selectedCustomer ? (
@@ -1440,7 +1429,7 @@ export default function NewBillPage() {
                       <span className="text-muted-foreground">This bill balance</span>
                       <span className="font-mono tabular-nums">{formatPaise(totals.balancePaise)}</span>
                     </div>
-                    <div className="flex items-center justify-between gap-2 rounded-lg bg-gradient-to-r from-amber-200/80 to-amber-100/60 px-3 py-2 dark:from-amber-800/40 dark:to-amber-900/20">
+                    <div className="flex items-center justify-between gap-2 rounded-md border border-input bg-muted/40 px-3 py-2 text-foreground">
                       <span className="font-bold">Balance</span>
                       <span className="font-mono text-lg font-bold tabular-nums">{formatPaise(customerDuesPaise + totals.balancePaise)}</span>
                     </div>
@@ -1493,31 +1482,30 @@ export default function NewBillPage() {
       {prefs?.items.barcodeScan !== false && <BarcodeScanInput onBox={(box) => addRow(box._id)} />}
 
       {/* Item table: one row per item. Daily Sales rows take their gross weight out of the chosen box. */}
-      <section className={`${goldPanel} shrink-0`}>
+      <section className={`${panel} shrink-0`}>
         <datalist id="bill-items">
           {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
         </datalist>
         <div className="erp-scroll overflow-auto lg:max-h-[56svh]">
-          <table className="w-full min-w-[1280px] border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-gradient-to-b from-amber-700 to-amber-800 dark:from-amber-800 dark:to-amber-900">
+          <table className="w-full min-w-[900px] table-fixed border-collapse text-sm lg:min-w-0">
+            <thead className="sticky top-0 z-10 bg-muted">
               <tr>
-                <th className={`${thCls} w-10`}>Sl. No.</th>
-                <th className={`${thCls} w-36`}>Box No.</th>
-                <th className={`${thCls} w-20`}>Category</th>
-                <th className={`${thCls} min-w-40`}>Description</th>
-                <th className={`${thCls} w-20`}>Purity</th>
-                <th className={`${thCls} w-14`}>Pcs<br /><span className="font-normal opacity-80">(optional)</span></th>
-                <th className={`${thCls} w-20`}>Gross Wt<br />(g)</th>
-                <th className={`${thCls} w-16`}>Stone Wt<br />(g)</th>
-                <th className={`${thCls} w-20`}>Net Wt<br />(g)</th>
-                <th className={`${thCls} w-20`}>Rate<br />(₹/g)</th>
-                <th className={`${thCls} w-20`}>Price / pc<br />(₹)</th>
-                <th className={`${thCls} w-32`}>Making</th>
-                <th className={`${thCls} w-20`}>Discount<br />(₹ / %)</th>
-                {isGst && <th className={`${thCls} w-28`}>GST</th>}
-                {showCost && <th className={`${thCls} w-24`}>Cost /<br />Margin</th>}
-                <th className={`${thCls} w-24`}>Total (₹)</th>
-                <th className={`${thCls} w-9`}><span className="sr-only">Remove</span></th>
+                <th className={`${thCls} w-[3%]`}>Sl.</th>
+                <th className={`${thCls} w-[12%]`}>Box No.</th>
+                <th className={`${thCls} w-[7%]`}>Category</th>
+                <th className={`${thCls} w-[13%]`}>Description</th>
+                <th className={`${thCls} w-[6.5%]`}>Purity</th>
+                <th className={`${thCls} w-[5%]`}>Pcs<br /><span className="font-normal text-muted-foreground">(opt.)</span></th>
+                <th className={`${thCls} w-[7%]`}>Gross Wt<br />(g)</th>
+                <th className={`${thCls} w-[5.5%]`}>Stone Wt<br />(g)</th>
+                <th className={`${thCls} w-[7%]`}>Net Wt<br />(g)</th>
+                <th className={`${thCls} w-[7%]`}>Rate<br />(₹/g)</th>
+                <th className={`${thCls} w-[7%]`}>Price / pc<br />(₹)</th>
+                <th className={`${thCls} w-[10%]`}>Making</th>
+                {isGst && <th className={`${thCls} w-[9%]`}>GST</th>}
+                {showCost && <th className={`${thCls} w-[7%]`}>Cost /<br />Margin</th>}
+                <th className={`${thCls} w-[8%]`}>Total (₹)</th>
+                <th className={`${thCls} w-[3%]`}><span className="sr-only">Remove</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1532,7 +1520,7 @@ export default function NewBillPage() {
                   <Fragment key={line.key}>
                     <tr
                       data-line={line.key}
-                      className={`border-b border-amber-200/70 dark:border-amber-500/15 ${index % 2 ? "bg-amber-50/50 dark:bg-amber-950/10" : "bg-card"} hover:bg-amber-100/40 dark:hover:bg-amber-900/20`}
+                      className="border-b border-input bg-card hover:bg-muted/30"
                       onKeyDown={(e) => {
                         // Enter on the last item adds the next one (keyboard billing).
                         if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT" && index === lines.length - 1) {
@@ -1541,7 +1529,7 @@ export default function NewBillPage() {
                         }
                       }}
                     >
-                      <td className={`${tdCls} pt-2.5 text-center font-semibold text-amber-900 dark:text-amber-200`}>{index + 1}</td>
+                      <td className={`${tdCls} pt-2.5 text-center font-semibold`}>{index + 1}</td>
                       <td className={tdCls}>
                         <BoxPicker
                           ariaLabel={`Row ${index + 1} box`}
@@ -1617,7 +1605,7 @@ export default function NewBillPage() {
                         {computed.stoneWeightMg > 0 ? mgToGramsDisplay(computed.stoneWeightMg) : "—"}
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono text-emerald-600`} />
+                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
                       </td>
                       <td className={tdCls}>
                         <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
@@ -1652,9 +1640,6 @@ export default function NewBillPage() {
                         {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && (
                           <p className="mt-0.5 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>
                         )}
-                      </td>
-                      <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} discount`} placeholder="0 or 5%" value={line.discount} onChange={(e) => updateLine(index, { discount: e.target.value })} className={`${tblInput} w-full min-w-0 text-right`} />
                       </td>
                       {isGst && (
                         <td className={tdCls}>
@@ -1712,9 +1697,9 @@ export default function NewBillPage() {
             </tbody>
           </table>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-amber-200/80 bg-amber-50/60 px-3 py-2 dark:border-amber-500/20 dark:bg-amber-950/20">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-input bg-muted/30 px-3 py-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Button type="button" variant="outline" size="sm" className="h-8 border-amber-300 text-xs" onClick={() => addRow()}>
+            <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => addRow()}>
               <Plus className="h-3.5 w-3.5" /> Add Row
             </Button>
             <Button type="button" variant="outline" size="sm" className="h-8 text-xs font-medium" onClick={() => setShowNotes(!showNotes)}>
@@ -1745,9 +1730,9 @@ export default function NewBillPage() {
         <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-2">
           {/* Old Gold Exchange */}
           {oldGoldEnabled && (
-            <section className={goldPanel}>
-              <h2 className={goldHead}>
-                <Gem className={goldIcon} /> Old Gold / Silver Exchange
+            <section className={panel}>
+              <h2 className={panelHead}>
+                Old Gold / Silver Exchange
                 <Button type="button" variant="ghost" size="sm" className="ml-auto h-6 text-xs text-muted-foreground" onClick={() => setOldGoldEnabled(false)}>
                   ×
                 </Button>
@@ -1781,7 +1766,7 @@ export default function NewBillPage() {
                   <Input inputMode="decimal" placeholder="0.00" value={oldGoldRateRupees} onChange={(e) => setOldGoldRateRupees(e.target.value)} className="h-8 text-xs" />
                 </div>
                 {oldGoldComputed && (
-                  <p className="col-span-2 mt-1 text-[11px] font-medium text-amber-700 sm:col-span-4 dark:text-amber-300">
+                  <p className="col-span-2 mt-1 text-[11px] font-medium text-primary sm:col-span-4">
                     Value: {formatPaise(oldGoldComputed.exchangeValuePaise)} credited against bill
                   </p>
                 )}
@@ -1791,9 +1776,9 @@ export default function NewBillPage() {
 
           {/* Old Item Deduction: amount only (no weight/purity/rate), with what it was for. */}
           {oldItemEnabled && (
-            <section className={goldPanel}>
-              <h2 className={goldHead}>
-                <Receipt className={goldIcon} /> Old Item Deduction
+            <section className={panel}>
+              <h2 className={panelHead}>
+                Old Item Deduction
                 <Button
                   type="button"
                   variant="ghost"
@@ -1835,9 +1820,9 @@ export default function NewBillPage() {
 
       {/* Bottom panels: Bill Summary · Payment Mode · Totals */}
       <div className="grid shrink-0 grid-cols-1 items-stretch gap-3 lg:grid-cols-3">
-        <section className={`${goldPanel} flex flex-col`}>
-          <h2 className={goldHead}>
-            <Calculator className={goldIcon} /> Bill Summary
+        <section className={`${panel} flex flex-col`}>
+          <h2 className={panelHead}>
+            Bill Summary
           </h2>
           <div className="flex-1 space-y-1 p-3 text-sm">
             <SummaryRow label="Total Pieces" value={String(sumPieces)} />
@@ -1849,19 +1834,19 @@ export default function NewBillPage() {
             {totals.oldItemDeductionPaise > 0 && <SummaryRow label="Old Item Deduction" value={`-${formatPaise(totals.oldItemDeductionPaise)}`} mono valueClassName="text-amber-600" />}
             {totals.oldGoldValuePaise > 0 && <SummaryRow label="Old Gold / Silver" value={`-${formatPaise(totals.oldGoldValuePaise)}`} mono valueClassName="text-amber-600" />}
           </div>
-          <div className="mx-3 mb-3 flex items-center justify-between rounded-lg bg-gradient-to-r from-amber-300 via-amber-200 to-amber-100 px-3 py-2 text-amber-950 dark:from-amber-700/60 dark:via-amber-800/40 dark:to-amber-900/30 dark:text-amber-50">
-            <span className="flex items-center gap-2 font-serif text-lg font-bold"><Gem className="h-4 w-4" /> Grand Total</span>
+          <div className="mx-3 mb-3 flex items-center justify-between rounded-md border border-input bg-muted/40 px-3 py-2 text-foreground">
+            <span className="text-base font-bold">Grand Total</span>
             <span className="font-mono text-xl font-bold tabular-nums">{formatPaise(totals.totalPaise)}</span>
           </div>
         </section>
 
-        <section className={goldPanel}>
-          <h2 className={goldHead}>
-            <Wallet className={goldIcon} /> Payment Mode
+        <section className={panel}>
+          <h2 className={panelHead}>
+            Payment Mode
           </h2>
           <div className="space-y-2 p-3">
             <label className="flex items-center gap-2 text-xs font-medium">
-              <input type="checkbox" className="h-4 w-4 accent-amber-600" checked={payFull} onChange={(e) => setPayFull(e.target.checked)} />
+              <input type="checkbox" className="h-4 w-4 accent-primary" checked={payFull} onChange={(e) => setPayFull(e.target.checked)} />
               Received full amount ({formatPaise(totals.fullFirstPaymentPaise)})
               <span className="font-normal text-muted-foreground">— untick to type the amount</span>
             </label>
@@ -1898,13 +1883,13 @@ export default function NewBillPage() {
                 )}
               </div>
             ))}
-            <Button type="button" variant="outline" size="sm" className="h-7 border-amber-300 text-xs font-medium" onClick={() => setPayments((prev) => [...prev, { mode: "cash", amountRupees: "" }])}>
+            <Button type="button" variant="outline" size="sm" className="h-7 text-xs font-medium" onClick={() => setPayments((prev) => [...prev, { mode: "cash", amountRupees: "" }])}>
               <Plus className="mr-1 h-3 w-3" /> Add Payment Split
             </Button>
           </div>
         </section>
 
-        <section className={goldPanel}>
+        <section className={panel}>
           <div className="space-y-2 p-3">
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>Sub Total (taxable value)</span>
@@ -1961,7 +1946,7 @@ export default function NewBillPage() {
               </div>
             )}
 
-            <div className="flex items-center justify-between rounded-lg bg-gradient-to-r from-amber-300 via-amber-200 to-amber-100 px-3 py-2 text-amber-950 dark:from-amber-700/60 dark:via-amber-800/40 dark:to-amber-900/30 dark:text-amber-50">
+            <div className="flex items-center justify-between rounded-md border border-input bg-muted/40 px-3 py-2 text-foreground">
               <span className="text-base font-bold">Total Amount</span>
               <span className="font-mono text-xl font-bold tabular-nums">{formatPaise(totals.totalPaise)}</span>
             </div>
@@ -1991,12 +1976,12 @@ export default function NewBillPage() {
     </div>
 
     {/* Pinned bottom bar: the bill total and the save / print / share actions are always on screen. */}
-    <div className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-amber-300/80 bg-gradient-to-r from-amber-50 via-card to-amber-50 px-3 py-2.5 shadow-[0_-6px_16px_rgb(120_80_10/8%)] backdrop-blur dark:border-amber-500/30 dark:from-amber-950/40 dark:via-card dark:to-amber-950/40">
+    <div className="z-20 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t bg-card/95 px-3 py-2.5 shadow-[0_-6px_16px_rgb(17_45_78/6%)] backdrop-blur">
       <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
         <span className="text-muted-foreground">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
         <span className="flex items-baseline gap-1.5">
           <span className="text-muted-foreground">Total</span>
-          <span className="font-mono text-lg font-bold tabular-nums text-amber-800 dark:text-amber-300">{formatPaise(totals.totalPaise)}</span>
+          <span className="font-mono text-lg font-bold tabular-nums text-primary">{formatPaise(totals.totalPaise)}</span>
         </span>
         <span className="text-muted-foreground">Paid <span className="font-mono text-foreground">{formatPaise(totals.amountPaidPaise)}</span></span>
         <span className={totals.balancePaise > 0 ? "font-semibold text-rose-600" : "text-muted-foreground"}>Balance <span className="font-mono">{formatPaise(Math.max(0, totals.balancePaise))}</span></span>
@@ -2032,11 +2017,10 @@ export default function NewBillPage() {
         <Button
           type="button"
           size="sm"
-          className="h-9 rounded-full bg-gradient-to-b from-amber-500 to-amber-700 px-5 font-semibold text-white shadow hover:from-amber-600 hover:to-amber-800"
+          className="h-9 font-semibold"
           disabled={submitting}
           onClick={() => finalizeSale("new")}
         >
-          <Save className="mr-1 h-3.5 w-3.5" />
           {submitting ? "Saving…" : "Save Bill [F3]"}
         </Button>
       </div>

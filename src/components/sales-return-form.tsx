@@ -28,6 +28,7 @@ import {
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Id } from "../../convex/_generated/dataModel";
+import { formLabel, formRow, itemHead, itemRow, itemTable, panel, panelHead, tdCls, thCls } from "@/lib/bill-styles";
 
 export function SalesReturnFormDialog({
   documentType,
@@ -120,120 +121,129 @@ export function SalesReturnFormDialog({
           {triggerLabel}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[96vw] max-w-5xl overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-2">
-            <Label>Customer</Label>
-            <Select
-              value={customerId}
-              onValueChange={(v) => {
-                setCustomerId(v as Id<"customers">);
-                setSaleId("");
-                selection.clear();
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select customer" />
-              </SelectTrigger>
-              <SelectContent>
-                {customers?.map((c) => (
-                  <SelectItem key={c._id} value={c._id}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {customerId && (
-            <div className="grid gap-2">
-              <Label>Original invoice</Label>
-              <Select
-                value={saleId}
-                onValueChange={(v) => {
-                  setSaleId(v as Id<"sales">);
-                  setReturnBoxByItem({});
-                  selection.clear();
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      invoices?.length === 0
-                        ? "No invoices found"
-                        : "Select invoice"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {invoices?.map((s) => (
-                    <SelectItem key={s._id} value={s._id}>
-                      {s.invoiceNumber} — {formatPaise(s.totalPaise)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {saleId && (
-            <div className="flex flex-col gap-2">
-              <Label>Items to return</Label>
-              <RecordSelectionToolbar
-                selection={selection}
-                disabled={submitting}
-              />
-              {items === undefined ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : items.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Every item on this invoice has already been returned.
-                </p>
-              ) : (
-                items.map((item) => (
-                  <div
-                    key={item._id}
-                    className={`grid gap-3 rounded-xl border border-border px-4 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_220px] ${selectedItemIds.has(item._id) ? "border-primary/40 bg-primary/5" : ""}`}
+        <div className="flex flex-col gap-3">
+          {/* Details, same panel style as New Bill */}
+          <section className={panel}>
+            <h2 className={panelHead}>Details</h2>
+            <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
+              <div className={formRow}>
+                <Label className={formLabel}>Customer</Label>
+                <Select
+                  value={customerId}
+                  onValueChange={(v) => {
+                    setCustomerId(v as Id<"customers">);
+                    setSaleId("");
+                    selection.clear();
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-sm">
+                    <SelectValue placeholder="Select customer" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customers?.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {customerId && (
+                <div className={formRow}>
+                  <Label className={formLabel}>Invoice</Label>
+                  <Select
+                    value={saleId}
+                    onValueChange={(v) => {
+                      setSaleId(v as Id<"sales">);
+                      setReturnBoxByItem({});
+                      selection.clear();
+                    }}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          checked={selectedItemIds.has(item._id)}
-                          aria-label={`Select ${item.label}`}
-                          disabled={submitting}
-                          onCheckedChange={() => selection.toggle(item._id)}
-                        />
-                        <span>{item.label} · {mgToGramsDisplay(item.grossWeightMg)}g gross / {mgToGramsDisplay(item.netWeightMg)}g net</span>
-                      </div>
-                      <span className="shrink-0 font-medium">{formatPaise(item.lineTotalPaise)}</span>
-                    </div>
-                    {selectedItemIds.has(item._id) && (
-                      <Select
-                        value={returnBoxByItem[item._id] ?? item.previousBoxId ?? ""}
-                        onValueChange={(value) =>
-                          setReturnBoxByItem((previous) => ({ ...previous, [item._id]: value }))
-                        }
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Assign returned item to a box" />
-                        </SelectTrigger>
-                        <SelectContent className="max-h-64">
-                          {boxes?.filter((box) => box.isActive && (!item.metal || !box.metal || box.metal === item.metal)).map((box) => (
-                            <SelectItem key={box._id} value={box._id}>
-                              Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}
-                              {item.previousBoxId === box._id ? " · previous box" : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </div>
-                ))
+                    <SelectTrigger className="h-8 w-full text-sm">
+                      <SelectValue placeholder={invoices?.length === 0 ? "No invoices found" : "Select invoice"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {invoices?.map((s) => (
+                        <SelectItem key={s._id} value={s._id}>
+                          {s.invoiceNumber} — {formatPaise(s.totalPaise)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
             </div>
+          </section>
+
+          {saleId && (
+            <section className={panel}>
+              <h2 className={panelHead}>Items to return</h2>
+              <div className="p-2">
+                <RecordSelectionToolbar selection={selection} disabled={submitting} />
+              </div>
+              {items === undefined ? (
+                <p className="p-3 text-sm text-muted-foreground">Loading…</p>
+              ) : items.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">Every item on this invoice has already been returned.</p>
+              ) : (
+                <div className="overflow-x-auto border-t border-input">
+                  <table className={itemTable}>
+                    <thead className={itemHead}>
+                      <tr>
+                        <th className={`${thCls} w-[5%]`}><span className="sr-only">Select</span></th>
+                        <th className={`${thCls} w-[30%]`}>Item</th>
+                        <th className={`${thCls} w-[12%]`}>Gross Wt (g)</th>
+                        <th className={`${thCls} w-[12%]`}>Net Wt (g)</th>
+                        <th className={`${thCls} w-[13%]`}>Amount (₹)</th>
+                        <th className={`${thCls} w-[28%]`}>Return to Box</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const picked = selectedItemIds.has(item._id);
+                        return (
+                          <tr key={item._id} className={`${itemRow} ${picked ? "bg-muted/40" : ""}`}>
+                            <td className={`${tdCls} pt-2 text-center`}>
+                              <Checkbox checked={picked} aria-label={`Select ${item.label}`} disabled={submitting} onCheckedChange={() => selection.toggle(item._id)} />
+                            </td>
+                            <td className={`${tdCls} pt-2`}>{item.label}</td>
+                            <td className={`${tdCls} pt-2 text-right font-mono tabular-nums`}>{mgToGramsDisplay(item.grossWeightMg)}</td>
+                            <td className={`${tdCls} pt-2 text-right font-mono tabular-nums`}>{mgToGramsDisplay(item.netWeightMg)}</td>
+                            <td className={`${tdCls} pt-2 text-right font-mono font-semibold tabular-nums`}>{formatPaise(item.lineTotalPaise)}</td>
+                            <td className={tdCls}>
+                              {picked ? (
+                                <Select
+                                  value={returnBoxByItem[item._id] ?? item.previousBoxId ?? ""}
+                                  onValueChange={(value) => setReturnBoxByItem((previous) => ({ ...previous, [item._id]: value }))}
+                                >
+                                  <SelectTrigger aria-label={`Return ${item.label} to box`} className="h-8 w-full min-w-0 text-xs">
+                                    <SelectValue placeholder="Assign to a box" />
+                                  </SelectTrigger>
+                                  <SelectContent className="max-h-64">
+                                    {boxes?.filter((box) => box.isActive && (!item.metal || !box.metal || box.metal === item.metal)).map((box) => (
+                                      <SelectItem key={box._id} value={box._id}>
+                                        Box {box.boxNumber}{box.label ? ` · ${box.label}` : ""}
+                                        {item.previousBoxId === box._id ? " · previous box" : ""}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="block pt-1.5 text-center text-xs text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}

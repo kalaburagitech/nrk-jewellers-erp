@@ -24,9 +24,8 @@ import {
   Calendar,
   Layers,
 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -44,6 +43,7 @@ import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 export default function DashboardPage() {
   const [timeframe, setTimeframe] = useState<"week" | "month" | "quarter" | "half_year" | "year">("week");
   const summary = useQuery(api.dashboard.getSummary, { timeframe });
+  const sold = useQuery(api.dashboard.getSoldPeriods);
   const rates = useQuery(api.metalRates.getCurrent);
   const boxes = useQuery(api.boxes.list);
   const access = useQuery(api.organizations.getMyAccess);
@@ -83,6 +83,7 @@ export default function DashboardPage() {
   const totalPayables = summary?.totalPayablesPaise ?? 0;
   const totalSales = summary?.todaysSalesPaise ?? 0;
   const homePrefs = useQuery(api.appPreferences.get);
+  const uploadedLogoUrl = useQuery(api.organizations.getInvoiceLogoUrl);
   const lowStock = useQuery(api.stockReports.itemStock)?.filter((r) => r.isLow && r.isActive) ?? [];
 
   return (
@@ -150,14 +151,19 @@ export default function DashboardPage() {
       {/* Shop Identity Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-xl border bg-card p-4 sm:p-5 shadow-sm">
         <div className="flex items-center gap-3 sm:gap-5">
-          <Image
-            src="/nrk-logo-gold.png"
-            width={116}
-            height={72}
-            alt="NRK Jewellers"
-            className="h-12 w-20 sm:h-auto sm:w-auto rounded bg-white object-contain shadow-xs"
-            priority
-          />
+          {uploadedLogoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={uploadedLogoUrl} alt="Shop logo" className="h-12 w-20 sm:h-[72px] sm:w-[116px] rounded bg-white object-contain shadow-xs" />
+          ) : (
+            <Image
+              src="/nrk-logo-gold.png"
+              width={116}
+              height={72}
+              alt="NRK Jewellers"
+              className="h-12 w-20 sm:h-auto sm:w-auto rounded bg-white object-contain shadow-xs"
+              priority
+            />
+          )}
           <div>
             <p className="mb-0.5 sm:mb-1 text-[11px] sm:text-xs font-semibold uppercase tracking-[0.2em] text-primary">
               The Name of Purity
@@ -187,6 +193,31 @@ export default function DashboardPage() {
 
       {/* Live Gold/Silver Metal Rates Bar */}
       <MetalRateTicker currentRates={rates} />
+
+      {/* Sold: today, this week, this month and this year (sales bills). */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {([
+          { key: "today", label: "Today" },
+          { key: "week", label: "This Week" },
+          { key: "month", label: "This Month" },
+          { key: "year", label: `This Year${sold ? ` (${sold.yearLabel})` : ""}` },
+        ] as const).map(({ key, label }) => {
+          const p = sold?.[key];
+          return (
+            <Card key={key} className="border-border/80 shadow-sm">
+              <CardContent className="p-4">
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Sold · {label}</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-foreground sm:text-2xl">{p ? formatPaise(p.amountPaise) : "…"}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  {p ? `${p.bills} bill${p.bills === 1 ? "" : "s"}` : ""}
+                  {p && p.goldNetMg !== null && p.goldNetMg > 0 ? ` · Gold ${mgToGramsDisplay(p.goldNetMg)} g` : ""}
+                  {p && p.silverNetMg !== null && p.silverNetMg > 0 ? ` · Silver ${mgToGramsDisplay(p.silverNetMg)} g` : ""}
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
 
       {/* Balances overdue or due within the next few days — remind before the deadline. */}
       <DueRemindersCard />
@@ -251,7 +282,7 @@ export default function DashboardPage() {
           </div>
           {/* Time Filter Dropdown: Week, Month, Quarter, Half Year, Year */}
           <div className="w-48">
-            <Select value={timeframe} onValueChange={(v) => setTimeframe(v as any)}>
+            <Select value={timeframe} onValueChange={(v) => setTimeframe(v as typeof timeframe)}>
               <SelectTrigger className="h-9 text-xs font-medium">
                 <SelectValue />
               </SelectTrigger>

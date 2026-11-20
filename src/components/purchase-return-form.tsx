@@ -28,6 +28,7 @@ import {
 import { formatPaise } from "@/lib/money";
 import { mgToGramsDisplay } from "@/lib/jewelry-calc";
 import type { Id } from "../../convex/_generated/dataModel";
+import { formLabel, formRow, itemHead, itemRow, itemTable, panel, panelHead, tdCls, thCls } from "@/lib/bill-styles";
 
 export function PurchaseReturnFormDialog() {
   const suppliers = useQuery(api.suppliers.list);
@@ -98,101 +99,103 @@ export function PurchaseReturnFormDialog() {
           New Purchase Return
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[85vh] max-w-xl overflow-y-auto">
+      <DialogContent className="max-h-[90vh] w-[96vw] max-w-4xl overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Send items back to a supplier</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-2">
-            <Label>Supplier</Label>
-            <Select
-              value={supplierId}
-              onValueChange={(v) => {
-                setSupplierId(v as Id<"suppliers">);
-                setPurchaseId("");
-                selection.clear();
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select supplier" />
-              </SelectTrigger>
-              <SelectContent>
-                {suppliers?.map((s) => (
-                  <SelectItem key={s._id} value={s._id}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {supplierId && (
-            <div className="grid gap-2">
-              <Label>Original purchase invoice</Label>
-              <Select
-                value={purchaseId}
-                onValueChange={(v) => {
-                  setPurchaseId(v as Id<"purchases">);
-                  selection.clear();
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      invoices?.length === 0
-                        ? "No invoices found"
-                        : "Select invoice"
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {invoices?.map((p) => (
-                    <SelectItem key={p._id} value={p._id}>
-                      {p.invoiceNumber} — {formatPaise(p.totalPaise)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {purchaseId && (
-            <div className="flex flex-col gap-2">
-              <Label>Items to return</Label>
-              <RecordSelectionToolbar
-                selection={selection}
-                disabled={submitting}
-              />
-              {items === undefined ? (
-                <p className="text-sm text-muted-foreground">Loading…</p>
-              ) : items.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Nothing on this invoice is still in stock to return.
-                </p>
-              ) : (
-                items.map((item) => (
-                  <label
-                    key={item._id}
-                    className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-border px-4 py-3 text-sm has-[[data-state=checked]]:border-primary/40 has-[[data-state=checked]]:bg-primary/5"
+        <div className="flex flex-col gap-3">
+          {/* Details, same panel style as New Purchase */}
+          <section className={panel}>
+            <h2 className={panelHead}>Details</h2>
+            <div className="grid grid-cols-1 gap-3 p-3 sm:grid-cols-2">
+              <div className={formRow}>
+                <Label className={formLabel}>Supplier</Label>
+                <Select
+                  value={supplierId}
+                  onValueChange={(v) => {
+                    setSupplierId(v as Id<"suppliers">);
+                    setPurchaseId("");
+                    selection.clear();
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-sm">
+                    <SelectValue placeholder="Select supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers?.map((s) => (
+                      <SelectItem key={s._id} value={s._id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {supplierId && (
+                <div className={formRow}>
+                  <Label className={formLabel}>Invoice</Label>
+                  <Select
+                    value={purchaseId}
+                    onValueChange={(v) => {
+                      setPurchaseId(v as Id<"purchases">);
+                      selection.clear();
+                    }}
                   >
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        checked={selectedItemIds.has(item._id)}
-                        aria-label={`Select ${item.label}`}
-                        disabled={submitting}
-                        onCheckedChange={() => selection.toggle(item._id)}
-                      />
-                      <span>
-                        {item.label} · {mgToGramsDisplay(item.netWeightMg)}g
-                      </span>
-                    </div>
-                    <span className="font-medium">
-                      {formatPaise(item.lineTotalPaise)}
-                    </span>
-                  </label>
-                ))
+                    <SelectTrigger className="h-8 w-full text-sm">
+                      <SelectValue placeholder={invoices?.length === 0 ? "No invoices found" : "Select invoice"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {invoices?.map((p) => (
+                        <SelectItem key={p._id} value={p._id}>
+                          {p.invoiceNumber} — {formatPaise(p.totalPaise)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               )}
             </div>
+          </section>
+
+          {purchaseId && (
+            <section className={panel}>
+              <h2 className={panelHead}>Items to return</h2>
+              <div className="p-2">
+                <RecordSelectionToolbar selection={selection} disabled={submitting} />
+              </div>
+              {items === undefined ? (
+                <p className="p-3 text-sm text-muted-foreground">Loading…</p>
+              ) : items.length === 0 ? (
+                <p className="p-3 text-sm text-muted-foreground">Nothing on this invoice is still in stock to return.</p>
+              ) : (
+                <div className="overflow-x-auto border-t border-input">
+                  <table className={itemTable}>
+                    <thead className={itemHead}>
+                      <tr>
+                        <th className={`${thCls} w-[6%]`}><span className="sr-only">Select</span></th>
+                        <th className={`${thCls} w-[54%]`}>Item</th>
+                        <th className={`${thCls} w-[18%]`}>Net Wt (g)</th>
+                        <th className={`${thCls} w-[22%]`}>Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item) => {
+                        const picked = selectedItemIds.has(item._id);
+                        return (
+                          <tr key={item._id} className={`${itemRow} cursor-pointer ${picked ? "bg-muted/40" : ""}`} onClick={() => !submitting && selection.toggle(item._id)}>
+                            <td className={`${tdCls} pt-2 text-center`} onClick={(e) => e.stopPropagation()}>
+                              <Checkbox checked={picked} aria-label={`Select ${item.label}`} disabled={submitting} onCheckedChange={() => selection.toggle(item._id)} />
+                            </td>
+                            <td className={`${tdCls} py-2`}>{item.label}</td>
+                            <td className={`${tdCls} py-2 text-right font-mono tabular-nums`}>{mgToGramsDisplay(item.netWeightMg)}</td>
+                            <td className={`${tdCls} py-2 text-right font-mono font-semibold tabular-nums`}>{formatPaise(item.lineTotalPaise)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
