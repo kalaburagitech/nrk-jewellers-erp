@@ -43,6 +43,8 @@ export function BoxPicker({
   ariaLabel,
   onPick,
   triggerClassName,
+  itemFirst = false,
+  selectedItemName,
 }: {
   boxes: BoxRow[];
   purities: Doc<"metalPurities">[];
@@ -57,6 +59,13 @@ export function BoxPicker({
   onPick: (boxId: string, entry?: BoxEntryRow) => void;
   /** Width of the button; defaults to a fixed width. */
   triggerClassName?: string;
+  /**
+   * Billing view: list and show the item, not the box number (box numbers are for the shop's
+   * stock count and barcode labels). The box shows only when one item name is in several boxes.
+   */
+  itemFirst?: boolean;
+  /** With itemFirst: the picked item's name, shown on the button. */
+  selectedItemName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -111,6 +120,23 @@ export function BoxPicker({
     : rows;
 
   const current = boxes.find((b) => b._id === value);
+  // Item names found in more than one box: only those rows show their box (to tell them apart).
+  const sharedNames = useMemo(() => {
+    const boxesByName = new Map<string, Set<string>>();
+    for (const r of rows) {
+      const name = r.itemName.toLowerCase();
+      boxesByName.set(name, (boxesByName.get(name) ?? new Set()).add(r.box._id));
+    }
+    return new Set([...boxesByName].filter(([, ids]) => ids.size > 1).map(([name]) => name));
+  }, [rows]);
+  const columns = itemFirst ? 6 : 7;
+  const triggerText = itemFirst
+    ? current
+      ? selectedItemName || current.label || `Box ${current.boxNumber}`
+      : emptyLabel ?? "Select item"
+    : current
+      ? `Box ${current.boxNumber}${current.metal ? ` · ${current.metal === "gold" ? "Gold" : "Silver"}` : ""}`
+      : emptyLabel ?? "Select box";
 
   function choose(row: PickRow | null) {
     if (row) onPick(row.box._id, row.entry);
@@ -129,9 +155,7 @@ export function BoxPicker({
     >
       <Popover.Trigger asChild>
         <button type="button" aria-label={ariaLabel} className={`flex h-8 items-center justify-between gap-1 rounded-md border bg-background px-2 text-left text-xs ${triggerClassName ?? "w-36"}`}>
-          <span className="truncate">
-            {current ? `Box ${current.boxNumber}${current.metal ? ` · ${current.metal === "gold" ? "Gold" : "Silver"}` : ""}` : emptyLabel ?? "Select box"}
-          </span>
+          <span className="truncate" title={triggerText}>{triggerText}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         </button>
       </Popover.Trigger>
@@ -150,7 +174,7 @@ export function BoxPicker({
             <Search className="absolute top-1/2 left-4 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               aria-label="Search boxes"
-              placeholder="Search box no, item name or code"
+              placeholder={itemFirst ? "Search item name or code" : "Search box no, item name or code"}
               className="h-8 w-full rounded-md border bg-background pl-7 pr-2 text-xs outline-none focus:ring-1 focus:ring-ring"
               value={search}
               onChange={(e) => {
@@ -175,7 +199,7 @@ export function BoxPicker({
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-muted text-left text-[11px] font-semibold text-muted-foreground">
                 <tr>
-                  <th className="px-2 py-1.5">BOX NO</th>
+                  {!itemFirst && <th className="px-2 py-1.5">BOX NO</th>}
                   <th className="px-2 py-1.5">ITEM NAME</th>
                   <th className="px-2 py-1.5">PURITY</th>
                   <th className="px-2 py-1.5 text-right">PCS</th>
@@ -187,7 +211,7 @@ export function BoxPicker({
               <tbody>
                 {emptyLabel && !term && (
                   <tr className="cursor-pointer border-b hover:bg-accent" onClick={() => choose(null)}>
-                    <td colSpan={7} className="px-2 py-1.5 text-muted-foreground">{emptyLabel}</td>
+                    <td colSpan={columns} className="px-2 py-1.5 text-muted-foreground">{emptyLabel}</td>
                   </tr>
                 )}
                 {shown.map((row, i) => (
@@ -197,10 +221,11 @@ export function BoxPicker({
                     onMouseEnter={() => setActive(i)}
                     onClick={() => choose(row)}
                   >
-                    <td className="px-2 py-1.5 font-mono">{row.box.boxNumber}</td>
+                    {!itemFirst && <td className="px-2 py-1.5 font-mono">{row.box.boxNumber}</td>}
                     <td className="max-w-48 truncate px-2 py-1.5" title={row.itemName}>
                       {row.itemName}
                       {row.sku && <span className="ml-1 text-[10px] text-muted-foreground">({row.sku})</span>}
+                      {itemFirst && sharedNames.has(row.itemName.toLowerCase()) && <span className="ml-1 text-[10px] text-muted-foreground">· Box {row.box.boxNumber}</span>}
                     </td>
                     <td className="px-2 py-1.5">{row.purityLabel}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{row.pieces}</td>
@@ -211,7 +236,7 @@ export function BoxPicker({
                 ))}
                 {shown.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-2 py-4 text-center text-muted-foreground">No box matches “{search}”.</td>
+                    <td colSpan={columns} className="px-2 py-4 text-center text-muted-foreground">No {itemFirst ? "item" : "box"} matches “{search}”.</td>
                   </tr>
                 )}
               </tbody>

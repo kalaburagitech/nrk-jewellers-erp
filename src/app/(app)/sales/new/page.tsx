@@ -798,7 +798,7 @@ export default function NewBillPage() {
     () =>
       lines.map((line, index) => {
         const box = boxById.get(line.boxId);
-        if (!gstCompany && !line.boxId) return "Choose the box.";
+        if (!gstCompany && !line.boxId) return "Choose the item.";
         if (!line.label.trim()) return "Enter the description.";
         if (isLoose(line) && !line.productId) return "Pick the item from the Item List (or choose a box).";
         if (box?.metal && line.metal && box.metal !== line.metal) return `Box ${box.boxNumber} holds ${box.metal === "gold" ? "Gold" : "Silver"}.`;
@@ -1532,7 +1532,7 @@ export default function NewBillPage() {
             <thead className="sticky top-0 z-10 bg-muted">
               <tr>
                 <th className={thCls} style={{ width: "2.5%" }}>Sl.</th>
-                <th className={thCls} style={{ width: "7.5%" }}>Box No.</th>
+                <th className={thCls} style={{ width: "7.5%" }}>Item</th>
                 <th className={thCls} style={{ width: "5.5%" }}>Category</th>
                 <th className={thCls} style={{ width: "8.5%" }}>Description</th>
                 <th className={thCls} style={{ width: "5.5%" }}>Purity</th>
@@ -1573,7 +1573,7 @@ export default function NewBillPage() {
                       <td className={`${tdCls} pt-2.5 text-center font-semibold`}>{index + 1}</td>
                       <td className={tdCls}>
                         <BoxPicker
-                          ariaLabel={`Row ${index + 1} box`}
+                          ariaLabel={`Row ${index + 1} item`}
                           boxes={boxes as BoxRow[]}
                           purities={activePurities}
                           rateByPurity={rateByPurity}
@@ -1583,6 +1583,8 @@ export default function NewBillPage() {
                           emptyLabel={gstCompany ? "Loose GST stock" : undefined}
                           onPick={(boxId, entry) => pickBoxItem(index, boxId, entry)}
                           triggerClassName="w-full min-w-0"
+                          itemFirst
+                          selectedItemName={product?.name ?? line.label}
                         />
                         {box && available && (
                           <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
