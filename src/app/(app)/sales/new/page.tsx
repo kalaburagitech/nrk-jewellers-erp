@@ -35,6 +35,9 @@ import { computeOldGoldExchange, computeSaleLine, gramsToMg, makingChargeFor, me
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
+const TOTAL_COL_PX = 150;
+const REMOVE_COL_PX = 44;
+
 const PAYMENT_MODES = [
   { value: "cash", label: "Cash" },
   { value: "upi", label: "UPI" },
@@ -100,6 +103,8 @@ type BillLine = {
   metalPurityId: string;
   piecesText: string;
   grossGrams: string;
+  /** Optional stone weight (g), typed by hand. Blank = no stone. Net = gross − stone. */
+  stoneGrams: string;
   netGrams: string;
   ratePerGramRupees: string;
   makingMode: MakingMode;
@@ -134,6 +139,18 @@ function makingValueUnits(mode: MakingMode, raw: string): number {
   return mode === "percent" ? percentToBasisPoints(raw || "0") ?? 0 : rupeesToPaise(raw || "0") ?? 0;
 }
 
+/** Stone weight to show for a gross / net pair: blank when there is none. */
+function stoneText(grossGrams: string, netGrams: string): string {
+  const stoneMg = gramsToMg(grossGrams || "0") - gramsToMg(netGrams || "0");
+  return stoneMg > 0 ? (stoneMg / 1000).toFixed(3) : "";
+}
+
+/** Net weight left after taking the stone weight off the gross (never below zero). */
+function netAfterStone(grossGrams: string, stoneGrams: string): string {
+  if (grossGrams.trim() === "") return "";
+  return (Math.max(0, gramsToMg(grossGrams) - gramsToMg(stoneGrams || "0")) / 1000).toFixed(3);
+}
+
 function blankLine(taxConfigurationId: string): BillLine {
   return {
     key: crypto.randomUUID(),
@@ -144,6 +161,7 @@ function blankLine(taxConfigurationId: string): BillLine {
     metalPurityId: "",
     piecesText: "",
     grossGrams: "",
+    stoneGrams: "",
     netGrams: "",
     ratePerGramRupees: "",
     makingMode: "fixed",
@@ -386,6 +404,7 @@ export default function NewBillPage() {
           piecesText: String(item.pieces ?? (item.boxItemId ? 1 : 0)),
           grossGrams: (item.grossWeightMg / 1000).toFixed(3),
           netGrams: (item.netWeightMg / 1000).toFixed(3),
+          stoneGrams: stoneText((item.grossWeightMg / 1000).toFixed(3), (item.netWeightMg / 1000).toFixed(3)),
           ratePerGramRupees: (item.ratePerGramPaise / 100).toFixed(2),
           makingMode,
           makingValue: makingUnits ? (makingUnits / 100).toFixed(2) : "",
@@ -444,7 +463,8 @@ export default function NewBillPage() {
     setCustomerPhoneInput(draft.customerPhoneInput ?? "");
     if (typeof draft.isGst === "boolean") setIsGst(draft.isGst);
     if (draft.stateOfSupply) setStateOfSupply(draft.stateOfSupply);
-    setLines(draft.lines?.length ? draft.lines : [blankLine("")]);
+    // Bills held before Stone Wt was typeable have no stoneGrams: show it from gross − net.
+    setLines(draft.lines?.length ? draft.lines.map((l) => ({ ...l, stoneGrams: l.stoneGrams ?? stoneText(l.grossGrams, l.netGrams) })) : [blankLine("")]);
     setOldItemDeductionRupees(draft.oldItemDeductionRupees ?? "0");
     setOldItemEnabled(Boolean(draft.oldItemEnabled));
     setOldItemDeductionNote(draft.oldItemDeductionNote ?? "");
@@ -581,14 +601,13 @@ export default function NewBillPage() {
   /** Gross and net weight from the box item's per-piece weight × Pcs (1 when blank). Weight-only items (no pieces) leave the weights to type. */
   function weightsForPieces(line: BillLine, entry: BoxEntryRow): Partial<BillLine> {
     if (!(entry.pieces > 0) || !(entry.weightMg > 0)) return { perPiece: undefined };
-    const perPiece = { grossMg: Math.round(entry.weightMg / entry.pieces), netMg: Math.round(entry.netWeightMg / entry.pieces) };
+    // No net weight recorded on the box item → no stone: net = gross (the operator types a stone weight if there is one).
+    const boxNetMg = entry.netWeightMg > 0 && entry.netWeightMg <= entry.weightMg ? entry.netWeightMg : entry.weightMg;
+    const perPiece = { grossMg: Math.round(entry.weightMg / entry.pieces), netMg: Math.round(boxNetMg / entry.pieces) };
     const pieces = Number(line.piecesText) > 0 ? Number(line.piecesText) : 1;
-    return {
-      perPiece,
-      piecesText: String(pieces),
-      grossGrams: ((perPiece.grossMg * pieces) / 1000).toFixed(3),
-      netGrams: ((perPiece.netMg * pieces) / 1000).toFixed(3),
-    };
+    const grossGrams = ((perPiece.grossMg * pieces) / 1000).toFixed(3);
+    const netGrams = ((perPiece.netMg * pieces) / 1000).toFixed(3);
+    return { perPiece, piecesText: String(pieces), grossGrams, netGrams, stoneGrams: stoneText(grossGrams, netGrams) };
   }
 
   /** Pcs typed: weights filled from the box item follow the new count, unless the operator typed their own. */
@@ -599,7 +618,9 @@ export default function NewBillPage() {
     const auto = per && line.grossGrams === ((per.grossMg * oldPieces) / 1000).toFixed(3) && line.netGrams === ((per.netMg * oldPieces) / 1000).toFixed(3);
     const pieces = Number(piecesText);
     if (!per || !auto || !Number.isInteger(pieces) || pieces < 1) return updateLine(index, { piecesText });
-    updateLine(index, { piecesText, grossGrams: ((per.grossMg * pieces) / 1000).toFixed(3), netGrams: ((per.netMg * pieces) / 1000).toFixed(3) });
+    const grossGrams = ((per.grossMg * pieces) / 1000).toFixed(3);
+    const netGrams = ((per.netMg * pieces) / 1000).toFixed(3);
+    updateLine(index, { piecesText, grossGrams, netGrams, stoneGrams: stoneText(grossGrams, netGrams) });
   }
 
   /** The item as kept in its box: everything the line needs comes from the box. */
@@ -670,7 +691,20 @@ export default function NewBillPage() {
   /** Gross typed: net follows it until the operator types a different net weight. */
   function typeGross(index: number, grossGrams: string) {
     const line = lines[index];
+    // A typed stone weight stays and net follows gross − stone; with no stone, net follows gross.
+    if (line.stoneGrams.trim() !== "") return updateLine(index, { grossGrams, netGrams: netAfterStone(grossGrams, line.stoneGrams) });
     updateLine(index, { grossGrams, ...(line.netGrams === "" || line.netGrams === line.grossGrams ? { netGrams: grossGrams } : {}) });
+  }
+
+  /** Stone weight typed (optional): net = gross − stone. Clearing it puts net back to the gross weight. */
+  function typeStone(index: number, stoneGrams: string) {
+    const line = lines[index];
+    updateLine(index, { stoneGrams, netGrams: netAfterStone(line.grossGrams, stoneGrams) || line.netGrams });
+  }
+
+  /** Net weight typed by hand: the stone weight shows the difference. */
+  function typeNet(index: number, netGrams: string) {
+    updateLine(index, { netGrams, stoneGrams: stoneText(lines[index].grossGrams, netGrams) });
   }
 
   /** Adds a row (for a scanned box, already set to that box) and puts the cursor in it. */
@@ -770,6 +804,7 @@ export default function NewBillPage() {
         if (isLoose(line) && pieces < 1) return "Pcs must be 1 or more.";
         const checks: [string, string | null][] = [
           ["Gross wt", numberFieldError(line.grossGrams)],
+          ["Stone wt", numberFieldError(line.stoneGrams) ?? (gramsToMg(line.stoneGrams || "0") > gramsToMg(line.grossGrams || "0") ? "Cannot be more than the gross weight" : null)],
           ["Net wt", numberFieldError(line.netGrams)],
           ["Rate/g", numberFieldError(line.ratePerGramRupees)],
           ["Making", numberFieldError(line.makingValue, line.makingMode === "percent" ? { max: 100 } : undefined)],
@@ -1220,6 +1255,10 @@ export default function NewBillPage() {
   const sumMakingPaise = computedLines.reduce((sum, l) => sum + l.makingChargePaise, 0);
   const sumLineDiscountPaise = computedLines.reduce((sum, l) => sum + (l.lineDiscountPaise ?? 0), 0);
   const columnCount = 14 + (isGst ? 1 : 0) + (showCost ? 1 : 0);
+  // Fixed pixel column widths (must match the <th> widths below). The table is never narrower than
+  // this, so a lakh-size Total always fits; on small screens it scrolls sideways while the Total and
+  // Remove columns stay pinned on the right.
+  const tableMinWidth = 1102 + TOTAL_COL_PX + REMOVE_COL_PX + (isGst ? 124 : 0) + (showCost ? 100 : 0);
 
   return (
     <div className="erp-fill flex w-full flex-col">
@@ -1487,25 +1526,25 @@ export default function NewBillPage() {
           {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
         </datalist>
         <div className="erp-scroll overflow-auto lg:max-h-[56svh]">
-          <table className="w-full min-w-[900px] table-fixed border-collapse text-sm lg:min-w-0">
+          <table className="w-full table-fixed border-collapse text-sm" style={{ minWidth: tableMinWidth }}>
             <thead className="sticky top-0 z-10 bg-muted">
               <tr>
-                <th className={`${thCls} w-[3%]`}>Sl.</th>
-                <th className={`${thCls} w-[12%]`}>Box No.</th>
-                <th className={`${thCls} w-[7%]`}>Category</th>
-                <th className={`${thCls} w-[13%]`}>Description</th>
-                <th className={`${thCls} w-[6.5%]`}>Purity</th>
-                <th className={`${thCls} w-[5%]`}>Pcs<br /><span className="font-normal text-muted-foreground">(opt.)</span></th>
-                <th className={`${thCls} w-[7%]`}>Gross Wt<br />(g)</th>
-                <th className={`${thCls} w-[5.5%]`}>Stone Wt<br />(g)</th>
-                <th className={`${thCls} w-[7%]`}>Net Wt<br />(g)</th>
-                <th className={`${thCls} w-[7%]`}>Rate<br />(₹/g)</th>
-                <th className={`${thCls} w-[7%]`}>Price / pc<br />(₹)</th>
-                <th className={`${thCls} w-[10%]`}>Making</th>
-                {isGst && <th className={`${thCls} w-[9%]`}>GST</th>}
-                {showCost && <th className={`${thCls} w-[7%]`}>Cost /<br />Margin</th>}
-                <th className={`${thCls} w-[8%]`}>Total (₹)</th>
-                <th className={`${thCls} w-[3%]`}><span className="sr-only">Remove</span></th>
+                <th className={thCls} style={{ width: 34 }}>Sl.</th>
+                <th className={thCls} style={{ width: 130 }}>Box No.</th>
+                <th className={thCls} style={{ width: 96 }}>Category</th>
+                <th className={thCls} style={{ width: 150 }}>Description</th>
+                <th className={thCls} style={{ width: 80 }}>Purity</th>
+                <th className={thCls} style={{ width: 52 }}>Pcs<br /><span className="font-normal text-muted-foreground">(opt.)</span></th>
+                <th className={thCls} style={{ width: 84 }}><span title="Gross weight is taken out of the box stock">Gross Wt (g)<br /><span className="font-normal text-muted-foreground">from stock</span></span></th>
+                <th className={thCls} style={{ width: 72 }}>Stone Wt<br /><span className="font-normal text-muted-foreground">(g, opt.)</span></th>
+                <th className={thCls} style={{ width: 84 }}><span title="Net weight is shown on the bill and priced at the rate per gram">Net Wt (g)<br /><span className="font-normal text-muted-foreground">on bill</span></span></th>
+                <th className={thCls} style={{ width: 88 }}>Rate<br />(₹/g)</th>
+                <th className={thCls} style={{ width: 96 }}>Price / pc<br />(₹)</th>
+                <th className={thCls} style={{ width: 136 }}>Making</th>
+                {isGst && <th className={thCls} style={{ width: 124 }}>GST</th>}
+                {showCost && <th className={thCls} style={{ width: 100 }}>Cost /<br />Margin</th>}
+                <th className={`${thCls} sticky right-[44px] z-20 border-l bg-muted`} style={{ width: TOTAL_COL_PX }}>Total (₹)</th>
+                <th className={`${thCls} sticky right-0 z-20 bg-muted`} style={{ width: REMOVE_COL_PX }}><span className="sr-only">Remove</span></th>
               </tr>
             </thead>
             <tbody>
@@ -1601,11 +1640,11 @@ export default function NewBillPage() {
                       <td className={tdCls}>
                         <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
                       </td>
-                      <td className={`${tdCls} pt-2.5 text-right font-mono text-xs text-muted-foreground tabular-nums`}>
-                        {computed.stoneWeightMg > 0 ? mgToGramsDisplay(computed.stoneWeightMg) : "—"}
+                      <td className={tdCls}>
+                        <Input aria-label={`Row ${index + 1} stone weight (optional)`} inputMode="decimal" placeholder="0.000" title="Optional — type the stone weight; net weight = gross − stone" value={line.stoneGrams} onChange={(e) => typeStone(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => updateLine(index, { netGrams: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => typeNet(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
                       </td>
                       <td className={tdCls}>
                         <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
@@ -1679,9 +1718,9 @@ export default function NewBillPage() {
                           )}
                         </td>
                       )}
-                      <td className={`${tdCls} pt-2 text-right font-mono font-bold tabular-nums`}>{formatPaise(computed.lineTotalPaise)}</td>
-                      <td className={`${tdCls} text-center`}>
-                        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:bg-destructive/10" aria-label={`Remove item ${index + 1}`} onClick={() => removeLine(index)}>
+                      <td className={`${tdCls} sticky right-[44px] z-[1] whitespace-nowrap border-l bg-card px-2 pt-2 text-right font-mono font-bold tabular-nums`}>{formatPaise(computed.lineTotalPaise)}</td>
+                      <td className={`${tdCls} sticky right-0 z-[1] bg-card text-center`}>
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" title="Remove this item" aria-label={`Remove item ${index + 1}`} onClick={() => removeLine(index)}>
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </td>
