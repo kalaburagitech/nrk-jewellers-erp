@@ -141,3 +141,24 @@ describe("line discount", () => {
     expect(computePurchaseLine({ grossWeightMg: 1000, stoneWeightMg: 0, ratePerGramPaise: 100_000, makingChargePaise: 0, stoneChargePaise: 0, lineDiscountPaise: 10_000 }).lineTotalPaise).toBe(90_000);
   });
 });
+
+describe("selling a box item: bill on net weight, stock keeps gross", () => {
+  it("prices 10 g gross / 9 g net on the 9 g net weight", () => {
+    // The shop's rule: gross 10 g comes out of the box; the customer pays for net 9 g.
+    const line = computeSaleLine({
+      grossWeightMg: 10000,
+      stoneWeightMg: 1000,
+      stockNetWeightMg: 9000,
+      otherDeductionMg: 0,
+      ratePerGramPaise: 700000, // ₹7,000 / g
+      wastageBasisPoints: 0,
+      makingChargePaise: 0,
+      stoneChargePaise: 0,
+      gstBasisPoints: 0,
+    });
+    expect(line.grossWeightMg).toBe(10000);
+    expect(line.netWeightMg).toBe(9000);
+    expect(line.metalValuePaise).toBe(6300000); // 9 g × ₹7,000 = ₹63,000, not ₹70,000
+    expect(line.lineTotalPaise).toBe(6300000);
+  });
+});

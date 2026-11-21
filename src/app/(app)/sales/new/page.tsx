@@ -14,6 +14,9 @@ import { MessageCircle, Minus, Pause, Plus, Printer, Search, Trash2 } from "luci
 import { HeldBillTabs, HeldDeleteConfirm } from "@/components/held-bills";
 import { Button } from "@/components/ui/button";
 import { formLabel, formRow, panel, panelHead, tblInput, tdCls, thCls } from "@/lib/bill-styles";
+
+/** Number boxes in the item table: small mono text so a weight like 10.000 shows in full in a narrow column. */
+const numInput = `${tblInput} w-full min-w-0 px-1 text-right font-mono text-xs`;
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
@@ -35,8 +38,8 @@ import { computeOldGoldExchange, computeSaleLine, gramsToMg, makingChargeFor, me
 import { formatPaise, percentToBasisPoints, rupeesToPaise } from "@/lib/money";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
-const TOTAL_COL_PX = 150;
-const REMOVE_COL_PX = 44;
+const TOTAL_COL_PX = 132;
+const REMOVE_COL_PX = 40;
 
 const PAYMENT_MODES = [
   { value: "cash", label: "Cash" },
@@ -1255,10 +1258,9 @@ export default function NewBillPage() {
   const sumMakingPaise = computedLines.reduce((sum, l) => sum + l.makingChargePaise, 0);
   const sumLineDiscountPaise = computedLines.reduce((sum, l) => sum + (l.lineDiscountPaise ?? 0), 0);
   const columnCount = 14 + (isGst ? 1 : 0) + (showCost ? 1 : 0);
-  // Fixed pixel column widths (must match the <th> widths below). The table is never narrower than
-  // this, so a lakh-size Total always fits; on small screens it scrolls sideways while the Total and
-  // Remove columns stay pinned on the right.
-  const tableMinWidth = 1102 + TOTAL_COL_PX + REMOVE_COL_PX + (isGst ? 124 : 0) + (showCost ? 100 : 0);
+  // The item table fits the screen with no sideways scroll: Total and Remove are the last two columns
+  // at a fixed pixel width (a lakh / crore Total always fits) and the other columns share what is left
+  // by percentage. Only narrow screens (under 940px) scroll, with Total and Remove pinned on the right.
 
   return (
     <div className="erp-fill flex w-full flex-col">
@@ -1526,24 +1528,24 @@ export default function NewBillPage() {
           {products?.filter((p) => p.isActive && p.itemType !== "service").map((p) => <option key={p._id} value={p.name} />)}
         </datalist>
         <div className="erp-scroll overflow-auto lg:max-h-[56svh]">
-          <table className="w-full table-fixed border-collapse text-sm" style={{ minWidth: tableMinWidth }}>
+          <table className="w-full min-w-[940px] table-fixed border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-muted">
               <tr>
-                <th className={thCls} style={{ width: 34 }}>Sl.</th>
-                <th className={thCls} style={{ width: 130 }}>Box No.</th>
-                <th className={thCls} style={{ width: 96 }}>Category</th>
-                <th className={thCls} style={{ width: 150 }}>Description</th>
-                <th className={thCls} style={{ width: 80 }}>Purity</th>
-                <th className={thCls} style={{ width: 52 }}>Pcs<br /><span className="font-normal text-muted-foreground">(opt.)</span></th>
-                <th className={thCls} style={{ width: 84 }}><span title="Gross weight is taken out of the box stock">Gross Wt (g)<br /><span className="font-normal text-muted-foreground">from stock</span></span></th>
-                <th className={thCls} style={{ width: 72 }}>Stone Wt<br /><span className="font-normal text-muted-foreground">(g, opt.)</span></th>
-                <th className={thCls} style={{ width: 84 }}><span title="Net weight is shown on the bill and priced at the rate per gram">Net Wt (g)<br /><span className="font-normal text-muted-foreground">on bill</span></span></th>
-                <th className={thCls} style={{ width: 88 }}>Rate<br />(₹/g)</th>
-                <th className={thCls} style={{ width: 96 }}>Price / pc<br />(₹)</th>
-                <th className={thCls} style={{ width: 136 }}>Making</th>
-                {isGst && <th className={thCls} style={{ width: 124 }}>GST</th>}
-                {showCost && <th className={thCls} style={{ width: 100 }}>Cost /<br />Margin</th>}
-                <th className={`${thCls} sticky right-[44px] z-20 border-l bg-muted`} style={{ width: TOTAL_COL_PX }}>Total (₹)</th>
+                <th className={thCls} style={{ width: "2.5%" }}>Sl.</th>
+                <th className={thCls} style={{ width: "7.5%" }}>Box No.</th>
+                <th className={thCls} style={{ width: "5.5%" }}>Category</th>
+                <th className={thCls} style={{ width: "8.5%" }}>Description</th>
+                <th className={thCls} style={{ width: "5.5%" }}>Purity</th>
+                <th className={thCls} style={{ width: "3.5%" }}>Pcs<br /><span className="font-normal text-muted-foreground">(opt.)</span></th>
+                <th className={thCls} style={{ width: "6%" }}><span title="Gross weight is taken out of the box stock">Gross Wt (g)<br /><span className="font-normal text-muted-foreground">from stock</span></span></th>
+                <th className={thCls} style={{ width: "5.5%" }}>Stone Wt<br /><span className="font-normal text-muted-foreground">(g, opt.)</span></th>
+                <th className={thCls} style={{ width: "6%" }}><span title="Net weight is shown on the bill and priced at the rate per gram">Net Wt (g)<br /><span className="font-normal text-muted-foreground">on bill</span></span></th>
+                <th className={thCls} style={{ width: "5.5%" }}>Rate<br />(₹/g)</th>
+                <th className={thCls} style={{ width: "5.5%" }}>Price / pc<br />(₹)</th>
+                <th className={thCls} style={{ width: "7.5%" }}>Making</th>
+                {isGst && <th className={thCls} style={{ width: "7%" }}>GST</th>}
+                {showCost && <th className={thCls} style={{ width: "5.5%" }}>Cost /<br />Margin</th>}
+                <th className={`${thCls} sticky right-[40px] z-20 border-l bg-muted`} style={{ width: TOTAL_COL_PX }}>Total (₹)</th>
                 <th className={`${thCls} sticky right-0 z-20 bg-muted`} style={{ width: REMOVE_COL_PX }}><span className="sr-only">Remove</span></th>
               </tr>
             </thead>
@@ -1635,19 +1637,19 @@ export default function NewBillPage() {
                         {!line.metalPurityId && product?.purityOther && <p className="mt-0.5 text-[10px] text-muted-foreground">{product.purityOther}</p>}
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right`} />
+                        <Input aria-label={`Row ${index + 1} pieces`} inputMode="numeric" placeholder={isLoose(line) ? "1" : "0"} value={line.piecesText} onChange={(e) => typePieces(index, e.target.value)} className={numInput} />
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                        <Input aria-label={`Row ${index + 1} gross weight`} inputMode="decimal" placeholder="0.000" value={line.grossGrams} onChange={(e) => typeGross(index, e.target.value)} className={numInput} />
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} stone weight (optional)`} inputMode="decimal" placeholder="0.000" title="Optional — type the stone weight; net weight = gross − stone" value={line.stoneGrams} onChange={(e) => typeStone(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                        <Input aria-label={`Row ${index + 1} stone weight (optional)`} inputMode="decimal" placeholder="0.000" title="Optional — type the stone weight; net weight = gross − stone" value={line.stoneGrams} onChange={(e) => typeStone(index, e.target.value)} className={numInput} />
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => typeNet(index, e.target.value)} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                        <Input aria-label={`Row ${index + 1} net weight`} inputMode="decimal" placeholder="0.000" value={line.netGrams} onChange={(e) => typeNet(index, e.target.value)} className={numInput} />
                       </td>
                       <td className={tdCls}>
-                        <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={`${tblInput} w-full min-w-0 text-right font-mono`} />
+                        <Input aria-label={`Row ${index + 1} rate per gram`} inputMode="decimal" placeholder="0.00" value={line.ratePerGramRupees} onChange={(e) => updateLine(index, { ratePerGramRupees: e.target.value })} className={numInput} />
                       </td>
                       <td className={tdCls}>
                         <Input
@@ -1658,23 +1660,23 @@ export default function NewBillPage() {
                           disabled={!canOverride && line.savedPricePaise !== undefined}
                           title={!canOverride && line.savedPricePaise !== undefined ? "Saved selling price — only the Owner or an Admin can change it" : "Leave blank to price by net weight × rate per gram"}
                           onChange={(e) => updateLine(index, { unitPriceRupees: e.target.value })}
-                          className={`${tblInput} w-full min-w-0 text-right font-mono`}
+                          className={numInput}
                         />
                         {line.savedPricePaise !== undefined && (rupeesToPaise(line.unitPriceRupees || "0") ?? 0) !== line.savedPricePaise && (
                           <p className="mt-0.5 text-[10px] text-amber-600">Saved {formatPaise(line.savedPricePaise)} · override</p>
                         )}
                       </td>
                       <td className={tdCls}>
-                        <div className="flex min-w-0 items-center gap-1">
+                        <div className="flex min-w-0 flex-col gap-1">
                           <select
                             aria-label={`Row ${index + 1} making charge type`}
-                            className="h-8 shrink-0 rounded-md border bg-background px-0.5 text-xs"
+                            className="h-7 w-full min-w-0 rounded-md border bg-background px-0.5 text-xs"
                             value={line.makingMode}
                             onChange={(e) => updateLine(index, { makingMode: e.target.value as MakingMode })}
                           >
                             {MAKING_MODES.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
                           </select>
-                          <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={`${tblInput} w-full min-w-0 text-right`} />
+                          <Input aria-label={`Row ${index + 1} making charge`} inputMode="decimal" placeholder="0" value={line.makingValue} onChange={(e) => updateLine(index, { makingValue: e.target.value })} className={numInput} />
                         </div>
                         {line.makingMode !== "fixed" && computed.makingChargePaise > 0 && (
                           <p className="mt-0.5 text-[10px] text-muted-foreground">= {formatPaise(computed.makingChargePaise)}</p>
@@ -1718,7 +1720,7 @@ export default function NewBillPage() {
                           )}
                         </td>
                       )}
-                      <td className={`${tdCls} sticky right-[44px] z-[1] whitespace-nowrap border-l bg-card px-2 pt-2 text-right font-mono font-bold tabular-nums`}>{formatPaise(computed.lineTotalPaise)}</td>
+                      <td className={`${tdCls} sticky right-[40px] z-[1] whitespace-nowrap border-l bg-card px-1.5 pt-2 text-right font-mono text-[13px] font-bold tabular-nums`}>{formatPaise(computed.lineTotalPaise)}</td>
                       <td className={`${tdCls} sticky right-0 z-[1] bg-card text-center`}>
                         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:bg-destructive/10" title="Remove this item" aria-label={`Remove item ${index + 1}`} onClick={() => removeLine(index)}>
                           <Trash2 className="h-3.5 w-3.5" />
